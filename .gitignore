@@ -1,0 +1,7 @@
+# build tree and per-unit data: never commit flash dumps or logs
+/openwrt/
+/backup/
+/tftp/
+*.bin
+*.log
+__pycache__/
