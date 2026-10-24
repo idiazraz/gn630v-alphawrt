@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 28 188 166" width="188" height="166">
+	<title>AlphaWRT</title>
+	<!--
+		AlphaWRT logo. Two symbols, referenced from the theme as logo.svg#mark and
+		logo.svg#word so their colours follow the page through the CSS custom
+		properties logo-ring, logo-glyph, logo-deep, logo-key, logo-word and
+		logo-word-accent. The fallbacks are the light-theme colours.
+	-->
+	<defs>
+		<!-- slashed A, 64x64 units -->
+		<path id="a-shape" fill-rule="evenodd" d="M4 58 22 6h20l18 52H45l-3.5-11h-19L19 58Zm22.3-22h11.4L32 19.5Z"/>
+		<mask id="a-slash" maskUnits="userSpaceOnUse" x="-10" y="-10" width="90" height="90">
+			<rect x="-10" y="-10" width="90" height="90" fill="#fff"/>
+			<path d="M-6 50 70 33v3.6L-6 53.6Z" fill="#000"/>
+		</mask>
+
+		<!-- tilted ring of uneven weight -->
+		<path id="ring" fill-rule="evenodd" transform="rotate(-20 100 100)" d="M12 100a88 50 0 1 0 176 0a88 50 0 1 0-176 0ZM30 96a74 38 0 1 0 148 0a74 38 0 1 0-148 0Z"/>
+		<!-- the near (lower right) arc passes in front of the A and its blade -->
+		<clipPath id="ring-front"><path d="M100 108H210V210H100Z"/></clipPath>
+		<!-- cuts a gap into the A around that front part -->
+		<mask id="ring-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="210" height="210">
+			<rect width="210" height="210" fill="#fff"/>
+			<use href="#ring" clip-path="url(#ring-front)" fill="#000" stroke="#000" stroke-width="7"/>
+		</mask>
+
+		<symbol id="mark" viewBox="12 28 188 166">
+			<use href="#ring" style="fill:var(--logo-ring, #006be2)"/>
+			<g mask="url(#ring-gap)">
+				<!-- blade trailing from the right foot -->
+				<path d="M131 128H151L197 190L155 152Z" style="fill:var(--logo-deep, #590912)"/>
+				<path d="M128 125H148L193 186L152 149Z" style="fill:var(--logo-glyph, #c51b32);stroke:var(--logo-key, #ffffff);stroke-width:1.6;paint-order:stroke"/>
+				<g transform="translate(36 22) scale(1.9375)">
+					<g transform="translate(9 0) skewX(-12)" mask="url(#a-slash)">
+						<use href="#a-shape" x="2.5" y="2.5" style="fill:var(--logo-deep, #590912)"/>
+						<use href="#a-shape" style="fill:var(--logo-glyph, #c51b32);stroke:var(--logo-key, #ffffff);stroke-width:2.5;paint-order:stroke"/>
+					</g>
+				</g>
+			</g>
+			<use href="#ring" clip-path="url(#ring-front)" style="fill:var(--logo-ring, #006be2)"/>
+		</symbol>
+
+		<!-- wordmark: chamfered capitals, 40-unit cap height, one speed slit -->
+		<mask id="word-slit" maskUnits="userSpaceOnUse" x="-10" y="-5" width="350" height="50">
+			<rect x="-10" y="-5" width="350" height="50" fill="#fff"/>
+			<path d="M-10 18.6H340V21.4H-10Z" fill="#000"/>
+		</mask>
+		<symbol id="word" viewBox="0 0 330 40">
+			<g transform="translate(10 0) skewX(-14)" mask="url(#word-slit)">
+				<g style="fill:var(--logo-word, #1d1d1f)" fill-rule="evenodd">
+					<path d="M0 40 14 0H26L40 40H31L28 31H12L9 40ZM15 23H25L20 9Z"/>
+					<path transform="translate(45 0)" d="M0 0H9V31H29L26 40H0Z"/>
+					<path transform="translate(79 0)" d="M0 0H26L32 6V20L26 26H9V40H0ZM9 8H22L23.5 9.5V16.5L22 18H9Z"/>
+					<path transform="translate(116 0)" d="M0 0H9V16H23V0H32V40H23V24H9V40H0Z"/>
+					<path transform="translate(153 0)" d="M0 40 14 0H26L40 40H31L28 31H12L9 40ZM15 23H25L20 9Z"/>
+				</g>
+				<g style="fill:var(--logo-word-accent, #c51b32)" fill-rule="evenodd">
+					<path transform="translate(198 0)" d="M0 0H9L12.5 26L18 6H26L31.5 26L35 0H44L37 40H27L22 21L17 40H7Z"/>
+					<path transform="translate(247 0)" d="M0 0H26L32 6V18L26.5 23L33 40H23L18 25H9V40H0ZM9 8H22L23.5 9.5V15.5L22 17H9Z"/>
+					<path transform="translate(285 0)" d="M0 0H34L31.5 8H21.5V40H12.5V8H0Z"/>
+				</g>
+			</g>
+		</symbol>
+	</defs>
+	<use href="#mark" x="12" y="28" width="188" height="166"/>
+</svg>

@@ -1,0 +1,25 @@
+#!/bin/sh
+# Register the AlphaWRT themes and, on first install, make AlphaWRT the
+# default. Runs after 30_luci-theme-bootstrap, so it wins in a fresh image;
+# an upgrade keeps whatever theme the user picked.
+
+changed=0
+
+set_opt() {
+	if ! uci -q get "luci.$1" >/dev/null; then
+		uci set "luci.$1=$2"
+		changed=1
+	fi
+}
+
+set_opt themes.AlphaWRT /luci-static/alphawrt
+set_opt themes.AlphaWRTDark /luci-static/alphawrt-dark
+set_opt themes.AlphaWRTLight /luci-static/alphawrt-light
+
+if [ "$PKG_UPGRADE" != 1 ] && [ $changed = 1 ]; then
+	uci set luci.main.mediaurlbase=/luci-static/alphawrt
+fi
+
+[ $changed = 1 ] && uci commit luci
+
+exit 0

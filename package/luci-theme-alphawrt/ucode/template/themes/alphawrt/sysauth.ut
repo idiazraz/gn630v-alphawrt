@@ -1,0 +1,112 @@
+{#
+ AlphaWRT login page. Field handling follows the luci-base sysauth template:
+ Copyright 2008 Steven Barth <steven@midlink.org>
+ Copyright 2008-2012 Jo-Philipp Wich <jow@openwrt.org>
+ Licensed to the public under the Apache License 2.0.
+-#}
+
+{% include('header', { blank_page: true, body_class: 'login-page' }) %}
+
+{% const boardinfo = ubus.call('system', 'board') ?? {}; %}
+
+<main class="login-shell">
+	<form method="post" class="login-card">
+		<div class="login-brand">
+			<svg class="login-mark" aria-hidden="true"><use href="{{ media }}/logo.svg#mark"/></svg>
+			<svg class="login-word" role="img" aria-label="AlphaWRT"><use href="{{ media }}/logo.svg#word"/></svg>
+			<span class="brand-host">{{ striptags(boardinfo.hostname ?? '?') }}</span>
+		</div>
+
+		<h2>{{ _('Authorization Required') }}</h2>
+
+		{% if (auth_message): %}
+		<div class="alert-message{% if (auth_plugin): %} warning{% endif %}">
+			{{ auth_message }}
+		</div>
+		{% elif (fuser): %}
+		<div class="alert-message error" role="alert">
+			{{ _('Invalid username and/or password! Please try again.') }}
+		</div>
+		{% endif %}
+
+		<div class="cbi-value">
+			<label class="cbi-value-title" for="luci_username">{{ _('Username') }}</label>
+			<div class="cbi-value-field">
+				<input name="luci_username" id="luci_username" type="text" autocomplete="username" value="{{ entityencode(duser, true) }}">
+			</div>
+		</div>
+		<div class="cbi-value">
+			<label class="cbi-value-title" for="luci_password">{{ _('Password') }}</label>
+			<div class="cbi-value-field">
+				<input name="luci_password" id="luci_password" type="password" autocomplete="current-password" autofocus>
+			</div>
+		</div>
+		{% if (auth_fields): %}
+			{% for (let field in auth_fields): %}
+				<div class="cbi-value">
+					<label class="cbi-value-title" for="{{ field.name }}">{{ _(field.label ?? field.name) }}</label>
+					<div class="cbi-value-field">
+						<input
+							name="{{ field.name }}"
+							id="{{ field.name }}"
+							type="{{ field.type ?? 'text' }}"
+							{% if (field.placeholder): %}placeholder="{{ field.placeholder }}"{% endif %}
+							{% if (field.inputmode): %}inputmode="{{ field.inputmode }}"{% endif %}
+							{% if (field.pattern): %}pattern="{{ field.pattern }}"{% endif %}
+							{% if (field.maxlength): %}maxlength="{{ field.maxlength }}"{% endif %}
+							{% if (field.autocomplete): %}autocomplete="{{ field.autocomplete }}"{% endif %}
+							{% if (field.required): %}required{% endif %}
+						>
+					</div>
+				</div>
+			{% endfor %}
+		{% endif %}
+		{% if (auth_html): %}
+			<div class="cbi-value">
+				{{ auth_html }}
+			</div>
+		{% endif %}
+		{% if (auth_assets): %}
+			{% for (let asset in auth_assets): %}
+				{% if (asset.type == 'script'): %}
+					<script src="{{ asset.src }}"></script>
+				{% endif %}
+			{% endfor %}
+		{% endif %}
+
+		<button class="cbi-button cbi-button-positive important">{{ _('Log in') }}</button>
+	</form>
+</main>
+
+<footer class="login-foot">
+	<span>{{ version.distname }} {{ version.distversion }}</span>
+</footer>
+
+{%
+	let https_ports = uci.get('uhttpd', 'main', 'listen_https') ?? [];
+
+	https_ports = uniq(filter(
+		map(
+			(type(https_ports) == 'string') ? split(https_ports, /\s+/) : https_ports,
+			e => +match(e, /\d+$/)?.[0]
+		),
+		p => (p >= 0 && p <= 65535)
+	));
+%}
+
+<script>
+	/* move to HTTPS when uhttpd also listens there */
+	if (document.location.protocol != 'https:') {
+		{{ https_ports }}.forEach(function(port) {
+			var url = 'https://' + window.location.hostname + ':' + port + window.location.pathname;
+			var img = new Image();
+
+			img.onload = function() { window.location = url };
+			img.src = 'https://' + window.location.hostname + ':' + port + '{{ resource }}/icons/loading.svg?' + Math.random();
+
+			setTimeout(function() { img.src = '' }, 5000);
+		});
+	}
+</script>
+
+{% include('footer', { blank_page: true }) %}

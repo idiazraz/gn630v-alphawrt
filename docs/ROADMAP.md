@@ -8,13 +8,17 @@ AlphaWRT's goal is a full replacement for the GN630V's stock firmware, **includi
 - [x] Persistent UBIFS overlay, in-place sysupgrade
 - [x] MT7530 switch (DSA, 4x GbE), MAC from the U-Boot env, MT7916 radios detected with factory calibration
 - [x] Power/PON/internet LEDs
+- [x] Wi-Fi 6 AP out of the box on both bands (stock SSIDs/keys/country, WPA2/WPA3, 160 MHz on 5 GHz)
+- [x] Encrypted DNS by default (DoQ, DoH over HTTP/3, DoT fallback)
+- [x] AlphaWRT LuCI theme
 
 ## Next
-- [ ] Wi-Fi AP out of the box (add `wpad`, test both bands, TX power vs stock)
+- [ ] Router features: WireGuard, SQM/cake, TCP BBR, packet steering, adblock, attended sysupgrade; a LuCI page for the DNS settings
+- [ ] Wi-Fi: band steering, 802.11r/k/v, throughput vs stock
+- [ ] Branding (release name, hostname, banner)
 - [ ] LAN1-4 port labels, LOS/Wi-Fi/WPS LEDs, reset/WPS buttons, USB
 - [ ] NPU Wi-Fi RX offload (driver present; firmware comes from the user's own stock image)
 - [ ] Rebase the EN7523 Ethernet series onto current OpenWrt main and upstream the board
-- [ ] AlphaWRT LuCI theme and branding
 
 ## GPON / ONT (the hard part)
 1. **Optics:** EN7570 laser driver and BOB calibration from the unit's own flash. Exit: RX power matches stock.

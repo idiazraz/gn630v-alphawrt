@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+	<title>AlphaWRT</title>
+	<defs>
+		<path id="a" fill-rule="evenodd" d="M4 58 22 6h20l18 52H45l-3.5-11h-19L19 58Zm22.3-22h11.4L32 19.5Z"/>
+		<mask id="slash" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+			<rect width="64" height="64" fill="#fff"/>
+			<path d="M-6 50 70 33v3.6L-6 53.6Z" fill="#000"/>
+		</mask>
+	</defs>
+	<g transform="translate(9 0) skewX(-12)" mask="url(#slash)">
+		<use href="#a" x="2.5" y="2.5" fill="#590912"/>
+		<use href="#a" fill="#c51b32" stroke="#d3d8de" stroke-width="2.5" stroke-linejoin="miter" paint-order="stroke"/>
+	</g>
+</svg>

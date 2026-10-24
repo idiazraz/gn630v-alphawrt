@@ -1,0 +1,53 @@
+From 98fb8c864eb8e9a76ebcb0cd1bc440737ddad136 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 10:44:00 +0800
+Subject: [PATCH] airoha: en7523: gn630v: encrypted DNS by default
+
+When dnsproxy is installed, enable it and make dnsmasq forward to it
+instead of the ISP's servers: DNS-over-QUIC and DNS-over-HTTPS (HTTP/3
+when offered) upstreams, DNS-over-TLS fallback. dnsmasq still serves
+the LAN. The script's header shows how to go back to the ISP's DNS.
+---
+ .../etc/uci-defaults/95_alphawrt_dns          | 33 +++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+
+diff --git a/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns b/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+new file mode 100755
+index 0000000000..c83f54056d
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+@@ -0,0 +1,33 @@
++#!/bin/sh
++# AlphaWRT: encrypted DNS by default. dnsmasq still serves the LAN, but
++# forwards everything to dnsproxy (127.0.0.1#5353), which asks the upstreams
++# over DNS-over-QUIC and DNS-over-HTTPS (HTTP/3 when the server offers it),
++# with DNS-over-TLS as the fallback. The plain bootstrap servers only resolve
++# the upstreams' own names.
++#
++# Back to the ISP's DNS:
++#   uci set dnsproxy.global.enabled=0; uci commit dnsproxy
++#   uci -q delete dhcp.@dnsmasq[0].server; uci -q delete dhcp.@dnsmasq[0].noresolv
++#   uci commit dhcp; service dnsproxy stop; service dnsmasq restart
++
++uci -q get dnsproxy.global >/dev/null || exit 0
++
++uci -q batch <<EOF
++set dnsproxy.global.enabled=1
++set dnsproxy.global.http3=1
++delete dnsproxy.servers.bootstrap
++add_list dnsproxy.servers.bootstrap=1.1.1.1
++add_list dnsproxy.servers.bootstrap=9.9.9.9
++delete dnsproxy.servers.upstream
++add_list dnsproxy.servers.upstream=quic://unfiltered.adguard-dns.com
++add_list dnsproxy.servers.upstream=https://cloudflare-dns.com/dns-query
++delete dnsproxy.servers.fallback
++add_list dnsproxy.servers.fallback=tls://dns.quad9.net
++commit dnsproxy
++delete dhcp.@dnsmasq[0].server
++add_list dhcp.@dnsmasq[0].server='127.0.0.1#5353'
++set dhcp.@dnsmasq[0].noresolv=1
++commit dhcp
++EOF
++
++exit 0

@@ -1,0 +1,151 @@
+From c10b84a475316d3fbad1bd610bd9fc4fbeee2777 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 10:20:59 +0800
+Subject: [PATCH] airoha: en7523: gn630v: working Wi-Fi out of the box
+
+Add wpad-mbedtls and iw, so the radios can run WPA2/WPA3 APs.
+
+On first boot, take the Wi-Fi defaults from the stock configuration
+(romfile): regulatory country and the 2.4/5 GHz SSID and passphrase,
+now as WPA2/WPA3 mixed. Without them OpenWrt leaves the radios off.
+
+Then, once, give each band its stock MAC (base +4 / +5) and use
+160 MHz on 5 GHz when a country is set.
+---
+ .../base-files/etc/board.d/03_gn630v_wifi     | 69 +++++++++++++++++++
+ .../etc/hotplug.d/ieee80211/12-gn630v-wifi    | 35 ++++++++++
+ target/linux/airoha/image/en7523.mk           |  3 +-
+ 3 files changed, 106 insertions(+), 1 deletion(-)
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi
+
+diff --git a/target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi b/target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi
+new file mode 100755
+index 0000000000..400f3c3c08
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi
+@@ -0,0 +1,69 @@
++#!/bin/sh
++# Skyworth GN630V: Wi-Fi defaults from the stock configuration, so the box
++# keeps the network name and key the user already has (now WPA2/WPA3), and
++# the stock regulatory country. Only reads the stock "romfile" (gzip XML);
++# when nothing usable is found, OpenWrt leaves the radios disabled.
++
++. /lib/functions.sh
++. /lib/functions/uci-defaults.sh
++
++[ "$(board_name)" = "skyworth,gn630v" ] || exit 0
++
++romfile_xml() {
++	local mtdnum
++
++	mtdnum=$(find_mtd_index romfile)
++	[ -n "$mtdnum" ] || return 1
++	zcat "/dev/mtd$mtdnum" 2>/dev/null
++}
++
++# stock_attr <section> <element> <attribute>: first value inside <section>
++stock_attr() {
++	awk -v sec="<$1>" -v el="<$2 " -v at=" $3=\"" '
++		index($0, sec) { f = 1 }
++		f && index($0, el) && (i = index($0, at)) {
++			v = substr($0, i + length(at)); print substr(v, 1, index(v, "\"") - 1); exit
++		}' "$XML"
++}
++
++unxml() {
++	sed -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' -e "s/&apos;/'/g" -e 's/&amp;/\&/g'
++}
++
++# stock stores the country by name
++country_code() {
++	case "$1" in
++	Malaysia) echo MY ;; Singapore) echo SG ;; Indonesia) echo ID ;;
++	Thailand) echo TH ;; Philippines) echo PH ;; Vietnam|"Viet Nam") echo VN ;;
++	Brunei*) echo BN ;; Cambodia) echo KH ;; Myanmar) echo MM ;;
++	China) echo CN ;; "Hong Kong") echo HK ;; Taiwan) echo TW ;;
++	India) echo IN ;; Pakistan) echo PK ;; Bangladesh) echo BD ;;
++	Japan) echo JP ;; Korea|"South Korea") echo KR ;;
++	Australia) echo AU ;; "New Zealand") echo NZ ;;
++	Brazil) echo BR ;; Mexico) echo MX ;; "United States"|USA) echo US ;;
++	Canada) echo CA ;; "United Kingdom"|UK) echo GB ;;
++	Germany) echo DE ;; France) echo FR ;; Spain) echo ES ;; Italy) echo IT ;;
++	Turkey) echo TR ;; "Saudi Arabia") echo SA ;; "United Arab Emirates"|UAE) echo AE ;;
++	"South Africa") echo ZA ;; Nigeria) echo NG ;; Egypt) echo EG ;;
++	esac
++}
++
++XML=/tmp/gn630v-romfile.xml
++romfile_xml > "$XML" || { rm -f "$XML"; exit 0; }
++
++board_config_update
++
++country=$(country_code "$(stock_attr WLan Common Country | unxml)")
++[ -n "$country" ] && ucidef_set_country "$country"
++
++for band in 2g:WLan 5g:WLan11ac; do
++	ssid=$(stock_attr "${band#*:}" Entry0 SSID | unxml)
++	key=$(stock_attr "${band#*:}" Entry0 WPAPSK | unxml)
++	# WPA2 passphrase (8-63) or a 64-hex PSK
++	[ -n "$ssid" ] && [ ${#key} -ge 8 ] && [ ${#key} -le 64 ] &&
++		ucidef_set_wireless "${band%%:*}" "$ssid" sae-mixed "$key"
++done
++
++board_config_flush
++rm -f "$XML"
++exit 0
+diff --git a/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi
+new file mode 100755
+index 0000000000..31c69b1af3
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi
+@@ -0,0 +1,35 @@
++#!/bin/sh
++# Skyworth GN630V: one-time Wi-Fi tuning once "wifi config" (10-wifi-detect)
++# has written the defaults: stock-style per-band MACs (base +4 on 2.4 GHz,
++# +5 on 5 GHz; the hardware gives both bands the same one) and 160 MHz on
++# 5 GHz when a country is set. Recorded in the wireless config itself, so
++# later changes by the user are left alone.
++
++[ "$ACTION" = add ] || exit 0
++
++. /lib/functions.sh
++. /lib/functions/system.sh
++
++[ "$(board_name)" = "skyworth,gn630v" ] || exit 0
++[ "$(uci -q get wireless.alphawrt.tuned)" = 1 ] && exit 0
++uci -q get wireless.radio1 >/dev/null || exit 0
++
++base=$(cat /sys/class/net/eth0/address)		# eth0 = U-Boot env ethaddr
++[ -n "$base" ] || exit 0
++
++for radio in radio0 radio1; do
++	case "$(uci -q get wireless.$radio.band)" in
++	2g) offset=4 ;;
++	5g) offset=5
++		[ -n "$(uci -q get wireless.$radio.country)" ] &&
++			uci set wireless.$radio.htmode=HE160 ;;
++	*) continue ;;
++	esac
++	for iface in $(uci show wireless | sed -n "s/^wireless\.\([^.]*\)\.device='$radio'$/\1/p"); do
++		uci set wireless.$iface.macaddr="$(macaddr_add "$base" $offset)"
++	done
++done
++
++uci set wireless.alphawrt=alphawrt
++uci set wireless.alphawrt.tuned=1
++uci commit wireless
+diff --git a/target/linux/airoha/image/en7523.mk b/target/linux/airoha/image/en7523.mk
+index ab2473c0f7..42d12be5d6 100644
+--- a/target/linux/airoha/image/en7523.mk
++++ b/target/linux/airoha/image/en7523.mk
+@@ -39,7 +39,8 @@ define Device/skyworth_gn630v
+   DEVICE_VENDOR := Skyworth
+   DEVICE_MODEL := GN630V
+   DEVICE_DTS := en7523-skyworth-gn630v
+-  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7916-firmware ubi-utils
++  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7916-firmware ubi-utils \
++	wpad-mbedtls iw
+   KERNEL := kernel-bin | lzma | \
+ 	tclinux-fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+   IMAGE_SIZE := 22528k

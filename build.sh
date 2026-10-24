@@ -21,8 +21,9 @@ cd "$DIR"
 git checkout -q -B alphawrt "$BASE"
 git am -q "$HERE"/patches/*.patch
 
+{ cat feeds.conf.default; echo "src-link alphawrt $HERE/package"; } > feeds.conf
 ./scripts/feeds update -a
-./scripts/feeds install luci
+./scripts/feeds install luci dnsproxy luci-theme-alphawrt
 
 cp "$HERE/config/gn630v.config" .config
 make defconfig
