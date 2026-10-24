@@ -1,5 +1,31 @@
 [
 	{
+		"id": "huawei-hg8245x6-8n-30",
+		"name": "Huawei HG8245X6-8N-30",
+		"vendor_id": "HWTC",
+		"equipment_id": "HG8245X6-8N-30",
+		"hardware_version": "32B0.E",
+		"software_version_0": "V5R021C10S220",
+		"software_version_1": "V5R021C10S220",
+		"traffic_management_option": "",
+		"isps": [
+			"time"
+		]
+	},
+	{
+		"id": "huawei-hg8240h",
+		"name": "Huawei HG8240H",
+		"vendor_id": "HWTC",
+		"equipment_id": "HG8240H",
+		"hardware_version": "BF9.A",
+		"software_version_0": "V3R017C10S100",
+		"software_version_1": "V3R017C10S100",
+		"traffic_management_option": "",
+		"isps": [
+			"time"
+		]
+	},
+	{
 		"id": "huawei-hg8240h5",
 		"name": "Huawei HG8240H5",
 		"vendor_id": "HWTC",
@@ -7,7 +33,13 @@
 		"hardware_version": "168D.A",
 		"software_version_0": "V5R019C00S105",
 		"software_version_1": "V5R019C00S105",
-		"traffic_management_option": "2"
+		"traffic_management_option": "2",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
 	},
 	{
 		"id": "huawei-hg8140h5",
@@ -17,7 +49,13 @@
 		"hardware_version": "31AD.A",
 		"software_version_0": "V5R022C10S458",
 		"software_version_1": "V5R022C10S458",
-		"traffic_management_option": "0"
+		"traffic_management_option": "0",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
 	},
 	{
 		"id": "huawei-hg8145x6",
@@ -27,7 +65,13 @@
 		"hardware_version": "1CDD.A",
 		"software_version_0": "V5R020C10S135",
 		"software_version_1": "V5R020C10S135",
-		"traffic_management_option": "2"
+		"traffic_management_option": "2",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
 	},
 	{
 		"id": "huawei-eg8010gv6",
@@ -37,7 +81,10 @@
 		"hardware_version": "260F.A",
 		"software_version_0": "V5R020C10S035",
 		"software_version_1": "V5R020C10S035",
-		"traffic_management_option": "2"
+		"traffic_management_option": "2",
+		"isps": [
+			"allo"
+		]
 	},
 	{
 		"id": "skyworth-gn630e",
@@ -47,7 +94,13 @@
 		"hardware_version": "CW1.0",
 		"software_version_0": "V1.0.0.3A",
 		"software_version_1": "V1.0.0.3A",
-		"traffic_management_option": "0"
+		"traffic_management_option": "0",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
 	},
 	{
 		"id": "skyworth-sk-g7220",
@@ -57,7 +110,13 @@
 		"hardware_version": "CW3.0",
 		"software_version_0": "V1.0.0.6",
 		"software_version_1": "V1.0.0.6",
-		"traffic_management_option": "0"
+		"traffic_management_option": "0",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
 	},
 	{
 		"id": "dlink-dpn-fx3060v",
@@ -67,7 +126,13 @@
 		"hardware_version": "B1",
 		"software_version_0": "V2.0.6",
 		"software_version_1": "V2.0.6",
-		"traffic_management_option": "2"
+		"traffic_management_option": "2",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
 	},
 	{
 		"id": "nokia-g-240g-e",
@@ -77,6 +142,28 @@
 		"hardware_version": "3FE48153CBAA",
 		"software_version_0": "3FE46606BGCB45",
 		"software_version_1": "3FE46606BGCB45",
-		"traffic_management_option": "0"
+		"traffic_management_option": "0",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
+	},
+	{
+		"id": "zte-f620",
+		"name": "ZTE F620",
+		"vendor_id": "ZTEG",
+		"equipment_id": "F620",
+		"hardware_version": "V7.0",
+		"software_version_0": "V9.0.10P4N3",
+		"software_version_1": "V9.0.10P4N3",
+		"traffic_management_option": "",
+		"isps": [
+			"unifi",
+			"maxis",
+			"celcomdigi-celcom",
+			"celcomdigi-digi"
+		]
 	}
 ]

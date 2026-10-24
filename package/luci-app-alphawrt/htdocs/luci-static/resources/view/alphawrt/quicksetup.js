@@ -29,13 +29,15 @@ var callSetPassword = rpc.declare({
 	expect: { result: false }
 });
 
-var IDENTITY = [ 'serial', 'password', 'vendor_id', 'equipment_id',
+var IDENTITY = [ 'serial', 'password', 'equipment_id',
 	'hardware_version', 'software_version_0', 'software_version_1',
 	'omcc_version', 'traffic_management_option' ];
 
 /* identity fields an ONT-model preset fills; serial and PLOAM password are
- * per unit and always come from the user */
-var ONT_FIELDS = [ 'vendor_id', 'equipment_id', 'hardware_version',
+ * per unit and always come from the user. The vendor ID is not among them:
+ * it is always the serial's first four characters (setting it separately
+ * rewrites them, and the OLT would see a serial it never registered). */
+var ONT_FIELDS = [ 'equipment_id', 'hardware_version',
 	'software_version_0', 'software_version_1', 'traffic_management_option' ];
 
 function wanVlan(device) {
@@ -86,6 +88,9 @@ return view.extend({
 		});
 
 		this.presets = presets;
+
+		var ispNames = {};
+		presets.forEach(function(p) { ispNames[p.id] = p.short; });
 		m = this.map = new form.JSONMap(d, _('Quick Setup'),
 			_('Get the box online in one page. Changes are applied with a connectivity check, like any other LuCI change, and can be changed again later from Quick Setup in the top bar.'));
 
@@ -115,12 +120,16 @@ return view.extend({
 		};
 
 		s = m.section(form.NamedSection, 'pon', 'pon', _('Fibre (GPON) identity'),
-			_('The ISP\'s OLT only accepts the ONT it has on record. Copy these values from the label and status page of the ONT your ISP gave you. If your ISP supplied this unit itself, use the identity saved by the stock firmware.'));
+			_('The ISP\'s OLT only accepts the ONT it has on record: the one your ISP installed. Pick its model, then copy the serial number and PLOAM password from its label and status page. Only if your ISP supplied this unit itself, use the identity saved by the stock firmware.'));
 
 		o = s.option(form.ListValue, '_ont', _('ISP ONT model'),
 			_('The ONT your ISP gave you. Fills in everything below except the serial number and PLOAM password, which are printed on that ONT.'));
 		o.value('', _('-- keep the values below --'));
-		onts.forEach(function(t) { o.value(t.id, t.name); });
+		onts.forEach(function(t) {
+			var who = (t.isps || []).map(function(i) { return ispNames[i]; })
+				.filter(function(n, i, a) { return n && a.indexOf(n) == i; });
+			o.value(t.id, who.length ? '%s (%s)'.format(t.name, who.join(', ')) : t.name);
+		});
 		o.onchange = function(ev, sid, value) {
 			var t = presetById(onts, value);
 			if (t)
@@ -131,6 +140,10 @@ return view.extend({
 		o.inputtitle = _('Use the identity saved by the stock firmware');
 		o.inputstyle = 'action';
 		o.onclick = function() {
+			var p = presetById(self.presets, self.map.lookupOption('isp', 'isp')[0].formvalue('isp'));
+			if (p && p.stock_identity === false)
+				return ui.addNotification(null, E('p', {},
+					_('%s does not supply this unit, so its own identity is not registered there. Pick the ONT model your ISP gave you and copy its serial number and PLOAM password.').format(p.name)), 'warning');
 			return callStockIdentity().then(function(r) {
 				if (!r || r.error)
 					return ui.addNotification(null, E('p', {}, (r && r.error) || _('Could not read the stock configuration')), 'warning');
@@ -152,11 +165,6 @@ return view.extend({
 		o.password = true;
 		o.validate = function(sid, v) {
 			return (!v || v.length <= 10 || /^[0-9A-Fa-f]{20}$/.test(v)) ? true : _('Expected up to 10 characters or 20 hex digits');
-		};
-
-		o = s.option(form.Value, 'vendor_id', _('Vendor ID'), _('Empty: taken from the serial number.'));
-		o.validate = function(sid, v) {
-			return (!v || /^[A-Za-z0-9]{4}$/.test(v)) ? true : _('Expected 4 characters');
 		};
 
 		o = s.option(form.Value, 'equipment_id', _('Equipment ID'), _('The ONT model as the OLT sees it.'));
@@ -238,8 +246,8 @@ return view.extend({
 		IDENTITY.forEach(function(k) {
 			uci.set('omci', 'main', k, g('pon', k));
 		});
-		if (!g('pon', 'vendor_id') && g('pon', 'serial'))
-			uci.set('omci', 'main', 'vendor_id', g('pon', 'serial').substr(0, 4).toUpperCase());
+		/* the vendor ID is the serial's own first four characters */
+		uci.set('omci', 'main', 'vendor_id', g('pon', 'serial').substr(0, 4));
 		uci.set('omci', 'main', 'enabled', '1');
 		if (p && p.olt_profile)
 			uci.set('omci', 'main', 'olt_profile', p.olt_profile);

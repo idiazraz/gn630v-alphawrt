@@ -6,7 +6,9 @@
 		"vlan": 500,
 		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 400 and IPTV VLAN 600; Quick Setup only sets up the Internet VLAN. TM usually maps service to a LAN port (PPTP)."
+		"note": "Voice is VLAN 400 and IPTV VLAN 600; Quick Setup only sets up the Internet VLAN. TM usually maps service to a LAN port (PPTP).",
+		"stock_identity": true,
+		"short": "Unifi"
 	},
 	{
 		"id": "maxis",
@@ -15,7 +17,9 @@
 		"vlan": 621,
 		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 822."
+		"note": "Voice is VLAN 822.",
+		"stock_identity": true,
+		"short": "Maxis"
 	},
 	{
 		"id": "maxis-own",
@@ -24,7 +28,9 @@
 		"vlan": 11,
 		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 14. Most Maxis lines run on the TM network (VLAN 621): pick that if you are not sure."
+		"note": "Voice is VLAN 14. Most Maxis lines run on the TM network (VLAN 621): pick that if you are not sure.",
+		"stock_identity": false,
+		"short": "Maxis"
 	},
 	{
 		"id": "celcomdigi-celcom",
@@ -33,7 +39,9 @@
 		"vlan": 623,
 		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 400. Former Digi lines use VLAN 629."
+		"note": "Voice is VLAN 400. Former Digi lines use VLAN 629.",
+		"stock_identity": true,
+		"short": "CelcomDigi"
 	},
 	{
 		"id": "celcomdigi-digi",
@@ -42,7 +50,9 @@
 		"vlan": 629,
 		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 400. Former Celcom lines use VLAN 623."
+		"note": "Voice is VLAN 400. Former Celcom lines use VLAN 623.",
+		"stock_identity": true,
+		"short": "CelcomDigi"
 	},
 	{
 		"id": "time",
@@ -51,7 +61,9 @@
 		"vlan": 499,
 		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 140. The Internet VLAN is usually 499 but can differ by area."
+		"note": "TIME supplies Huawei ONTs: pick yours under ISP ONT model and copy its serial (HWTC...). TIME's PLOAM password is the ONT authentication password, the same as your PPPoE password in TIME Self Care. Internet VLAN is usually 499 (it can differ by area); voice is VLAN 140.",
+		"stock_identity": false,
+		"short": "TIME"
 	},
 	{
 		"id": "allo",
@@ -60,7 +72,9 @@
 		"vlan": 990,
 		"omcc_version": "160",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 992. If Allo gave you a PPPoE username, choose PPPoE."
+		"note": "Allo supplies Huawei ONTs: pick yours and copy its serial and password. Voice is VLAN 992.",
+		"stock_identity": false,
+		"short": "Allo"
 	},
 	{
 		"id": "other",
@@ -69,6 +83,8 @@
 		"vlan": 0,
 		"omcc_version": "",
 		"olt_profile": "auto",
-		"note": "Enter the values your ISP gave you."
+		"note": "Enter the values your ISP gave you.",
+		"stock_identity": true,
+		"short": ""
 	}
 ]

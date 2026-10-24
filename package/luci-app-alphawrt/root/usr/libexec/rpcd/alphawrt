@@ -7,30 +7,43 @@
 . /lib/functions.sh
 . /usr/share/libubox/jshn.sh
 
-# onu_attr <attribute>: value inside <GPON><ONU .../> of the stock config
-onu_attr() {
-	awk -v at=" $1=\"" '
+# gpon_attr <element> <attribute>: value of <GPON><element .../> in the
+# stock config
+gpon_attr() {
+	awk -v el="<$1 " -v at=" $2=\"" '
 		index($0, "<GPON>") { f = 1 }
-		f && index($0, "<ONU ") && (i = index($0, at)) {
+		index($0, "</GPON>") { f = 0 }
+		f && index($0, el) && (i = index($0, at)) {
 			v = substr($0, i + length(at)); print substr(v, 1, index(v, "\"") - 1); exit
 		}' "$XML" | sed -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' \
 		-e "s/&apos;/'/g" -e 's/&amp;/\&/g'
 }
 
 stock_identity() {
-	local mtdnum omcc
+	local mtdnum serial omcc sw0 sw1
 
 	json_init
 	mtdnum=$(find_mtd_index romfile)
 	XML=/tmp/alphawrt-romfile.xml
 	if [ -n "$mtdnum" ] && zcat "/dev/mtd$mtdnum" > "$XML" 2>/dev/null; then
-		json_add_string serial "$(onu_attr SerialNumber)"
-		json_add_string password "$(onu_attr Password)"
-		json_add_string vendor_id "$(onu_attr VendorId)"
-		json_add_string equipment_id "$(onu_attr EquipmentId)"
-		json_add_string hardware_version "$(onu_attr Version)"
+		serial=$(gpon_attr ONU SerialNumber)
+		json_add_string serial "$serial"
+		json_add_string password "$(gpon_attr ONU Password)"
+		# the OLT registered the serial, whose first four characters are the
+		# vendor ID: stock's separate OMCI vendor ID would overwrite them
+		json_add_string vendor_id "$(echo "$serial" | cut -c1-4)"
+		json_add_string equipment_id "$(gpon_attr ONU EquipmentId)"
+		json_add_string hardware_version "$(gpon_attr ONU Version)"
+		# installing AlphaWRT from the stock web UI records "AlphaWRT" as that
+		# slot's version: report the stock version for both slots instead
+		sw0=$(gpon_attr SoftImage0 Version)
+		sw1=$(gpon_attr SoftImage1 Version)
+		case "$sw0" in AlphaWRT*) sw0=$sw1 ;; esac
+		case "$sw1" in AlphaWRT*) sw1=$sw0 ;; esac
+		json_add_string software_version_0 "$sw0"
+		json_add_string software_version_1 "$sw1"
 		# stock keeps it in hex ("A0"), the OMCI agent takes decimal
-		omcc=$(onu_attr OMCCVersion)
+		omcc=$(gpon_attr ONU OMCCVersion)
 		case "$omcc" in
 		[0-9A-Fa-f][0-9A-Fa-f]) omcc=$(printf %d "0x$omcc") ;;
 		*) omcc= ;;

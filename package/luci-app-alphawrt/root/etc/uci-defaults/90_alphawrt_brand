@@ -1,0 +1,27 @@
+#!/bin/sh
+# AlphaWRT name: host name (only while it is still the stock "OpenWrt") and
+# the login banner. Runs again after a sysupgrade, which keeps the host name
+# the user chose.
+
+if [ "$(uci -q get system.@system[0].hostname)" = OpenWrt ]; then
+	uci set system.@system[0].hostname=AlphaWRT
+	uci commit system
+	echo AlphaWRT > /proc/sys/kernel/hostname
+fi
+
+. /etc/openwrt_release
+
+cat > /etc/banner <<EOF
+     ___    __      __          _      ______  ______
+    /   |  / /___  / /_  ____ _| |    / / __ \/_  __/
+   / /| | / / __ \/ __ \/ __ \`/| | /| / / /_/ / / /
+  / ___ |/ / /_/ / / / / /_/ / | |/ |/ / _, _/ / /
+ /_/  |_/_/ .___/_/ /_/\__,_/  |__/|__/_/ |_| /_/
+         /_/
+ -----------------------------------------------------
+ $DISTRIB_DESCRIPTION
+ Basic and Advanced web interface: http://$(uci -q get network.lan.ipaddr || echo 192.168.1.1)
+ -----------------------------------------------------
+EOF
+
+exit 0
