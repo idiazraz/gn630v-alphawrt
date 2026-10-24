@@ -3,22 +3,63 @@
 		"description": "Grant access to the AlphaWRT Quick Setup and Basic pages",
 		"read": {
 			"ubus": {
-				"alphawrt": [ "presets", "stock_identity" ],
-				"iwinfo": [ "assoclist", "info" ],
-				"luci-rpc": [ "getDHCPLeases", "getNetworkDevices", "getWirelessDevices", "getBoardJSON", "getHostHints" ],
-				"network": [ "get_proto_handlers" ],
-				"network.interface": [ "dump" ],
-				"omci.agent": [ "status" ],
-				"system": [ "board", "info" ]
+				"alphawrt": [
+					"banks",
+					"presets",
+					"stock_identity"
+				],
+				"iwinfo": [
+					"assoclist",
+					"info"
+				],
+				"luci-rpc": [
+					"getDHCPLeases",
+					"getNetworkDevices",
+					"getWirelessDevices",
+					"getBoardJSON",
+					"getHostHints"
+				],
+				"network": [
+					"get_proto_handlers"
+				],
+				"network.interface": [
+					"dump"
+				],
+				"omci.agent": [
+					"status"
+				],
+				"system": [
+					"board",
+					"info"
+				]
 			},
-			"uci": [ "alphawrt", "network", "omci", "system", "wireless" ]
+			"uci": [
+				"alphawrt",
+				"network",
+				"omci",
+				"system",
+				"wireless"
+			]
 		},
 		"write": {
 			"ubus": {
-				"luci": [ "setPassword" ],
-				"system": [ "reboot" ]
+				"luci": [
+					"setPassword"
+				],
+				"system": [
+					"reboot"
+				],
+				"alphawrt": [
+					"set_bank"
+				]
 			},
-			"uci": [ "alphawrt", "network", "omci", "system", "wireless" ]
+			"uci": [
+				"alphawrt",
+				"network",
+				"omci",
+				"system",
+				"wireless"
+			]
 		}
 	}
 }

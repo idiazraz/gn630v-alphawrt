@@ -3,6 +3,9 @@
 #   presets         ISP and ONT-model presets (/usr/share/alphawrt/*.json)
 #   stock_identity  the GPON identity the stock firmware saved in its
 #                   "romfile" (gzip XML), so a unit the ISP registered keeps it
+#   banks           what each flash bank holds, which one runs and which one
+#                   U-Boot boots next (alphawrt-bootbank)
+#   set_bank        {"bank": "a"|"b"}: boot that bank from the next boot
 
 . /lib/functions.sh
 . /usr/share/libubox/jshn.sh
@@ -56,9 +59,45 @@ stock_identity() {
 	json_dump
 }
 
+banks() {
+	local out
+
+	out=$(alphawrt-bootbank 2>&1)
+	json_init
+	json_add_string running "$(echo "$out" | sed -n 's/^running: *bank \([ab]\).*/\1/p')"
+	json_add_string next "$(echo "$out" | sed -n 's/^next boot: *bank \([ab]\).*/\1/p')"
+	json_add_string a "$(echo "$out" | sed -n 's/^bank a: *//p')"
+	json_add_string b "$(echo "$out" | sed -n 's/^bank b: *//p')"
+	json_dump
+}
+
+set_bank() {
+	local bank out
+
+	read -r input
+	json_load "$input"
+	json_get_var bank bank
+	json_init
+	case "$bank" in
+	a|b)
+		if out=$(alphawrt-bootbank "$bank" 2>&1); then
+			json_add_boolean ok 1
+		else
+			json_add_boolean ok 0
+		fi
+		json_add_string message "$out"
+		;;
+	*)
+		json_add_boolean ok 0
+		json_add_string message "bank must be a or b"
+		;;
+	esac
+	json_dump
+}
+
 case "$1" in
 list)
-	echo '{ "presets": {}, "stock_identity": {} }'
+	echo '{ "presets": {}, "stock_identity": {}, "banks": {}, "set_bank": { "bank": "a" } }'
 	;;
 call)
 	case "$2" in
@@ -68,6 +107,12 @@ call)
 		;;
 	stock_identity)
 		stock_identity
+		;;
+	banks)
+		banks
+		;;
+	set_bank)
+		set_bank
 		;;
 	esac
 	;;
