@@ -55,10 +55,10 @@
 	--err-tint: oklch(0.60 0.200 30 / 0.10);
 
 	/* logo (logo.svg#mark and #word read these) */
-	--logo-ring: var(--accent);
+	--logo-shade: oklch(0.42 0.165 22);
 	--logo-glyph: oklch(0.53 0.200 22);
-	--logo-deep: oklch(0.30 0.110 22);
-	--logo-key: oklch(1 0 0);
+	--logo-hi: oklch(0.62 0.200 22);
+	--logo-blade: var(--accent);
 	--logo-word: var(--ink);
 	--logo-word-accent: var(--crimson-ink);
 
@@ -147,8 +147,7 @@
 	--warn-tint: oklch(0.84 0.140 82 / 0.13);
 	--err-tint: oklch(0.72 0.170 30 / 0.15);
 
-	--logo-ring: oklch(0.66 0.170 250);
-	--logo-key: oklch(0.88 0.010 255);
+	--logo-blade: oklch(0.66 0.170 250);
 
 	--glass: oklch(0.21 0.005 255 / 0.70);
 	--glass-strong: oklch(0.23 0.005 255 / 0.86);
@@ -1063,8 +1062,8 @@ header .brand {
 }
 
 header .brand-mark {
-	width: 36px;
-	height: 32px;
+	width: 37px;
+	height: 30px;
 	flex: none;
 }
 
@@ -2852,8 +2851,7 @@ body.login-page {
 	--err-tint: oklch(0.72 0.170 30 / 0.22);
 	--warn: oklch(0.86 0.130 82);
 	--warn-tint: oklch(0.84 0.140 82 / 0.18);
-	--logo-ring: oklch(0.66 0.170 250);
-	--logo-key: oklch(0.88 0.010 255);
+	--logo-blade: oklch(0.66 0.170 250);
 	/* re-resolve against this page's ink, not the root palette's */
 	--logo-word: var(--ink);
 	--logo-word-accent: var(--crimson-ink);
@@ -2897,8 +2895,8 @@ body.login-page {
 }
 
 .login-brand .login-mark {
-	width: 128px;
-	height: 113px;
+	width: 118px;
+	height: 96px;
 	margin-bottom: 4px;
 }
 

@@ -1,43 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 28 188 166" width="188" height="166">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="1 1 76 62" width="76" height="62">
 	<title>AlphaWRT</title>
 	<!--
 		AlphaWRT logo. Two symbols, referenced from the theme as logo.svg#mark and
 		logo.svg#word so their colours follow the page through the CSS custom
-		properties logo-ring, logo-glyph, logo-deep, logo-key, logo-word and
+		properties logo-shade, logo-glyph, logo-hi, logo-blade, logo-word and
 		logo-word-accent. The fallbacks are the light-theme colours.
 	-->
 	<defs>
-		<!-- slashed A, 64x64 units -->
-		<path id="a-shape" fill-rule="evenodd" d="M4 58 22 6h20l18 52H45l-3.5-11h-19L19 58Zm22.3-22h11.4L32 19.5Z"/>
-		<mask id="a-slash" maskUnits="userSpaceOnUse" x="-10" y="-10" width="90" height="90">
-			<rect x="-10" y="-10" width="90" height="90" fill="#fff"/>
-			<path d="M-6 50 70 33v3.6L-6 53.6Z" fill="#000"/>
+		<!-- A on a 64-unit grid with a chevron arrowhead on its right leg -->
+		<path id="a-shape" fill-rule="evenodd" d="M4 60 26 4h12l20.5 26-9.5 10.5L60 60H46l-4.5-12h-19L18 60ZM26.5 38h11L32 22Z"/>
+		<path id="a-chevron" d="M31 4h7l20.5 26-9.5 10.5-4.5-4.5 6.5-6Z"/>
+		<!-- slash: rises from inside the left leg and leaves under the chevron as a blade -->
+		<path id="a-blade" d="M8.8 55.5 53.45 40.53 74 40 55.55 49.07 9.2 56.5Z"/>
+		<clipPath id="a-right"><path d="M32 0H80V64H32Z"/></clipPath>
+		<mask id="a-cuts" maskUnits="userSpaceOnUse" x="-5" y="-5" width="90" height="75">
+			<rect x="-5" y="-5" width="90" height="75" fill="#fff"/>
+			<use href="#a-chevron" fill="#000" stroke="#000" stroke-width="3.2"/>
+			<use href="#a-blade" fill="#000" stroke="#000" stroke-width="2.8" stroke-linejoin="round"/>
+		</mask>
+		<mask id="a-blade-cut" maskUnits="userSpaceOnUse" x="-5" y="-5" width="90" height="75">
+			<rect x="-5" y="-5" width="90" height="75" fill="#fff"/>
+			<use href="#a-blade" fill="#000" stroke="#000" stroke-width="2.8" stroke-linejoin="round"/>
 		</mask>
 
-		<!-- tilted ring of uneven weight -->
-		<path id="ring" fill-rule="evenodd" transform="rotate(-20 100 100)" d="M12 100a88 50 0 1 0 176 0a88 50 0 1 0-176 0ZM30 96a74 38 0 1 0 148 0a74 38 0 1 0-148 0Z"/>
-		<!-- the near (lower right) arc passes in front of the A and its blade -->
-		<clipPath id="ring-front"><path d="M100 108H210V210H100Z"/></clipPath>
-		<!-- cuts a gap into the A around that front part -->
-		<mask id="ring-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="210" height="210">
-			<rect width="210" height="210" fill="#fff"/>
-			<use href="#ring" clip-path="url(#ring-front)" fill="#000" stroke="#000" stroke-width="7"/>
-		</mask>
-
-		<symbol id="mark" viewBox="12 28 188 166">
-			<use href="#ring" style="fill:var(--logo-ring, #006be2)"/>
-			<g mask="url(#ring-gap)">
-				<!-- blade trailing from the right foot -->
-				<path d="M131 128H151L197 190L155 152Z" style="fill:var(--logo-deep, #590912)"/>
-				<path d="M128 125H148L193 186L152 149Z" style="fill:var(--logo-glyph, #c51b32);stroke:var(--logo-key, #ffffff);stroke-width:1.6;paint-order:stroke"/>
-				<g transform="translate(36 22) scale(1.9375)">
-					<g transform="translate(9 0) skewX(-12)" mask="url(#a-slash)">
-						<use href="#a-shape" x="2.5" y="2.5" style="fill:var(--logo-deep, #590912)"/>
-						<use href="#a-shape" style="fill:var(--logo-glyph, #c51b32);stroke:var(--logo-key, #ffffff);stroke-width:2.5;paint-order:stroke"/>
-					</g>
-				</g>
+		<symbol id="mark" viewBox="1 1 76 62">
+			<g mask="url(#a-cuts)">
+				<use href="#a-shape" style="fill:var(--logo-shade, #8e1222)"/>
+				<use href="#a-shape" clip-path="url(#a-right)" style="fill:var(--logo-glyph, #c51b32)"/>
 			</g>
-			<use href="#ring" clip-path="url(#ring-front)" style="fill:var(--logo-ring, #006be2)"/>
+			<use href="#a-chevron" mask="url(#a-blade-cut)" style="fill:var(--logo-hi, #e8394a)"/>
+			<use href="#a-blade" style="fill:var(--logo-blade, #006be2)"/>
 		</symbol>
 
 		<!-- wordmark: chamfered capitals, 40-unit cap height, one speed slit -->
@@ -62,5 +54,5 @@
 			</g>
 		</symbol>
 	</defs>
-	<use href="#mark" x="12" y="28" width="188" height="166"/>
+	<use href="#mark" x="1" y="1" width="76" height="62"/>
 </svg>
