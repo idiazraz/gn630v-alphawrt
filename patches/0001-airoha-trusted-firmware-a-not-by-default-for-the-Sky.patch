@@ -1,0 +1,644 @@
+From a134098ca92424e105b91e3ab8b6433bce7cf64f Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 11:51:40 +0800
+Subject: [PATCH] airoha: trusted-firmware-a: not by default for the Skyworth
+ GN630V
+
+The GN630V keeps its vendor bootloader, so it needs none of the EN7523 TF-A images (whose host build also needs a Linux-only toolchain).
+---
+ .../boot/arm-trusted-firmware-airoha/Makefile |   9 +-
+ .../base-files/etc/board.d/03_gn630v_wifi     |  69 +++++++++++
+ .../etc/hotplug.d/ieee80211/12-gn630v-wifi    |  35 ++++++
+ .../etc/uci-defaults/95_alphawrt_dns          |  33 +++++
+ .../base-files/lib/preinit/79_alphawrt_ubi    |  25 ++++
+ .../en7523/base-files/lib/upgrade/alphawrt.sh | 116 ++++++++++++++++++
+ .../base-files/usr/sbin/alphawrt-bootbank     |  49 ++++++++
+ target/linux/airoha/image/tclinux-fit.sh      |  70 +++++++++++
+ target/linux/airoha/image/tclinux-trx.sh      |  19 ++-
+ ...add-Foresee-F35SQB002G-flash-support.patch |  72 +++++++++++
+ 10 files changed, 492 insertions(+), 5 deletions(-)
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+ create mode 100644 target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi
+ create mode 100644 target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh
+ create mode 100755 target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank
+ create mode 100755 target/linux/airoha/image/tclinux-fit.sh
+ create mode 100644 target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch
+
+diff --git a/package/boot/arm-trusted-firmware-airoha/Makefile b/package/boot/arm-trusted-firmware-airoha/Makefile
+index 332693433c..00bf3b724a 100644
+--- a/package/boot/arm-trusted-firmware-airoha/Makefile
++++ b/package/boot/arm-trusted-firmware-airoha/Makefile
+@@ -56,7 +56,8 @@ define Trusted-Firmware-A/en7523-bl1
+   SOC:=EN7523
+   PREBUILT:=1
+   PREBUILT_IMAGE:=$(PKG_BUILD_DIR)/plat/ecnt/blobs/en7523/bl1.bin
+-  DEFAULT:=y
++  # the GN630V keeps its vendor bootloader
++  DEFAULT:=y if !TARGET_airoha_en7523_DEVICE_skyworth_gn630v
+ endef
+ 
+ define Trusted-Firmware-A/bl2/Default
+@@ -88,7 +89,8 @@ define Trusted-Firmware-A/en7523-bl2
+   NAME:=Airoha EN7523 BL21/BL2
+   BUILD_SUBTARGET:=en7523
+   SOC:=EN7523
+-  DEFAULT:=y
++  # the GN630V keeps its vendor bootloader
++  DEFAULT:=y if !TARGET_airoha_en7523_DEVICE_skyworth_gn630v
+ endef
+ 
+ define Trusted-Firmware-A/bl31/Default
+@@ -122,7 +124,8 @@ define Trusted-Firmware-A/en7523-bl31
+   SOC:=EN7523
+   PREBUILT:=1
+   PREBUILT_IMAGE:=$(PKG_BUILD_DIR)/plat/ecnt/blobs/en7523/bl31.bin
+-  DEFAULT:=y
++  # the GN630V keeps its vendor bootloader
++  DEFAULT:=y if !TARGET_airoha_en7523_DEVICE_skyworth_gn630v
+ endef
+ 
+ TFA_TARGETS:= \
+diff --git a/target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi b/target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi
+new file mode 100755
+index 0000000000..400f3c3c08
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/board.d/03_gn630v_wifi
+@@ -0,0 +1,69 @@
++#!/bin/sh
++# Skyworth GN630V: Wi-Fi defaults from the stock configuration, so the box
++# keeps the network name and key the user already has (now WPA2/WPA3), and
++# the stock regulatory country. Only reads the stock "romfile" (gzip XML);
++# when nothing usable is found, OpenWrt leaves the radios disabled.
++
++. /lib/functions.sh
++. /lib/functions/uci-defaults.sh
++
++[ "$(board_name)" = "skyworth,gn630v" ] || exit 0
++
++romfile_xml() {
++	local mtdnum
++
++	mtdnum=$(find_mtd_index romfile)
++	[ -n "$mtdnum" ] || return 1
++	zcat "/dev/mtd$mtdnum" 2>/dev/null
++}
++
++# stock_attr <section> <element> <attribute>: first value inside <section>
++stock_attr() {
++	awk -v sec="<$1>" -v el="<$2 " -v at=" $3=\"" '
++		index($0, sec) { f = 1 }
++		f && index($0, el) && (i = index($0, at)) {
++			v = substr($0, i + length(at)); print substr(v, 1, index(v, "\"") - 1); exit
++		}' "$XML"
++}
++
++unxml() {
++	sed -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' -e "s/&apos;/'/g" -e 's/&amp;/\&/g'
++}
++
++# stock stores the country by name
++country_code() {
++	case "$1" in
++	Malaysia) echo MY ;; Singapore) echo SG ;; Indonesia) echo ID ;;
++	Thailand) echo TH ;; Philippines) echo PH ;; Vietnam|"Viet Nam") echo VN ;;
++	Brunei*) echo BN ;; Cambodia) echo KH ;; Myanmar) echo MM ;;
++	China) echo CN ;; "Hong Kong") echo HK ;; Taiwan) echo TW ;;
++	India) echo IN ;; Pakistan) echo PK ;; Bangladesh) echo BD ;;
++	Japan) echo JP ;; Korea|"South Korea") echo KR ;;
++	Australia) echo AU ;; "New Zealand") echo NZ ;;
++	Brazil) echo BR ;; Mexico) echo MX ;; "United States"|USA) echo US ;;
++	Canada) echo CA ;; "United Kingdom"|UK) echo GB ;;
++	Germany) echo DE ;; France) echo FR ;; Spain) echo ES ;; Italy) echo IT ;;
++	Turkey) echo TR ;; "Saudi Arabia") echo SA ;; "United Arab Emirates"|UAE) echo AE ;;
++	"South Africa") echo ZA ;; Nigeria) echo NG ;; Egypt) echo EG ;;
++	esac
++}
++
++XML=/tmp/gn630v-romfile.xml
++romfile_xml > "$XML" || { rm -f "$XML"; exit 0; }
++
++board_config_update
++
++country=$(country_code "$(stock_attr WLan Common Country | unxml)")
++[ -n "$country" ] && ucidef_set_country "$country"
++
++for band in 2g:WLan 5g:WLan11ac; do
++	ssid=$(stock_attr "${band#*:}" Entry0 SSID | unxml)
++	key=$(stock_attr "${band#*:}" Entry0 WPAPSK | unxml)
++	# WPA2 passphrase (8-63) or a 64-hex PSK
++	[ -n "$ssid" ] && [ ${#key} -ge 8 ] && [ ${#key} -le 64 ] &&
++		ucidef_set_wireless "${band%%:*}" "$ssid" sae-mixed "$key"
++done
++
++board_config_flush
++rm -f "$XML"
++exit 0
+diff --git a/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi
+new file mode 100755
+index 0000000000..31c69b1af3
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/12-gn630v-wifi
+@@ -0,0 +1,35 @@
++#!/bin/sh
++# Skyworth GN630V: one-time Wi-Fi tuning once "wifi config" (10-wifi-detect)
++# has written the defaults: stock-style per-band MACs (base +4 on 2.4 GHz,
++# +5 on 5 GHz; the hardware gives both bands the same one) and 160 MHz on
++# 5 GHz when a country is set. Recorded in the wireless config itself, so
++# later changes by the user are left alone.
++
++[ "$ACTION" = add ] || exit 0
++
++. /lib/functions.sh
++. /lib/functions/system.sh
++
++[ "$(board_name)" = "skyworth,gn630v" ] || exit 0
++[ "$(uci -q get wireless.alphawrt.tuned)" = 1 ] && exit 0
++uci -q get wireless.radio1 >/dev/null || exit 0
++
++base=$(cat /sys/class/net/eth0/address)		# eth0 = U-Boot env ethaddr
++[ -n "$base" ] || exit 0
++
++for radio in radio0 radio1; do
++	case "$(uci -q get wireless.$radio.band)" in
++	2g) offset=4 ;;
++	5g) offset=5
++		[ -n "$(uci -q get wireless.$radio.country)" ] &&
++			uci set wireless.$radio.htmode=HE160 ;;
++	*) continue ;;
++	esac
++	for iface in $(uci show wireless | sed -n "s/^wireless\.\([^.]*\)\.device='$radio'$/\1/p"); do
++		uci set wireless.$iface.macaddr="$(macaddr_add "$base" $offset)"
++	done
++done
++
++uci set wireless.alphawrt=alphawrt
++uci set wireless.alphawrt.tuned=1
++uci commit wireless
+diff --git a/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns b/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+new file mode 100755
+index 0000000000..c83f54056d
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+@@ -0,0 +1,33 @@
++#!/bin/sh
++# AlphaWRT: encrypted DNS by default. dnsmasq still serves the LAN, but
++# forwards everything to dnsproxy (127.0.0.1#5353), which asks the upstreams
++# over DNS-over-QUIC and DNS-over-HTTPS (HTTP/3 when the server offers it),
++# with DNS-over-TLS as the fallback. The plain bootstrap servers only resolve
++# the upstreams' own names.
++#
++# Back to the ISP's DNS:
++#   uci set dnsproxy.global.enabled=0; uci commit dnsproxy
++#   uci -q delete dhcp.@dnsmasq[0].server; uci -q delete dhcp.@dnsmasq[0].noresolv
++#   uci commit dhcp; service dnsproxy stop; service dnsmasq restart
++
++uci -q get dnsproxy.global >/dev/null || exit 0
++
++uci -q batch <<EOF
++set dnsproxy.global.enabled=1
++set dnsproxy.global.http3=1
++delete dnsproxy.servers.bootstrap
++add_list dnsproxy.servers.bootstrap=1.1.1.1
++add_list dnsproxy.servers.bootstrap=9.9.9.9
++delete dnsproxy.servers.upstream
++add_list dnsproxy.servers.upstream=quic://unfiltered.adguard-dns.com
++add_list dnsproxy.servers.upstream=https://cloudflare-dns.com/dns-query
++delete dnsproxy.servers.fallback
++add_list dnsproxy.servers.fallback=tls://dns.quad9.net
++commit dnsproxy
++delete dhcp.@dnsmasq[0].server
++add_list dhcp.@dnsmasq[0].server='127.0.0.1#5353'
++set dhcp.@dnsmasq[0].noresolv=1
++commit dhcp
++EOF
++
++exit 0
+diff --git a/target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi b/target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi
+new file mode 100644
+index 0000000000..1aacb8bce3
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi
+@@ -0,0 +1,25 @@
++# Attach the GN630V overlay UBI before mount_root, so fstools finds the
++# rootfs_data volume. Only the data partition of the bank we booted from, and
++# only on flash boots (an initramfs RAM boot passes no root=).
++
++alphawrt_preinit_ubi() {
++	local bank data
++
++	[ "$(board_name)" = "skyworth,gn630v" ] || return 0
++	. /lib/upgrade/alphawrt.sh
++
++	bank=$(alphawrt_bank) || return 0
++	data=$(alphawrt_part "$bank" data) || return 0
++
++	# first boot in this bank (e.g. after the stock web upgrade): the data
++	# partition still holds the tail of the old stock image, not UBI
++	if alphawrt_is_ubi "$data"; then
++		alphawrt_ubi_attach "$data" || return 0
++	else
++		alphawrt_ubi_attach "$data" format || return 0
++	fi
++	alphawrt_rootfs_data
++	return 0
++}
++
++boot_hook_add preinit_main alphawrt_preinit_ubi
+diff --git a/target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh b/target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh
+new file mode 100644
+index 0000000000..fcfa7e9819
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh
+@@ -0,0 +1,116 @@
++# AlphaWRT on the Skyworth GN630V runs from either flash bank. The vendor
++# U-Boot passes root=/dev/mtdblock3 when it boots bank A and /dev/mtdblock6
++# for bank B; everything that writes flash asks alphawrt_bank first and only
++# ever touches that bank, so the other bank keeps stock as the fallback.
++# Only shell builtins and "busybox <applet>": these run in the sysupgrade
++# stage2 ramdisk too, which has few applet links.
++
++# print "a" or "b" for the bank we booted from, nothing for a RAM boot
++alphawrt_bank() {
++	local cmdline arg bank=
++
++	read -r cmdline < /proc/cmdline
++	for arg in $cmdline; do
++		case "$arg" in
++		root=/dev/mtdblock3) bank=a ;;
++		root=/dev/mtdblock6) bank=b ;;
++		root=*) bank= ;;
++		esac
++	done
++	[ -n "$bank" ] && echo "$bank"
++}
++
++# alphawrt_part <a|b> <kernel|rootfs|data>: the partition label
++alphawrt_part() {
++	case "$1:$2" in
++	a:kernel) echo kernel ;;
++	a:rootfs) echo alphawrt_rootfs ;;
++	a:data) echo alphawrt_data ;;
++	b:kernel) echo kernel_b ;;
++	b:rootfs) echo alphawrt_rootfs_b ;;
++	b:data) echo alphawrt_data_b ;;
++	*) return 1 ;;
++	esac
++}
++
++# alphawrt_set_bootflag <a|b>: the bank U-Boot boots next. The flag is one
++# ASCII byte ('0' = A, '1' = B) alone in its 128 KiB block.
++alphawrt_set_bootflag() {
++	local flag
++
++	case "$1" in
++	a) flag=0 ;;
++	b) flag=1 ;;
++	*) return 1 ;;
++	esac
++	{ printf %s "$flag"; busybox dd if=/dev/zero bs=131071 count=1 2>/dev/null |
++		busybox tr '\000' '\377'; } | mtd -q write - bootflag
++}
++
++# alphawrt_get_bootflag: "a" or "b" as U-Boot will read it ("a" when erased)
++alphawrt_get_bootflag() {
++	local mtdnum flag
++
++	mtdnum=$(find_mtd_index bootflag)
++	[ -n "$mtdnum" ] || return 1
++	flag=$(busybox dd if="/dev/mtd$mtdnum" bs=1 count=1 2>/dev/null)
++	[ "$flag" = 1 ] && echo b || echo a
++}
++
++# No devtmpfs on this kernel: procd creates /dev nodes from hotplug events,
++# too late for a UBI device or volume used right after it appears.
++alphawrt_ubi_node() {
++	local maj min
++
++	[ -c "/dev/$1" ] && return 0
++	IFS=: read maj min < "/sys/class/ubi/$1/dev" || return 1
++	busybox mknod "/dev/$1" c "$maj" "$min"
++}
++
++# alphawrt_ubi_attach <mtd-label> [format]: attach as ubi0 (-b 2: UBI's
++# default bad-block reserve is sized for the whole 256 MiB chip and would
++# take half of a 10 MiB partition). With "format", erase and format it first.
++alphawrt_ubi_attach() {
++	local mtdnum
++
++	mtdnum=$(find_mtd_index "$1")
++	[ -n "$mtdnum" ] || return 1
++	if [ "$2" = format ]; then
++		ubidetach -m "$mtdnum" >/dev/null 2>&1
++		ubiformat "/dev/mtd$mtdnum" -y -q || return 1
++	fi
++	ubiattach -m "$mtdnum" -d 0 -b 2 >/dev/null 2>&1 || return 1
++	alphawrt_ubi_node ubi0
++}
++
++# does the partition start with a UBI erase-counter header?
++alphawrt_is_ubi() {
++	local mtdnum
++
++	mtdnum=$(find_mtd_index "$1")
++	[ -n "$mtdnum" ] || return 1
++	[ "$(busybox dd if="/dev/mtd$mtdnum" bs=4 count=1 2>/dev/null)" = "UBI#" ]
++}
++
++# print the ubi0 volume (e.g. ubi0_0) named rootfs_data, if any
++alphawrt_find_rootfs_data() {
++	local vol name
++
++	for vol in /sys/class/ubi/ubi0_*; do
++		[ -e "$vol/name" ] || continue
++		read -r name < "$vol/name"
++		[ "$name" = rootfs_data ] && { echo "${vol##*/}"; return 0; }
++	done
++	return 1
++}
++
++# make sure ubi0 has a rootfs_data volume with a /dev node
++alphawrt_rootfs_data() {
++	local vol
++
++	vol=$(alphawrt_find_rootfs_data) || {
++		ubimkvol /dev/ubi0 -N rootfs_data -m >/dev/null 2>&1 || return 1
++		vol=$(alphawrt_find_rootfs_data) || return 1
++	}
++	alphawrt_ubi_node "$vol"
++}
+diff --git a/target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank b/target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank
+new file mode 100755
+index 0000000000..402eb1fc1d
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank
+@@ -0,0 +1,49 @@
++#!/bin/sh
++# Choose which flash bank the vendor U-Boot boots next on the Skyworth GN630V.
++#
++#   alphawrt-bootbank          show the running bank, the next-boot bank and
++#                              what each bank holds
++#   alphawrt-bootbank stock    boot the other bank (stock) from the next boot
++#   alphawrt-bootbank a|b      boot bank A or B from the next boot
++
++. /lib/functions.sh
++. /lib/upgrade/alphawrt.sh
++
++bank_holds() {
++	local mtdnum magic version
++
++	mtdnum=$(find_mtd_index "$(alphawrt_part "$1" kernel)")
++	magic=$(dd if="/dev/mtd$mtdnum" bs=4 count=1 2>/dev/null)
++	[ "$magic" = HDR2 ] || { echo "no bootable image"; return 1; }
++	version=$(dd if="/dev/mtd$mtdnum" bs=1 skip=16 count=31 2>/dev/null | tr -d '\0\n')
++	echo "$version"
++}
++
++running=$(alphawrt_bank)
++next=$(alphawrt_get_bootflag)
++
++case "$1" in
++"")
++	echo "running:   bank ${running:-? (RAM boot)}"
++	echo "next boot: bank $next"
++	for b in a b; do
++		echo "bank $b:    $(bank_holds $b)"
++	done
++	;;
++stock)
++	[ -n "$running" ] || { echo "not booted from flash" >&2; exit 1; }
++	[ "$running" = a ] && other=b || other=a
++	holds=$(bank_holds $other) || { echo "bank $other: $holds, not switching" >&2; exit 1; }
++	alphawrt_set_bootflag $other || exit 1
++	echo "next boot: bank $other ($holds). Reboot to switch."
++	;;
++a|b)
++	holds=$(bank_holds "$1") || { echo "bank $1: $holds, not switching" >&2; exit 1; }
++	alphawrt_set_bootflag "$1" || exit 1
++	echo "next boot: bank $1 ($holds). Reboot to switch."
++	;;
++*)
++	echo "usage: $0 [stock|a|b]" >&2
++	exit 1
++	;;
++esac
+diff --git a/target/linux/airoha/image/tclinux-fit.sh b/target/linux/airoha/image/tclinux-fit.sh
+new file mode 100755
+index 0000000000..776489ce40
+--- /dev/null
++++ b/target/linux/airoha/image/tclinux-fit.sh
+@@ -0,0 +1,70 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-2.0
++#
++# Build a FIT the EcoNet/Airoha vendor U-Boot ("flash imgread") can boot.
++# Its get_tclinux_imginfo() reads only the first 0x800 bytes of the FIT and
++# looks up /images/fdt@1 there, then kernel@1 and filesystem@1 by name. So:
++# stock node names, and fdt@1 must come first (mkits.sh puts the kernel
++# first). The rootfs lives outside the FIT; filesystem@1 is a stub.
++#
++# Usage: tclinux-fit.sh <kernel.lzma> <dtb> <loadaddr> <description> <out>
++
++set -e
++
++[ $# -eq 5 ] || { echo "usage: $0 <kernel.lzma> <dtb> <loadaddr> <description> <out>" >&2; exit 1; }
++kernel=$1 dtb=$2 loadaddr=$3 desc=$4 out=$5
++
++cat > "$out.its" <<EOF
++/dts-v1/;
++
++/ {
++	description = "$desc";
++	#address-cells = <1>;
++
++	images {
++		fdt@1 {
++			description = "$desc device tree";
++			data = /incbin/("$dtb");
++			type = "flat_dt";
++			arch = "arm";
++			compression = "none";
++			hash@1 {
++				algo = "sha1";
++			};
++		};
++
++		kernel@1 {
++			description = "$desc kernel";
++			data = /incbin/("$kernel");
++			type = "kernel";
++			arch = "arm";
++			os = "linux";
++			compression = "lzma";
++			load = <$loadaddr>;
++			entry = <$loadaddr>;
++			hash@1 {
++				algo = "sha1";
++			};
++		};
++
++		filesystem@1 {
++			description = "rootfs is outside the FIT";
++			data = <0x0>;
++			type = "filesystem";
++			arch = "arm";
++			compression = "none";
++		};
++	};
++
++	configurations {
++		default = "conf@1";
++		conf@1 {
++			description = "$desc";
++			kernel = "kernel@1";
++			fdt = "fdt@1";
++		};
++	};
++};
++EOF
++
++mkimage -f "$out.its" "$out"
+diff --git a/target/linux/airoha/image/tclinux-trx.sh b/target/linux/airoha/image/tclinux-trx.sh
+index 742d892638..d84c202335 100755
+--- a/target/linux/airoha/image/tclinux-trx.sh
++++ b/target/linux/airoha/image/tclinux-trx.sh
+@@ -10,7 +10,7 @@ set -e
+ #       slot B. By including the padding in the length, the kernel length is
+ #       always the same, and the LZMA decompressor stops when it's done anyway.
+ #       See: https://econet-linux.pkt.wiki/en/bootloader#a-length-bug
+-PAD_ROOTFS_OFFSET_TO=$((4 * 1024 * 1024))
++PAD_ROOTFS_OFFSET_TO=${PAD_ROOTFS_OFFSET_TO:-$((4 * 1024 * 1024))}
+ 
+ # Constant
+ HDRLEN=256
+@@ -30,6 +30,10 @@ Options:
+   --version  Version string, max 31 chars (required)
+   --endian   Endianness: 'be' for big endian, 'le' for little endian (default: be)
+   --model    Model/platform name, max 31 chars (default: empty)
++  --customer-version
++             Customer version string, max 31 chars, newline-terminated like
++             --version (default: empty). The Skyworth GN630V stock web
++             upgrade crashes on an empty one (strncpy of strlen-1 bytes).
+   --loadaddr Address the bootloader decompresses the kernel to
+              (default: 0x80020000)
+ EOF
+@@ -42,6 +46,7 @@ rootfs=""
+ version=""
+ endian="be"
+ model=""
++custversion=""
+ loadaddr="0x80020000"
+ 
+ # Parse named arguments
+@@ -67,6 +72,10 @@ while [ $# -gt 0 ]; do
+             model="$2"
+             shift 2
+             ;;
++        --customer-version)
++            custversion="$2"
++            shift 2
++            ;;
+         --loadaddr)
+             loadaddr="$2"
+             shift 2
+@@ -96,6 +105,7 @@ which zytrx >/dev/null || die "zytrx not found in PATH $PATH"
+ [ -z "$rootfs" ] || [ -f "$rootfs" ] || die "Rootfs file not found: $rootfs"
+ [ "$(echo "$version" | wc -c)" -lt 32 ] || die "Version string too long: $version"
+ [ -z "$model" ] || [ "$(printf '%s' "$model" | wc -c)" -lt 32 ] || die "Model string too long: $model"
++[ -z "$custversion" ] || [ "$(echo "$custversion" | wc -c)" -lt 32 ] || die "Customer version too long: $custversion"
+ 
+ kernel_len=$(stat -c '%s' "$kernel")
+ header_plus_kernel_len=$(($HDRLEN + $kernel_len))
+@@ -184,7 +194,12 @@ tclinux_trx_hdr() {
+     head -c "$((32 - $(echo "$version" | wc -c)))" /dev/zero | to_hex
+ 
+     # customer version
+-    head -c 32 /dev/zero | to_hex
++    if [ -n "$custversion" ]; then
++        echo "$custversion" | to_hex
++        head -c "$((32 - $(echo "$custversion" | wc -c)))" /dev/zero | to_hex
++    else
++        head -c 32 /dev/zero | to_hex
++    fi
+ 
+     # kernel length
+     hex32 "$padded_kernel_len"
+diff --git a/target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch b/target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch
+new file mode 100644
+index 0000000000..bb72645272
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch
+@@ -0,0 +1,72 @@
++From 1d9d5f5a5040ff9c8b7b22d54845b3a464286435 Mon Sep 17 00:00:00 2001
++From: Mikhail Kshevetskiy <mikhail.kshevetskiy@iopsys.eu>
++Date: Mon, 19 Jan 2026 07:02:37 +0300
++Subject: [PATCH] mtd: spinand: add Foresee F35SQB002G flash support
++
++Add support of Foresee F35SQB002G spinand flash
++
++Signed-off-by: Mikhail Kshevetskiy <mikhail.kshevetskiy@iopsys.eu>
++Signed-off-by: Miquel Raynal <miquel.raynal@bootlin.com>
++---
++ drivers/mtd/nand/spi/foresee.c | 34 ++++++++++++++++++++++++++++++++++
++ 1 file changed, 34 insertions(+)
++
++diff --git a/drivers/mtd/nand/spi/foresee.c b/drivers/mtd/nand/spi/foresee.c
++index c521dd6abc4b97..5ff18316092cd4 100644
++--- a/drivers/mtd/nand/spi/foresee.c
+++++ b/drivers/mtd/nand/spi/foresee.c
++@@ -11,6 +11,11 @@
++ 
++ #define SPINAND_MFR_FORESEE		0xCD
++ 
+++#define F35SQB002G_STATUS_ECC_MASK		(7 << 4)
+++#define F35SQB002G_STATUS_ECC_NO_BITFLIPS	(0 << 4)
+++#define F35SQB002G_STATUS_ECC_1_3_BITFLIPS	(1 << 4)
+++#define F35SQB002G_STATUS_ECC_UNCOR_ERROR	(7 << 4)
+++
++ static SPINAND_OP_VARIANTS(read_cache_variants,
++ 		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_4S_OP(0, 1, NULL, 0, 0),
++ 		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_2S_OP(0, 1, NULL, 0, 0),
++@@ -70,6 +75,25 @@ static int f35sqa002g_ecc_get_status(struct spinand_device *spinand, u8 status)
++ 	return -EBADMSG;
++ }
++ 
+++static int f35sqb002g_ecc_get_status(struct spinand_device *spinand, u8 status)
+++{
+++	switch (status & F35SQB002G_STATUS_ECC_MASK) {
+++	case F35SQB002G_STATUS_ECC_NO_BITFLIPS:
+++		return 0;
+++
+++	case F35SQB002G_STATUS_ECC_1_3_BITFLIPS:
+++		return 3;
+++
+++	case F35SQB002G_STATUS_ECC_UNCOR_ERROR:
+++		return -EBADMSG;
+++
+++	default: /* (2 << 4) through (6 << 4) are 4-8 corrected errors */
+++		return ((status & F35SQB002G_STATUS_ECC_MASK) >> 4) + 2;
+++	}
+++
+++	return -EINVAL;
+++}
+++
++ static const struct spinand_info foresee_spinand_table[] = {
++ 	SPINAND_INFO("F35SQA002G",
++ 		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x72, 0x72),
++@@ -91,6 +115,16 @@ static const struct spinand_info foresee_spinand_table[] = {
++ 		     SPINAND_HAS_QE_BIT,
++ 		     SPINAND_ECCINFO(&f35sqa002g_ooblayout,
++ 				     f35sqa002g_ecc_get_status)),
+++	SPINAND_INFO("F35SQB002G",
+++		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x52, 0x52),
+++		     NAND_MEMORG(1, 2048, 128, 64, 2048, 40, 1, 1, 1),
+++		     NAND_ECCREQ(8, 512),
+++		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
+++					      &write_cache_variants,
+++					      &update_cache_variants),
+++		     SPINAND_HAS_QE_BIT,
+++		     SPINAND_ECCINFO(&f35sqa002g_ooblayout,
+++				     f35sqb002g_ecc_get_status)),
++ };
++ 
++ static const struct spinand_manufacturer_ops foresee_spinand_manuf_ops = {

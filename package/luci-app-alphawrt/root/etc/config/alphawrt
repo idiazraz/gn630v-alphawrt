@@ -1,0 +1,4 @@
+
+config setup 'setup'
+	option done '0'
+	option isp ''

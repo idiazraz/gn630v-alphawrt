@@ -1,0 +1,61 @@
+#!/bin/sh
+# rpcd backend for the AlphaWRT Quick Setup.
+#   presets         ISP and ONT-model presets (/usr/share/alphawrt/*.json)
+#   stock_identity  the GPON identity the stock firmware saved in its
+#                   "romfile" (gzip XML), so a unit the ISP registered keeps it
+
+. /lib/functions.sh
+. /usr/share/libubox/jshn.sh
+
+# onu_attr <attribute>: value inside <GPON><ONU .../> of the stock config
+onu_attr() {
+	awk -v at=" $1=\"" '
+		index($0, "<GPON>") { f = 1 }
+		f && index($0, "<ONU ") && (i = index($0, at)) {
+			v = substr($0, i + length(at)); print substr(v, 1, index(v, "\"") - 1); exit
+		}' "$XML" | sed -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&quot;/"/g' \
+		-e "s/&apos;/'/g" -e 's/&amp;/\&/g'
+}
+
+stock_identity() {
+	local mtdnum omcc
+
+	json_init
+	mtdnum=$(find_mtd_index romfile)
+	XML=/tmp/alphawrt-romfile.xml
+	if [ -n "$mtdnum" ] && zcat "/dev/mtd$mtdnum" > "$XML" 2>/dev/null; then
+		json_add_string serial "$(onu_attr SerialNumber)"
+		json_add_string password "$(onu_attr Password)"
+		json_add_string vendor_id "$(onu_attr VendorId)"
+		json_add_string equipment_id "$(onu_attr EquipmentId)"
+		json_add_string hardware_version "$(onu_attr Version)"
+		# stock keeps it in hex ("A0"), the OMCI agent takes decimal
+		omcc=$(onu_attr OMCCVersion)
+		case "$omcc" in
+		[0-9A-Fa-f][0-9A-Fa-f]) omcc=$(printf %d "0x$omcc") ;;
+		*) omcc= ;;
+		esac
+		json_add_string omcc_version "$omcc"
+	else
+		json_add_string error "no stock configuration found"
+	fi
+	rm -f "$XML"
+	json_dump
+}
+
+case "$1" in
+list)
+	echo '{ "presets": {}, "stock_identity": {} }'
+	;;
+call)
+	case "$2" in
+	presets)
+		printf '{ "presets": %s, "onts": %s }\n' \
+			"$(cat /usr/share/alphawrt/isp.json)" "$(cat /usr/share/alphawrt/ont.json)"
+		;;
+	stock_identity)
+		stock_identity
+		;;
+	esac
+	;;
+esac

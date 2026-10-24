@@ -1,0 +1,13 @@
+{
+	"admin/quicksetup": {
+		"title": "Quick Setup",
+		"order": 998,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/quicksetup"
+		},
+		"depends": {
+			"acl": [ "luci-app-alphawrt" ]
+		}
+	}
+}

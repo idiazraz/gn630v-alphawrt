@@ -1,0 +1,29 @@
+From 650f3e4c82b6aea13335387e6a01d94af32600ab Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 14:27:48 +0800
+Subject: [PATCH] airoha: en7523: gn630v: make the fibre (pon0) the WAN
+
+Quick Setup then moves the WAN onto the ISP's VLAN.
+---
+ target/linux/airoha/en7523/base-files/etc/board.d/02_network | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/target/linux/airoha/en7523/base-files/etc/board.d/02_network b/target/linux/airoha/en7523/base-files/etc/board.d/02_network
+index 45f5b910e1..d1dac0eb6a 100644
+--- a/target/linux/airoha/en7523/base-files/etc/board.d/02_network
++++ b/target/linux/airoha/en7523/base-files/etc/board.d/02_network
+@@ -40,10 +40,13 @@ setup_interfaces()
+     ;;
+   askey,rtf8225vw | \
+   mitrastar,gpt-2742gx4x5v6 | \
+-  skyworth,gn630v | \
+   tplink,xx230v-v1)
+     ucidef_set_interface_lan "lan1 lan2 lan3 lan4"
+     ;;
++  skyworth,gn630v)
++    # WAN is the fibre; Quick Setup moves it onto the ISP's VLAN
++    ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4" "pon0"
++    ;;
+   *)
+     echo "Unsupported hardware. Network interfaces not initialized"
+     ;;

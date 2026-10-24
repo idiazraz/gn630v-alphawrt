@@ -1140,6 +1140,21 @@ header p {
 	background: var(--fill);
 }
 
+/* Quick Setup and Log out sit at the right end of the bar, Quick Setup as
+ * the one highlighted action there */
+header #topmenu {
+	flex: 1;
+}
+
+.nav > li.topmenu-quicksetup {
+	margin-left: auto;
+}
+
+.nav > li.topmenu-quicksetup > a {
+	color: var(--accent-ink);
+	box-shadow: inset 0 0 0 1px var(--accent-tint);
+}
+
 /* current section: a tinted capsule, like a selected toolbar item */
 .nav > li.active > a {
 	color: var(--accent-ink);
@@ -3017,6 +3032,10 @@ footer.login-foot {
 	header .pull-right,
 	header #indicators {
 		order: 2;
+	}
+
+	.nav > li.topmenu-quicksetup {
+		margin-left: 0;
 	}
 
 	header .nav {

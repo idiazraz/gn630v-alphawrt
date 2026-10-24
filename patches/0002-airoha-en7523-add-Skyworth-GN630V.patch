@@ -1,106 +1,49 @@
-From 2a63bfda3aa14a4ab723824b5e8752e53a562ac0 Mon Sep 17 00:00:00 2001
+From 42ff1a6dbb27fabc6b7b77beabbff900220722cf Mon Sep 17 00:00:00 2001
 From: idiazraz <100824525+idiazraz@users.noreply.github.com>
-Date: Fri, 23 Oct 2026 12:00:00 +0800
-Subject: [PATCH 2/2] airoha: en7523: add Skyworth GN630V
+Date: Sat, 24 Oct 2026 11:51:40 +0800
+Subject: [PATCH] airoha: en7523: add Skyworth GN630V
 
-Skyworth GN630V GPON ONT: Airoha AN7529CT (EN7523 family, 2x Cortex-A53
-in AArch32), 512 MB DDR, 256 MiB FORESEE F35SQB002G SPI-NAND, MT7916
-Wi-Fi, 4x GbE through the internal MT7530. Dual-image vendor U-Boot.
+GPON ONT, AX3000: Airoha AN7529CT (EN7523), 512 MB, 256 MiB FORESEE
+F35SQB002G SPI-NAND, MT7916 on PCIe (main + hif2), EN7571 optics.
 
-Flash layout and boot:
-- the vendor U-Boot boots a bank (A at 0xc0000, B at 0x20c0000, 32 MiB
-  each) as an HDR2 header + FIT; get_tclinux_imginfo() reads only the
-  first 0x800 bytes of the FIT and looks up /images/fdt@1, kernel@1 and
-  filesystem@1 by name. tclinux-fit.sh builds the FIT in stock order and
-  names, a copy of econet's tclinux-trx.sh wraps it (rootfs at +6 MiB)
-- each bank: 6 MiB kernel, 16 MiB squashfs, 10 MiB UBI overlay; the
-  partition order makes the root= U-Boot passes (mtdblock3 for A,
-  mtdblock6 for B) the squashfs of the bank it booted
-- sysupgrade and preinit only ever write the bank they booted from, so
-  the other bank keeps stock as the fallback; U-Boot also falls back by
-  itself when a bank fails to parse
-- alphawrt-bootbank switches the U-Boot bootflag (one byte at 0xdfc0000)
-- no devtmpfs: UBI nodes are created from sysfs in preinit and stage2
-- tclinux-factory.bin installs from the stock web UI: the page wants
-  "tclinux" in the file name, the firmware checks the HDR2 magic, CRC
-  and model, and crashes on an empty HDR2 customer version
-
-Board:
-- MAC from the U-Boot env ethaddr (mac-base nvmem cell), +4 for Wi-Fi
-- MT7916 EEPROM from reservearea 0x4c000
-- LEDs for power, PON and internet; all four ports on LAN
-- backport mainline 1d9d5f5a5040 for F35SQB002G support
-- enable DSA for the MT7530 switch; restore upstream's airoha target
-  Makefile (the GPIO LED/key drivers are not built in)
-
-Not yet: GPON/OMCI, Wi-Fi AP defaults, buttons and the remaining LEDs.
+- runs from either vendor U-Boot bank (HDR2 + FIT image, also accepted
+  by the stock web upgrade), stock kept in the other bank; UBI overlay
+  per bank; bank-aware sysupgrade; alphawrt-bootbank
+- MACs from the U-Boot env, MT7916 and EN7571 calibration from flash
+- xPON: EN7571 with the unit's own BOB, xPON PHY/MAC, pon0; the GPON
+  identity is left to the OMCI agent configuration
+- Wi-Fi defaults from the stock configuration, encrypted DNS by default
+- no NPU firmware; PCIe reset pinctrl dropped (the pinctrl driver
+  rejects it and both controllers then fail to probe)
 ---
- target/linux/airoha/Makefile                  |   8 +-
- .../airoha/dts/en7523-skyworth-gn630v.dts     | 436 ++++++++++++++++++
+ .../airoha/dts/en7523-skyworth-gn630v.dts     | 342 ++++++++++++++++++
  .../en7523/base-files/etc/board.d/01_leds     |   3 +
- .../en7523/base-files/etc/board.d/02_network  |   4 +
- .../etc/hotplug.d/ieee80211/15-wifi-led-mux   |   2 +
- .../base-files/lib/preinit/79_alphawrt_ubi    |  25 +
- .../en7523/base-files/lib/upgrade/alphawrt.sh | 116 +++++
- .../en7523/base-files/lib/upgrade/platform.sh |  41 ++
- .../base-files/usr/sbin/alphawrt-bootbank     |  49 ++
- target/linux/airoha/en7523/config-6.18        |   5 +
- target/linux/airoha/image/en7523.mk           |  35 ++
- target/linux/airoha/image/tclinux-fit.sh      |  70 +++
- target/linux/airoha/image/tclinux-trx.sh      | 235 ++++++++++
- ...add-Foresee-F35SQB002G-flash-support.patch |  72 +++
- 14 files changed, 1096 insertions(+), 5 deletions(-)
+ .../en7523/base-files/etc/board.d/02_network  |   1 +
+ .../en7523/base-files/lib/upgrade/platform.sh |  41 +++
+ target/linux/airoha/image/en7523.mk           |  42 +++
+ 5 files changed, 429 insertions(+)
  create mode 100644 target/linux/airoha/dts/en7523-skyworth-gn630v.dts
- create mode 100644 target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi
- create mode 100644 target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh
- create mode 100755 target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank
- create mode 100755 target/linux/airoha/image/tclinux-fit.sh
- create mode 100755 target/linux/airoha/image/tclinux-trx.sh
- create mode 100644 target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch
 
-diff --git a/target/linux/airoha/Makefile b/target/linux/airoha/Makefile
-index 6767880e06..caab51ed40 100644
---- a/target/linux/airoha/Makefile
-+++ b/target/linux/airoha/Makefile
-@@ -4,14 +4,12 @@ ARCH:=arm
- BOARD:=airoha
- BOARDNAME:=Airoha ARM
- SUBTARGETS:=en7523 an7581 an7583
--FEATURES:=dt squashfs nand ramdisk gpio
-+FEATURES:=dt dt-overlay squashfs nand ramdisk gpio
- 
- KERNEL_PATCHVER:=6.18
- 
- include $(INCLUDE_DIR)/target.mk
--# kmod-leds-gpio and kmod-gpio-button-hotplug are NOT included here because
--# the EN7523 AX3000 router DTS has gpio-leds and gpio-keys-polled nodes built into the
--# kernel (CONFIG_LEDS_GPIO=y, CONFIG_KEYBOARD_GPIO_POLLED=y). Loading the
--# module versions on top causes "Driver already registered" errors.
-+DEFAULT_PACKAGES += \
-+	kmod-leds-gpio kmod-gpio-button-hotplug
- 
- $(eval $(call BuildTarget))
 diff --git a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
 new file mode 100644
-index 0000000000..a5a59c6957
+index 0000000000..f1d9c4799d
 --- /dev/null
 +++ b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
-@@ -0,0 +1,436 @@
+@@ -0,0 +1,342 @@
 +// SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
 +/dts-v1/;
 +
 +/*
 + * Skyworth GN630V: GPON ONT, AX3000, 4x GbE.
 + * Airoha AN7529CT (EN7523 family, 2x Cortex-A53 in AArch32), 512 MB DDR,
-+ * 256 MiB FORESEE F35SQB002G SPI-NAND, MT7916 Wi-Fi on PCIe.
-+ * Derived from en7523-ax3000-router.dts. Facts from the stock UART boot log
-+ * (stock kernel 4.4.115, U-Boot 2014.04 Skyworth build).
++ * 256 MiB FORESEE F35SQB002G SPI-NAND, MT7916 Wi-Fi on PCIe, EN7571 GPON
++ * optics. Facts from the stock UART boot log (stock kernel 4.4.115, U-Boot
++ * 2014.04 Skyworth build) and the stock flash.
 + */
 +/memreserve/ 0x80000000 0x200000;
 +
 +#include <dt-bindings/gpio/gpio.h>
 +#include <dt-bindings/input/input.h>
-+#include <dt-bindings/reset/airoha,en7523-reset.h>
 +#include "en7523.dtsi"
 +
 +/ {
@@ -109,6 +52,10 @@ index 0000000000..a5a59c6957
 +
 +	aliases {
 +		serial0 = &uart1;
++		led-boot = &led_power;
++		led-failsafe = &led_power;
++		led-upgrade = &led_power;
++		led-running = &led_power;
 +	};
 +
 +	chosen {
@@ -125,36 +72,9 @@ index 0000000000..a5a59c6957
 +		reg = <0x80000000 0x20000000>;
 +	};
 +
-+	reserved-memory {
-+		qdma0_buf: qdma0-buf@87000000 {
-+			no-map;
-+			reg = <0x87000000 0x02000000>;
-+		};
-+
-+		qdma1_buf: qdma1-buf@89000000 {
-+			no-map;
-+			reg = <0x89000000 0x01000000>;
-+		};
-+	};
-+
-+	npu: npu@1e800000 {
-+		compatible = "econet,ecnt-npu";
-+		reg = <0x1e800000 0x60000>, <0x1e900000 0x313000>;
-+		memory-region = <&{/reserved-memory/npu_binary@84000000}>;
-+		clocks = <&scu EN7523_CLK_NPU>;
-+		clock-names = "npu";
-+		resets = <&scu EN7523_NPU_RST>;
-+		reset-names = "npu";
-+		interrupts = <0x00 0x76 0x04>, <0x00 0x77 0x04>,
-+			     <0x00 0x78 0x04>, <0x00 0x79 0x04>,
-+			     <0x00 0x7a 0x04>, <0x00 0x7b 0x04>,
-+			     <0x00 0x7d 0x04>;
-+	};
-+
 +	/*
 +	 * LED GPIOs from the stock kernel cmdline: power_gpio=0b, dsl_gpio=0a (PON),
-+	 * internet_gpio=01. Same pins as the EN7523 AX3000 board; polarity taken
-+	 * from there and not yet verified on the GN630V. LAN LEDs (GPIO22-25, in
++	 * internet_gpio=01, active low. LAN LEDs (GPIO22-25, in
 +	 * multi_upgrade_gpio) are MT7530 PHY LED outputs. LOS/Wi-Fi/WPS LEDs and
 +	 * the buttons are left out until their GPIOs are identified: a wrong
 +	 * reset-button GPIO could trigger reboots.
@@ -162,180 +82,184 @@ index 0000000000..a5a59c6957
 +	leds {
 +		compatible = "gpio-leds";
 +
-+		led-power {
++		led_power: led-power {
 +			label = "green:power";
-+			gpios = <&gpio0 11 GPIO_ACTIVE_LOW>;
++			gpios = <&pinctrl 11 GPIO_ACTIVE_LOW>;
 +			default-state = "on";
 +		};
 +
 +		led-pon {
 +			label = "green:pon";
-+			gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
++			gpios = <&pinctrl 10 GPIO_ACTIVE_LOW>;
 +		};
 +
 +		led-internet {
 +			label = "green:internet";
-+			gpios = <&gpio0 1 GPIO_ACTIVE_LOW>;
++			gpios = <&pinctrl 1 GPIO_ACTIVE_LOW>;
 +		};
 +	};
++};
 +
-+	/*
-+	 * Ethernet and switch nodes. Initially disabled here; enabled via
-+	 * status="okay" references at the bottom of this file.
-+	 */
-+	eth: ethernet@1fb50000 {
-+		compatible = "airoha,en7523-eth";
-+		status = "disabled";
++&spi0 {
++	flash@0 {
++		compatible = "spi-nand";
++		reg = <0>;
++		spi-max-frequency = <50000000>;
 +
-+		reg = <0x1fb50000 0x2600>,
-+		      <0x1fb54000 0x2000>,
-+		      <0x1fb56000 0x2000>,
-+		      <0x1fbf9000 0x1000>;
-+		reg-names = "fe", "qdma0", "qdma1", "gdmp";
-+
-+		resets = <&scu EN7523_FE_RST>,
-+			 <&scu EN7523_FE_PDMA_RST>,
-+			 <&scu EN7523_FE_QDMA_RST>,
-+			 <&scu EN7523_DUAL_HSI0_MAC_RST>,
-+			 <&scu EN7523_DUAL_HSI1_MAC_RST>,
-+			 <&scu EN7523_HSI_MAC_RST>,
-+			 <&scu EN7523_GDMP_RST>;
-+		reset-names = "fe", "pdma", "qdma",
-+			      "hsi0-mac", "hsi1-mac", "hsi-mac", "gdmp";
-+
-+		interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 38 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 58 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 59 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 60 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>,
-+			     <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
-+
-+		memory-region = <&qdma0_buf>, <&qdma1_buf>;
-+		memory-region-names = "qdma0-buf", "qdma1-buf";
-+
-+		#address-cells = <1>;
-+		#size-cells = <0>;
-+
-+		gdm1: ethernet@1 {
-+			compatible = "airoha,eth-mac";
-+			reg = <1>;
-+			phy-mode = "internal";
-+			status = "disabled";
-+
-+			nvmem-cells = <&macaddr_uboot 0>;
-+			nvmem-cell-names = "mac-address";
-+
-+			fixed-link {
-+				speed = <10000>;
-+				full-duplex;
-+				pause;
-+			};
-+		};
-+	};
-+
-+	switch: switch@1fb58000 {
-+		compatible = "airoha,en7523-switch";
-+		reg = <0x1fb58000 0x8000>;
-+		resets = <&scu EN7523_GSW_RST>;
-+		interrupt-controller;
-+		#interrupt-cells = <1>;
-+		interrupt-parent = <&gic>;
-+		interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
-+		status = "disabled";
-+
-+		#address-cells = <1>;
-+		#size-cells = <1>;
-+
-+		ports {
++		partitions {
++			compatible = "fixed-partitions";
 +			#address-cells = <1>;
-+			#size-cells = <0>;
++			#size-cells = <1>;
 +
-+			gsw_port1: port@1 {
-+				reg = <1>;
-+				phy-mode = "internal";
-+				phy-handle = <&gsw_phy1>;
-+				status = "disabled";
-+			};
++			/*
++			 * Dual image. The U-Boot bootflag (ASCII '0'/'1' at 0xdfc0000)
++			 * selects bank A (0xc0000) or bank B (0x20c0000), 32 MiB each.
++			 * AlphaWRT runs from either bank: the stock web upgrade writes the
++			 * inactive one. Each bank:
++			 *   +0      HDR2 header + FIT (fdt@1/kernel@1/filesystem@1), 6 MiB
++			 *   +6 MiB  squashfs root, 16 MiB
++			 *   +22 MiB UBI overlay (rootfs_data), 10 MiB
++			 * The partition order is fixed so that the root= the vendor U-Boot
++			 * passes (mtdblock3 for A, mtdblock6 for B) is the right squashfs.
++			 * Software only writes the bank it runs from; the other bank keeps
++			 * stock as fallback. 0x6dc0000-0xddc0000 is unused (verified erased).
++			 */
++			partition@0 {
++				label = "bootloader";
++				reg = <0x00000000 0x00080000>;
++				read-only;
 +
-+			gsw_port2: port@2 {
-+				reg = <2>;
-+				phy-mode = "internal";
-+				phy-handle = <&gsw_phy2>;
-+				status = "disabled";
-+			};
++				/* U-Boot env at 0x7c000 (16 KiB, CRC32 + key=value). Never
++				 * write it: it shares an erase block with U-Boot code. */
++				nvmem-layout {
++					compatible = "fixed-layout";
++					#address-cells = <1>;
++					#size-cells = <1>;
 +
-+			gsw_port3: port@3 {
-+				reg = <3>;
-+				phy-mode = "internal";
-+				phy-handle = <&gsw_phy3>;
-+				status = "disabled";
-+			};
-+
-+			gsw_port4: port@4 {
-+				reg = <4>;
-+				phy-mode = "internal";
-+				phy-handle = <&gsw_phy4>;
-+				status = "disabled";
-+			};
-+
-+			port@6 {
-+				reg = <6>;
-+				ethernet = <&gdm1>;
-+				phy-mode = "internal";
-+
-+				fixed-link {
-+					speed = <10000>;
-+					full-duplex;
-+					pause;
++					/* value of "ethaddr=" in the env, "xx:xx:xx:xx:xx:xx" */
++					macaddr_uboot: macaddr@7c34e {
++						compatible = "mac-base";
++						reg = <0x7c34e 0x11>;
++						#nvmem-cell-cells = <1>;
++					};
 +				};
 +			};
-+		};
 +
-+		mdio: mdio {
-+			#address-cells = <1>;
-+			#size-cells = <0>;
-+
-+			gsw_phy1: ethernet-phy@9 {
-+				compatible = "ethernet-phy-ieee802.3-c22";
-+				reg = <9>;
++			partition@80000 {
++				label = "romfile";
++				reg = <0x00080000 0x00040000>;
++				read-only;
 +			};
 +
-+			gsw_phy2: ethernet-phy@a {
-+				compatible = "ethernet-phy-ieee802.3-c22";
-+				reg = <10>;
++			/* bank A (stock "tclinux") */
++			partition@c0000 {
++				label = "kernel";
++				reg = <0x000c0000 0x00600000>;
 +			};
 +
-+			gsw_phy3: ethernet-phy@b {
-+				compatible = "ethernet-phy-ieee802.3-c22";
-+				reg = <11>;
++			partition@6c0000 {
++				label = "alphawrt_rootfs";	/* mtd3 */
++				reg = <0x006c0000 0x01000000>;
 +			};
 +
-+			gsw_phy4: ethernet-phy@c {
-+				compatible = "ethernet-phy-ieee802.3-c22";
-+				reg = <12>;
++			partition@16c0000 {
++				/* not "ubi"/"data", so no UBI auto-attach: preinit attaches
++				 * the data partition of the bank it booted from */
++				label = "alphawrt_data";
++				reg = <0x016c0000 0x00a00000>;
++			};
++
++			/* bank B (stock "tclinux_slave") */
++			partition@20c0000 {
++				label = "kernel_b";
++				reg = <0x020c0000 0x00600000>;
++			};
++
++			partition@26c0000 {
++				label = "alphawrt_rootfs_b";	/* mtd6 */
++				reg = <0x026c0000 0x01000000>;
++			};
++
++			partition@36c0000 {
++				label = "alphawrt_data_b";
++				reg = <0x036c0000 0x00a00000>;
++			};
++
++			partition@40c0000 {
++				label = "config";
++				reg = <0x040c0000 0x00800000>;
++				read-only;
++			};
++
++			partition@48c0000 {
++				label = "ubifs";
++				reg = <0x048c0000 0x02000000>;
++				read-only;
++			};
++
++			partition@68c0000 {
++				label = "teapot";
++				reg = <0x068c0000 0x00500000>;
++				read-only;
++			};
++
++			partition@ddc0000 {
++				label = "reservearea";
++				reg = <0x0ddc0000 0x00200000>;
++				read-only;
++
++				nvmem-layout {
++					compatible = "fixed-layout";
++					#address-cells = <1>;
++					#size-cells = <1>;
++
++					/* MT7916 calibration, as stock ("5G" at 0x4c000) */
++					mt7916_eeprom_factory: eeprom@4c000 {
++						reg = <0x4c000 0x1000>;
++					};
++
++					/* EN7571 laser calibration (BOB): magic 0x07050701
++					 * at +0x94 */
++					en7571_bob: bob@140477 {
++						reg = <0x140477 0x200>;
++					};
++				};
++			};
++
++			/* the stock reservearea continues here: its 128 KiB block
++			 * holding only the U-Boot bootflag (see alphawrt-bootbank) */
++			partition@dfc0000 {
++				label = "bootflag";
++				reg = <0x0dfc0000 0x00020000>;
++			};
++
++			partition@dfe0000 {
++				label = "reservearea_tail";
++				reg = <0x0dfe0000 0x00020000>;
++				read-only;
 +			};
 +		};
 +	};
 +};
 +
-+&gpio0 {
-+	status = "okay";
-+};
-+
-+&gpio1 {
-+	status = "okay";
-+};
-+
++/*
++ * The EN7523 pinctrl rejects the dtsi's open-drain setting on the PCIe reset
++ * pins ("pin_config_set op failed for pin 41"), which stops both PCIe
++ * controllers from probing. The reset works without it, as on the stock
++ * kernel.
++ */
 +&pcie0 {
 +	status = "okay";
++
++	/delete-property/ pinctrl-names;
++	/delete-property/ pinctrl-0;
 +};
 +
 +&pcie1 {
 +	status = "okay";
++
++	/delete-property/ pinctrl-names;
++	/delete-property/ pinctrl-0;
 +
 +	pcie@1,0 {
 +		reg = <0x0800 0 0 0 0>;
@@ -345,9 +269,6 @@ index 0000000000..a5a59c6957
 +		wifi: wifi@0,0 {
 +			compatible = "mediatek,mt76";
 +			reg = <0x0000 0 0 0 0>;
-+
-+			airoha,npu = <&npu>;
-+			airoha,eth = <&eth>;
 +
 +			nvmem-cells = <&mt7916_eeprom_factory>, <&macaddr_uboot 4>;
 +			nvmem-cell-names = "eeprom", "mac-address";
@@ -360,139 +281,32 @@ index 0000000000..a5a59c6957
 +	};
 +};
 +
-+&nand {
++&i2c0 {
 +	status = "okay";
 +
-+	partitions {
-+		compatible = "fixed-partitions";
-+		#address-cells = <1>;
-+		#size-cells = <1>;
++	en7571: lddla@70 {
++		compatible = "airoha,en7571";
++		reg = <0x70>;
 +
-+		/*
-+		 * Dual image. The U-Boot bootflag (ASCII '0'/'1' at 0xdfc0000) selects
-+		 * bank A (0xc0000) or bank B (0x20c0000), 32 MiB each. AlphaWRT runs from
-+		 * either bank: the stock web upgrade writes the inactive one. Each bank:
-+		 *   +0      HDR2 header + FIT (fdt@1/kernel@1/filesystem@1), 6 MiB
-+		 *   +6 MiB  squashfs root, 16 MiB
-+		 *   +22 MiB UBI overlay (rootfs_data), 10 MiB
-+		 * The partition order is fixed so that the root= the vendor U-Boot passes
-+		 * (mtdblock3 for A, mtdblock6 for B) is the right squashfs. Software only
-+		 * writes the bank it runs from; the other bank keeps stock as fallback.
-+		 * 0x6dc0000-0xddc0000 is unused (verified erased).
-+		 */
-+		partition@0 {
-+			label = "bootloader";
-+			reg = <0x00000000 0x00080000>;
-+			read-only;
++		nvmem-cells = <&en7571_bob>;
++		nvmem-cell-names = "calibration";
 +
-+			/* U-Boot env at 0x7c000 (16 KiB, CRC32 + key=value). Never write it:
-+			 * it shares an erase block with U-Boot code. */
-+			nvmem-layout {
-+				compatible = "fixed-layout";
-+				#address-cells = <1>;
-+				#size-cells = <1>;
-+
-+				/* value of "ethaddr=" in the env, "xx:xx:xx:xx:xx:xx" */
-+				macaddr_uboot: macaddr@7c34e {
-+					compatible = "mac-base";
-+					reg = <0x7c34e 0x11>;
-+					#nvmem-cell-cells = <1>;
-+				};
-+			};
-+		};
-+
-+		partition@80000 {
-+			label = "romfile";
-+			reg = <0x00080000 0x00040000>;
-+			read-only;
-+		};
-+
-+		/* bank A (stock "tclinux") */
-+		partition@c0000 {
-+			label = "kernel";
-+			reg = <0x000c0000 0x00600000>;
-+		};
-+
-+		partition@6c0000 {
-+			label = "alphawrt_rootfs";	/* mtd3 */
-+			reg = <0x006c0000 0x01000000>;
-+		};
-+
-+		partition@16c0000 {
-+			/* not "ubi"/"data", so no UBI auto-attach: preinit attaches the
-+			 * data partition of the bank it booted from */
-+			label = "alphawrt_data";
-+			reg = <0x016c0000 0x00a00000>;
-+		};
-+
-+		/* bank B (stock "tclinux_slave") */
-+		partition@20c0000 {
-+			label = "kernel_b";
-+			reg = <0x020c0000 0x00600000>;
-+		};
-+
-+		partition@26c0000 {
-+			label = "alphawrt_rootfs_b";	/* mtd6 */
-+			reg = <0x026c0000 0x01000000>;
-+		};
-+
-+		partition@36c0000 {
-+			label = "alphawrt_data_b";
-+			reg = <0x036c0000 0x00a00000>;
-+		};
-+
-+		partition@40c0000 {
-+			label = "config";
-+			reg = <0x040c0000 0x00800000>;
-+			read-only;
-+		};
-+
-+		partition@48c0000 {
-+			label = "ubifs";
-+			reg = <0x048c0000 0x02000000>;
-+			read-only;
-+		};
-+
-+		partition@68c0000 {
-+			label = "teapot";
-+			reg = <0x068c0000 0x00500000>;
-+			read-only;
-+		};
-+
-+		partition@ddc0000 {
-+			label = "reservearea";
-+			reg = <0x0ddc0000 0x00200000>;
-+			read-only;
-+
-+			nvmem-layout {
-+				compatible = "fixed-layout";
-+				#address-cells = <1>;
-+				#size-cells = <1>;
-+
-+				/*
-+				 * Stock reads Wi-Fi calibration from reservearea 0x33000 ("2.4G")
-+				 * and 0x4c000 ("5G"). The AX3000 board's MT7916 EEPROM is at
-+				 * 0x4c000; verify against a reservearea dump.
-+				 */
-+				mt7916_eeprom_factory: eeprom@4c000 {
-+					reg = <0x4c000 0x1000>;
-+				};
-+			};
-+		};
-+
-+		/* the stock reservearea continues here: its 128 KiB block holding
-+		 * only the U-Boot bootflag (see alphawrt-bootbank) */
-+		partition@dfc0000 {
-+			label = "bootflag";
-+			reg = <0x0dfc0000 0x00020000>;
-+		};
-+
-+		partition@dfe0000 {
-+			label = "reservearea_tail";
-+			reg = <0x0dfe0000 0x00020000>;
-+			read-only;
-+		};
++		#optical-frontend-cells = <0>;
 +	};
++};
++
++&xpon_phy {
++	status = "okay";
++};
++
++/* GPON identity is not set here: it is the ISP's, and goes in the OMCI
++ * agent configuration (quick setup). */
++&xpon {
++	status = "okay";
++	omci-vendor-id = "SKYW";
++
++	optical-frontends = <&en7571>;
++	optical-frontend-names = "pon";
 +};
 +
 +&eth {
@@ -501,6 +315,22 @@ index 0000000000..a5a59c6957
 +
 +&gdm1 {
 +	status = "okay";
++
++	nvmem-cells = <&macaddr_uboot 0>;
++	nvmem-cell-names = "mac-address";
++};
++
++&gdm2 {
++	status = "okay";
++	phy-mode = "internal";
++
++	nvmem-cells = <&macaddr_uboot 1>;
++	nvmem-cell-names = "mac-address";
++
++	/delete-property/ pcs-handle;
++
++	airoha,xpon-managed;
++	openwrt,netdev-name = "pon0";
 +};
 +
 +&switch {
@@ -508,222 +338,73 @@ index 0000000000..a5a59c6957
 +};
 +
 +&gsw_port1 {
++	label = "lan1";
 +	status = "okay";
 +};
 +
 +&gsw_port2 {
++	label = "lan2";
 +	status = "okay";
 +};
 +
 +&gsw_port3 {
++	label = "lan3";
 +	status = "okay";
 +};
 +
 +&gsw_port4 {
++	label = "lan4";
++	status = "okay";
++};
++
++&gsw_phy1 {
++	status = "okay";
++};
++
++&gsw_phy2 {
++	status = "okay";
++};
++
++&gsw_phy3 {
++	status = "okay";
++};
++
++&gsw_phy4 {
 +	status = "okay";
 +};
 diff --git a/target/linux/airoha/en7523/base-files/etc/board.d/01_leds b/target/linux/airoha/en7523/base-files/etc/board.d/01_leds
-index 0029771ca6..b7d5c6da43 100644
+index 92bca967f7..c4e3528693 100644
 --- a/target/linux/airoha/en7523/base-files/etc/board.d/01_leds
 +++ b/target/linux/airoha/en7523/base-files/etc/board.d/01_leds
-@@ -21,6 +21,9 @@ airoha,en7523-ax3000-router)
- 	# Kept in config for completeness but expected to stay off.
- 	ucidef_set_led_default "wps" "WPS" "green:wps" "0"
- 	;;
-+skyworth,gn630v)
-+	ucidef_set_led_default "power" "power" "green:power" "1"
-+	;;
- esac
- 
- board_config_flush
+@@ -59,6 +59,9 @@ case "$board" in
+     ucidef_set_led_usbdev "usb" "usb" "blue:usb-4" "1-1"
+     ucidef_set_led_default "wan_err" "wan_err" "red:wan-10" "default-off"
+     ;;
++  skyworth,gn630v)
++    ucidef_set_led_default "power" "power" "green:power" "1"
++    ;;
+   tplink,xx230v-v1)
+     ucidef_set_led_netdev "lan1" "lan1" "mt7530-0:09:green:lan" "lan1" "link tx rx"
+     ucidef_set_led_netdev "lan2" "lan2" "mt7530-0:0a:green:lan" "lan2" "link tx rx"
 diff --git a/target/linux/airoha/en7523/base-files/etc/board.d/02_network b/target/linux/airoha/en7523/base-files/etc/board.d/02_network
-index 7dbde6fe20..140a4ef008 100644
+index e416cce26f..45f5b910e1 100644
 --- a/target/linux/airoha/en7523/base-files/etc/board.d/02_network
 +++ b/target/linux/airoha/en7523/base-files/etc/board.d/02_network
-@@ -22,6 +22,10 @@ en7523_setup_interfaces()
- 		# LAN ports: eth1 eth2 eth3, WAN: eth4
- 		ucidef_set_interfaces_lan_wan "eth1 eth2 eth3" "eth4"
- 		;;
-+	skyworth,gn630v)
-+		# WAN is the PON (not supported yet): all four GbE ports on LAN.
-+		ucidef_set_interface_lan "eth1 eth2 eth3 eth4"
-+		;;
- 	*)
- 		echo "Unsupported hardware. Network interfaces not initialized"
- 		;;
-diff --git a/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/15-wifi-led-mux b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/15-wifi-led-mux
-index 33f0678134..b5b962ac99 100644
---- a/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/15-wifi-led-mux
-+++ b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/15-wifi-led-mux
-@@ -12,6 +12,8 @@
- # We set bits [31:24] = 0x33 which routes GPIO 14 and GPIO 15 on the
- # MT7916 to the LED controller — the same value the driver uses in its
- # DBDC branch.
-+. /lib/functions.sh
-+[ "$(board_name)" = "airoha,en7523-ax3000-router" ] || exit 0
- [ "$ACTION" = "add" ] || exit 0
- [ "$DEVICENAME" = "phy0" ] || exit 0
- 
-diff --git a/target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi b/target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi
-new file mode 100644
-index 0000000000..1aacb8bce3
---- /dev/null
-+++ b/target/linux/airoha/en7523/base-files/lib/preinit/79_alphawrt_ubi
-@@ -0,0 +1,25 @@
-+# Attach the GN630V overlay UBI before mount_root, so fstools finds the
-+# rootfs_data volume. Only the data partition of the bank we booted from, and
-+# only on flash boots (an initramfs RAM boot passes no root=).
-+
-+alphawrt_preinit_ubi() {
-+	local bank data
-+
-+	[ "$(board_name)" = "skyworth,gn630v" ] || return 0
-+	. /lib/upgrade/alphawrt.sh
-+
-+	bank=$(alphawrt_bank) || return 0
-+	data=$(alphawrt_part "$bank" data) || return 0
-+
-+	# first boot in this bank (e.g. after the stock web upgrade): the data
-+	# partition still holds the tail of the old stock image, not UBI
-+	if alphawrt_is_ubi "$data"; then
-+		alphawrt_ubi_attach "$data" || return 0
-+	else
-+		alphawrt_ubi_attach "$data" format || return 0
-+	fi
-+	alphawrt_rootfs_data
-+	return 0
-+}
-+
-+boot_hook_add preinit_main alphawrt_preinit_ubi
-diff --git a/target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh b/target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh
-new file mode 100644
-index 0000000000..fcfa7e9819
---- /dev/null
-+++ b/target/linux/airoha/en7523/base-files/lib/upgrade/alphawrt.sh
-@@ -0,0 +1,116 @@
-+# AlphaWRT on the Skyworth GN630V runs from either flash bank. The vendor
-+# U-Boot passes root=/dev/mtdblock3 when it boots bank A and /dev/mtdblock6
-+# for bank B; everything that writes flash asks alphawrt_bank first and only
-+# ever touches that bank, so the other bank keeps stock as the fallback.
-+# Only shell builtins and "busybox <applet>": these run in the sysupgrade
-+# stage2 ramdisk too, which has few applet links.
-+
-+# print "a" or "b" for the bank we booted from, nothing for a RAM boot
-+alphawrt_bank() {
-+	local cmdline arg bank=
-+
-+	read -r cmdline < /proc/cmdline
-+	for arg in $cmdline; do
-+		case "$arg" in
-+		root=/dev/mtdblock3) bank=a ;;
-+		root=/dev/mtdblock6) bank=b ;;
-+		root=*) bank= ;;
-+		esac
-+	done
-+	[ -n "$bank" ] && echo "$bank"
-+}
-+
-+# alphawrt_part <a|b> <kernel|rootfs|data>: the partition label
-+alphawrt_part() {
-+	case "$1:$2" in
-+	a:kernel) echo kernel ;;
-+	a:rootfs) echo alphawrt_rootfs ;;
-+	a:data) echo alphawrt_data ;;
-+	b:kernel) echo kernel_b ;;
-+	b:rootfs) echo alphawrt_rootfs_b ;;
-+	b:data) echo alphawrt_data_b ;;
-+	*) return 1 ;;
-+	esac
-+}
-+
-+# alphawrt_set_bootflag <a|b>: the bank U-Boot boots next. The flag is one
-+# ASCII byte ('0' = A, '1' = B) alone in its 128 KiB block.
-+alphawrt_set_bootflag() {
-+	local flag
-+
-+	case "$1" in
-+	a) flag=0 ;;
-+	b) flag=1 ;;
-+	*) return 1 ;;
-+	esac
-+	{ printf %s "$flag"; busybox dd if=/dev/zero bs=131071 count=1 2>/dev/null |
-+		busybox tr '\000' '\377'; } | mtd -q write - bootflag
-+}
-+
-+# alphawrt_get_bootflag: "a" or "b" as U-Boot will read it ("a" when erased)
-+alphawrt_get_bootflag() {
-+	local mtdnum flag
-+
-+	mtdnum=$(find_mtd_index bootflag)
-+	[ -n "$mtdnum" ] || return 1
-+	flag=$(busybox dd if="/dev/mtd$mtdnum" bs=1 count=1 2>/dev/null)
-+	[ "$flag" = 1 ] && echo b || echo a
-+}
-+
-+# No devtmpfs on this kernel: procd creates /dev nodes from hotplug events,
-+# too late for a UBI device or volume used right after it appears.
-+alphawrt_ubi_node() {
-+	local maj min
-+
-+	[ -c "/dev/$1" ] && return 0
-+	IFS=: read maj min < "/sys/class/ubi/$1/dev" || return 1
-+	busybox mknod "/dev/$1" c "$maj" "$min"
-+}
-+
-+# alphawrt_ubi_attach <mtd-label> [format]: attach as ubi0 (-b 2: UBI's
-+# default bad-block reserve is sized for the whole 256 MiB chip and would
-+# take half of a 10 MiB partition). With "format", erase and format it first.
-+alphawrt_ubi_attach() {
-+	local mtdnum
-+
-+	mtdnum=$(find_mtd_index "$1")
-+	[ -n "$mtdnum" ] || return 1
-+	if [ "$2" = format ]; then
-+		ubidetach -m "$mtdnum" >/dev/null 2>&1
-+		ubiformat "/dev/mtd$mtdnum" -y -q || return 1
-+	fi
-+	ubiattach -m "$mtdnum" -d 0 -b 2 >/dev/null 2>&1 || return 1
-+	alphawrt_ubi_node ubi0
-+}
-+
-+# does the partition start with a UBI erase-counter header?
-+alphawrt_is_ubi() {
-+	local mtdnum
-+
-+	mtdnum=$(find_mtd_index "$1")
-+	[ -n "$mtdnum" ] || return 1
-+	[ "$(busybox dd if="/dev/mtd$mtdnum" bs=4 count=1 2>/dev/null)" = "UBI#" ]
-+}
-+
-+# print the ubi0 volume (e.g. ubi0_0) named rootfs_data, if any
-+alphawrt_find_rootfs_data() {
-+	local vol name
-+
-+	for vol in /sys/class/ubi/ubi0_*; do
-+		[ -e "$vol/name" ] || continue
-+		read -r name < "$vol/name"
-+		[ "$name" = rootfs_data ] && { echo "${vol##*/}"; return 0; }
-+	done
-+	return 1
-+}
-+
-+# make sure ubi0 has a rootfs_data volume with a /dev node
-+alphawrt_rootfs_data() {
-+	local vol
-+
-+	vol=$(alphawrt_find_rootfs_data) || {
-+		ubimkvol /dev/ubi0 -N rootfs_data -m >/dev/null 2>&1 || return 1
-+		vol=$(alphawrt_find_rootfs_data) || return 1
-+	}
-+	alphawrt_ubi_node "$vol"
-+}
+@@ -40,6 +40,7 @@ setup_interfaces()
+     ;;
+   askey,rtf8225vw | \
+   mitrastar,gpt-2742gx4x5v6 | \
++  skyworth,gn630v | \
+   tplink,xx230v-v1)
+     ucidef_set_interface_lan "lan1 lan2 lan3 lan4"
+     ;;
 diff --git a/target/linux/airoha/en7523/base-files/lib/upgrade/platform.sh b/target/linux/airoha/en7523/base-files/lib/upgrade/platform.sh
-index 55fdf55cd8..6cf19b8f3d 100644
+index 7b4db5ec4c..a668ee31de 100644
 --- a/target/linux/airoha/en7523/base-files/lib/upgrade/platform.sh
 +++ b/target/linux/airoha/en7523/base-files/lib/upgrade/platform.sh
-@@ -6,6 +6,40 @@ RAMFS_COPY_BIN='fitblk fit_check_sign'
- 
- REQUIRE_IMAGE_METADATA=1
+@@ -70,10 +70,47 @@ platform_do_upgrade_mikrotik_nand() {
+ 	nand_do_upgrade "$image"
+ }
  
 +# Skyworth GN630V: each flash bank holds HDR2 + FIT padded to 6 MiB, then
 +# squashfs, then the UBI overlay. Helpers in /lib/upgrade/alphawrt.sh.
@@ -759,117 +440,47 @@ index 55fdf55cd8..6cf19b8f3d 100644
 +	umount /tmp/new_root
 +}
 +
- platform_check_image() {
- 	local board=$(board_name)
+ platform_do_upgrade() {
+   local board=$(board_name)
  
-@@ -16,6 +50,10 @@ platform_check_image() {
- 		fit_check_image "$1"
- 		return $?
- 		;;
-+	skyworth,gn630v)
-+		gn630v_check_image "$1"
-+		return $?
-+		;;
- 	esac
+   case "$board" in
++  skyworth,gn630v)
++    gn630v_do_upgrade "$1"
++    ;;
+   askey,rtf8225vw |\
+   genexis,arcee |\
+   genexis,e650 |\
+@@ -103,6 +140,10 @@ platform_check_image() {
+   [ "$#" -gt 1 ] && return 1
  
- 	echo "Unsupported board: $board"
-@@ -29,6 +67,9 @@ platform_do_upgrade() {
- 	airoha,en7523-ax3000-router)
- 		fit_do_upgrade "$1"
- 		;;
-+	skyworth,gn630v)
-+		gn630v_do_upgrade "$1"
-+		;;
- 	*)
- 		default_do_upgrade "$1"
- 		;;
-diff --git a/target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank b/target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank
-new file mode 100755
-index 0000000000..402eb1fc1d
---- /dev/null
-+++ b/target/linux/airoha/en7523/base-files/usr/sbin/alphawrt-bootbank
-@@ -0,0 +1,49 @@
-+#!/bin/sh
-+# Choose which flash bank the vendor U-Boot boots next on the Skyworth GN630V.
-+#
-+#   alphawrt-bootbank          show the running bank, the next-boot bank and
-+#                              what each bank holds
-+#   alphawrt-bootbank stock    boot the other bank (stock) from the next boot
-+#   alphawrt-bootbank a|b      boot bank A or B from the next boot
-+
-+. /lib/functions.sh
-+. /lib/upgrade/alphawrt.sh
-+
-+bank_holds() {
-+	local mtdnum magic version
-+
-+	mtdnum=$(find_mtd_index "$(alphawrt_part "$1" kernel)")
-+	magic=$(dd if="/dev/mtd$mtdnum" bs=4 count=1 2>/dev/null)
-+	[ "$magic" = HDR2 ] || { echo "no bootable image"; return 1; }
-+	version=$(dd if="/dev/mtd$mtdnum" bs=1 skip=16 count=31 2>/dev/null | tr -d '\0\n')
-+	echo "$version"
-+}
-+
-+running=$(alphawrt_bank)
-+next=$(alphawrt_get_bootflag)
-+
-+case "$1" in
-+"")
-+	echo "running:   bank ${running:-? (RAM boot)}"
-+	echo "next boot: bank $next"
-+	for b in a b; do
-+		echo "bank $b:    $(bank_holds $b)"
-+	done
-+	;;
-+stock)
-+	[ -n "$running" ] || { echo "not booted from flash" >&2; exit 1; }
-+	[ "$running" = a ] && other=b || other=a
-+	holds=$(bank_holds $other) || { echo "bank $other: $holds, not switching" >&2; exit 1; }
-+	alphawrt_set_bootflag $other || exit 1
-+	echo "next boot: bank $other ($holds). Reboot to switch."
-+	;;
-+a|b)
-+	holds=$(bank_holds "$1") || { echo "bank $1: $holds, not switching" >&2; exit 1; }
-+	alphawrt_set_bootflag "$1" || exit 1
-+	echo "next boot: bank $1 ($holds). Reboot to switch."
-+	;;
-+*)
-+	echo "usage: $0 [stock|a|b]" >&2
-+	exit 1
-+	;;
-+esac
-diff --git a/target/linux/airoha/en7523/config-6.18 b/target/linux/airoha/en7523/config-6.18
-index 091648bbde..fa6695a71d 100644
---- a/target/linux/airoha/en7523/config-6.18
-+++ b/target/linux/airoha/en7523/config-6.18
-@@ -323,3 +323,8 @@ CONFIG_PCS_AIROHA_EN7523=y
- # CONFIG_PHY_AIROHA_AN7583_PCIE is not set
- # CONFIG_PHY_AIROHA_USB is not set
- # CONFIG_PHY_AIROHA_AN7583_USB is not set
-+CONFIG_NET_DSA=y
-+CONFIG_NET_DSA_MT7530=y
-+CONFIG_NET_DSA_MT7530_MMIO=y
-+# CONFIG_NET_DSA_MT7530_MDIO is not set
-+CONFIG_NET_DSA_TAG_MTK=y
+   case "$board" in
++  skyworth,gn630v)
++    gn630v_check_image "$1"
++    return $?
++    ;;
+   askey,rtf8225vw |\
+   genexis,arcee |\
+   genexis,e650 |\
 diff --git a/target/linux/airoha/image/en7523.mk b/target/linux/airoha/image/en7523.mk
-index bdcca919d1..ab2473c0f7 100644
+index 13f9942a58..6e96e66c1e 100644
 --- a/target/linux/airoha/image/en7523.mk
 +++ b/target/linux/airoha/image/en7523.mk
-@@ -17,3 +17,38 @@ define Device/airoha_en7523-ax3000-router
- 	kmod-mt7915e kmod-mt7915-firmware kmod-mt7916-firmware fitblk
+@@ -156,3 +156,45 @@ define Device/tplink_xx230v-v1
+                      kmod-mt7915e kmod-mt7915-firmware kmod-mt7916-firmware
  endef
- TARGET_DEVICES += airoha_en7523-ax3000-router
+ TARGET_DEVICES += tplink_xx230v-v1
 +
-+# FIT for the vendor U-Boot ("flash imgread"): stock node names, fdt@1 first.
-+# See tclinux-fit.sh.
-+define Build/tclinux-fit
++# Skyworth GN630V: the vendor U-Boot boots a stock-format HDR2 bank image.
++# FIT with stock node names, fdt@1 first ("flash imgread" only reads the
++# first 0x800 bytes); see tclinux-fit.sh.
++define Build/gn630v-fit
 +	PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) ./tclinux-fit.sh $@ $(word 2,$(1)) \
 +		$(KERNEL_LOADADDR) "OpenWrt $(DEVICE_NAME)" $@.new
 +	mv $@.new $@
 +endef
 +
-+# HDR2 + FIT padded to 6 MiB + squashfs: the layout of the AlphaWRT bank
-+define Build/tclinux-trx
++# HDR2 + FIT padded to 6 MiB + squashfs: the layout of an AlphaWRT bank
++define Build/gn630v-trx
 +	PAD_ROOTFS_OFFSET_TO=$$((6 * 1024 * 1024)) ./tclinux-trx.sh \
 +		--kernel $@ --rootfs $(IMAGE_ROOTFS) --endian le \
 +		--version $(VERSION_DIST)-$(REVISION) --model EN7523,GN630 \
@@ -881,411 +492,22 @@ index bdcca919d1..ab2473c0f7 100644
 +  DEVICE_VENDOR := Skyworth
 +  DEVICE_MODEL := GN630V
 +  DEVICE_DTS := en7523-skyworth-gn630v
-+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7916-firmware ubi-utils
++  # no NPU firmware: the vendor blob is not redistributable
++  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7916-firmware ubi-utils \
++	wpad-mbedtls iw -airoha-en7523-npu-firmware
++  KERNEL_NAME := Image
 +  KERNEL := kernel-bin | lzma | \
-+	tclinux-fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
++	gn630v-fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
++  # RAM boot over U-Boot TFTP (bootm), see RECOVERY.md
++  KERNEL_INITRAMFS := kernel-bin | lzma | \
++	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
 +  IMAGE_SIZE := 22528k
 +  IMAGES := tclinux-factory.bin sysupgrade.bin
 +  # tclinux-factory.bin: for the stock web UI firmware upgrade. The page only
 +  # accepts file names containing "tclinux"; the firmware then checks the HDR2
 +  # magic, CRC and model, writes the inactive bank and switches to it.
-+  IMAGE/tclinux-factory.bin := append-kernel | tclinux-trx | check-size
-+  IMAGE/sysupgrade.bin := append-kernel | tclinux-trx | check-size | \
++  IMAGE/tclinux-factory.bin := append-kernel | gn630v-trx | check-size
++  IMAGE/sysupgrade.bin := append-kernel | gn630v-trx | check-size | \
 +	append-metadata
 +endef
 +TARGET_DEVICES += skyworth_gn630v
-diff --git a/target/linux/airoha/image/tclinux-fit.sh b/target/linux/airoha/image/tclinux-fit.sh
-new file mode 100755
-index 0000000000..776489ce40
---- /dev/null
-+++ b/target/linux/airoha/image/tclinux-fit.sh
-@@ -0,0 +1,70 @@
-+#!/bin/sh
-+# SPDX-License-Identifier: GPL-2.0
-+#
-+# Build a FIT the EcoNet/Airoha vendor U-Boot ("flash imgread") can boot.
-+# Its get_tclinux_imginfo() reads only the first 0x800 bytes of the FIT and
-+# looks up /images/fdt@1 there, then kernel@1 and filesystem@1 by name. So:
-+# stock node names, and fdt@1 must come first (mkits.sh puts the kernel
-+# first). The rootfs lives outside the FIT; filesystem@1 is a stub.
-+#
-+# Usage: tclinux-fit.sh <kernel.lzma> <dtb> <loadaddr> <description> <out>
-+
-+set -e
-+
-+[ $# -eq 5 ] || { echo "usage: $0 <kernel.lzma> <dtb> <loadaddr> <description> <out>" >&2; exit 1; }
-+kernel=$1 dtb=$2 loadaddr=$3 desc=$4 out=$5
-+
-+cat > "$out.its" <<EOF
-+/dts-v1/;
-+
-+/ {
-+	description = "$desc";
-+	#address-cells = <1>;
-+
-+	images {
-+		fdt@1 {
-+			description = "$desc device tree";
-+			data = /incbin/("$dtb");
-+			type = "flat_dt";
-+			arch = "arm";
-+			compression = "none";
-+			hash@1 {
-+				algo = "sha1";
-+			};
-+		};
-+
-+		kernel@1 {
-+			description = "$desc kernel";
-+			data = /incbin/("$kernel");
-+			type = "kernel";
-+			arch = "arm";
-+			os = "linux";
-+			compression = "lzma";
-+			load = <$loadaddr>;
-+			entry = <$loadaddr>;
-+			hash@1 {
-+				algo = "sha1";
-+			};
-+		};
-+
-+		filesystem@1 {
-+			description = "rootfs is outside the FIT";
-+			data = <0x0>;
-+			type = "filesystem";
-+			arch = "arm";
-+			compression = "none";
-+		};
-+	};
-+
-+	configurations {
-+		default = "conf@1";
-+		conf@1 {
-+			description = "$desc";
-+			kernel = "kernel@1";
-+			fdt = "fdt@1";
-+		};
-+	};
-+};
-+EOF
-+
-+mkimage -f "$out.its" "$out"
-diff --git a/target/linux/airoha/image/tclinux-trx.sh b/target/linux/airoha/image/tclinux-trx.sh
-new file mode 100755
-index 0000000000..d84c202335
---- /dev/null
-+++ b/target/linux/airoha/image/tclinux-trx.sh
-@@ -0,0 +1,235 @@
-+#!/bin/sh
-+# SPDX-License-Identifier: GPL-2.0
-+
-+set -e
-+
-+# Maximum kernel size
-+# NOTE: We ff-pad the kernel and specify the fully padded length as the kernel
-+#       size in the TRX header. This works around a bug wherein the bootloader
-+#       reads the kernel length from the kernel in slot A, when it is booting
-+#       slot B. By including the padding in the length, the kernel length is
-+#       always the same, and the LZMA decompressor stops when it's done anyway.
-+#       See: https://econet-linux.pkt.wiki/en/bootloader#a-length-bug
-+PAD_ROOTFS_OFFSET_TO=${PAD_ROOTFS_OFFSET_TO:-$((4 * 1024 * 1024))}
-+
-+# Constant
-+HDRLEN=256
-+
-+die() {
-+    echo "$1" >&2
-+    exit 1
-+}
-+
-+usage() {
-+    cat >&2 <<EOF
-+SYNTAX: $0 --kernel <file> --rootfs <file> --version <string> [options]
-+
-+Options:
-+  --kernel   Path to kernel lzma file (required)
-+  --rootfs   Path to rootfs squashfs file
-+  --version  Version string, max 31 chars (required)
-+  --endian   Endianness: 'be' for big endian, 'le' for little endian (default: be)
-+  --model    Model/platform name, max 31 chars (default: empty)
-+  --customer-version
-+             Customer version string, max 31 chars, newline-terminated like
-+             --version (default: empty). The Skyworth GN630V stock web
-+             upgrade crashes on an empty one (strncpy of strlen-1 bytes).
-+  --loadaddr Address the bootloader decompresses the kernel to
-+             (default: 0x80020000)
-+EOF
-+    exit 1
-+}
-+
-+# Defaults
-+kernel=""
-+rootfs=""
-+version=""
-+endian="be"
-+model=""
-+custversion=""
-+loadaddr="0x80020000"
-+
-+# Parse named arguments
-+while [ $# -gt 0 ]; do
-+    case "$1" in
-+        --kernel)
-+            kernel="$2"
-+            shift 2
-+            ;;
-+        --rootfs)
-+            rootfs="$2"
-+            shift 2
-+            ;;
-+        --version)
-+            version="$2"
-+            shift 2
-+            ;;
-+        --endian)
-+            endian="$2"
-+            shift 2
-+            ;;
-+        --model)
-+            model="$2"
-+            shift 2
-+            ;;
-+        --customer-version)
-+            custversion="$2"
-+            shift 2
-+            ;;
-+        --loadaddr)
-+            loadaddr="$2"
-+            shift 2
-+            ;;
-+        -h|--help)
-+            usage
-+            ;;
-+        *)
-+            die "Unknown option: $1"
-+            ;;
-+    esac
-+done
-+
-+# Validate required arguments
-+[ -n "$kernel" ] || die "Missing required argument: --kernel"
-+[ -n "$version" ] || die "Missing required argument: --version"
-+
-+# Validate endianness
-+case "$endian" in
-+    be|BE) endian="be" ;;
-+    le|LE) endian="le" ;;
-+    *) die "Invalid endianness: $endian (must be 'be' or 'le')" ;;
-+esac
-+
-+which zytrx >/dev/null || die "zytrx not found in PATH $PATH"
-+[ -f "$kernel" ] || die "Kernel file not found: $kernel"
-+[ -z "$rootfs" ] || [ -f "$rootfs" ] || die "Rootfs file not found: $rootfs"
-+[ "$(echo "$version" | wc -c)" -lt 32 ] || die "Version string too long: $version"
-+[ -z "$model" ] || [ "$(printf '%s' "$model" | wc -c)" -lt 32 ] || die "Model string too long: $model"
-+[ -z "$custversion" ] || [ "$(echo "$custversion" | wc -c)" -lt 32 ] || die "Customer version too long: $custversion"
-+
-+kernel_len=$(stat -c '%s' "$kernel")
-+header_plus_kernel_len=$(($HDRLEN + $kernel_len))
-+rootfs_len=0
-+if [ -f "$rootfs" ]; then
-+    rootfs_len=$(stat -c '%s' "$rootfs")
-+fi
-+
-+[ "$PAD_ROOTFS_OFFSET_TO" -gt "$header_plus_kernel_len" ] || die "kernel is too large"
-+
-+padding_len=$(($PAD_ROOTFS_OFFSET_TO - $header_plus_kernel_len))
-+
-+echo "endian: $endian" >&2
-+echo "padding_len: $padding_len" >&2
-+
-+padded_kernel_len=$(($padding_len + $kernel_len))
-+
-+total_len=$(($PAD_ROOTFS_OFFSET_TO + $rootfs_len))
-+
-+echo "total_len: $total_len" >&2
-+
-+padding() {
-+    head -c $padding_len /dev/zero | tr '\0' '\377'
-+}
-+
-+to_hex() {
-+    hexdump -v -e '1/1 "%02x"'
-+}
-+
-+from_hex() {
-+    perl -pe 's/\s+//g; s/(..)/chr(hex($1))/ge'
-+}
-+
-+# Output a 32-bit value in hex with correct endianness
-+# Usage: hex32 <value>
-+hex32() {
-+    val=$(printf '%08x' "$1")
-+    if [ "$endian" = "le" ]; then
-+        # Swap bytes for little endian: AABBCCDD -> DDCCBBAA
-+        echo "$val" | sed 's/\(..\)\(..\)\(..\)\(..\)/\4\3\2\1/'
-+    else
-+        echo "$val"
-+    fi
-+}
-+
-+trx_crc32() {
-+    tmpfile=$(mktemp)
-+    outtmpfile=$(mktemp)
-+    cat "$kernel" > "$tmpfile"
-+    padding >> "$tmpfile"
-+    if [ -f "$rootfs" ]; then
-+        cat "$rootfs" >> "$tmpfile"
-+    fi
-+    # We just need a CRC-32/JAMCRC of the concatnated files
-+    # There's no readily available tool for this, but zytrx does create one when
-+    # creating their TRX header, so we just use that.
-+    zytrx \
-+        -B NR7101 \
-+        -v x \
-+        -i "$tmpfile" \
-+        -o "$outtmpfile" >/dev/null
-+    crc_hex=$(dd if="$outtmpfile" bs=4 count=1 skip=3 2>/dev/null | to_hex)
-+    rm "$tmpfile" "$outtmpfile" >/dev/null
-+    hex32 "0x$crc_hex"
-+}
-+
-+tclinux_trx_hdr() {
-+    # TRX header magic: "2RDH" for big endian, "HDR2" for little endian
-+    if [ "$endian" = "le" ]; then
-+        printf 'HDR2' | to_hex
-+    else
-+        printf '2RDH' | to_hex
-+    fi
-+
-+    # Length of the header
-+    hex32 "$HDRLEN"
-+
-+    # Length of header + content
-+    hex32 "$total_len"
-+
-+    # crc32 of the content
-+    trx_crc32
-+
-+    # version
-+    echo "$version" | to_hex
-+    head -c "$((32 - $(echo "$version" | wc -c)))" /dev/zero | to_hex
-+
-+    # customer version
-+    if [ -n "$custversion" ]; then
-+        echo "$custversion" | to_hex
-+        head -c "$((32 - $(echo "$custversion" | wc -c)))" /dev/zero | to_hex
-+    else
-+        head -c 32 /dev/zero | to_hex
-+    fi
-+
-+    # kernel length
-+    hex32 "$padded_kernel_len"
-+
-+    # rootfs length
-+    hex32 "$rootfs_len"
-+
-+    # romfile length (0)
-+    hex32 0
-+
-+    # model (32 bytes, zero-padded)
-+    if [ -n "$model" ]; then
-+        printf '%s' "$model" | to_hex
-+        head -c "$((32 - $(printf '%s' "$model" | wc -c)))" /dev/zero | to_hex
-+    else
-+        head -c 32 /dev/zero | to_hex
-+    fi
-+
-+    # Address the bootloader decompresses to. Note that some bootloaders
-+    # read this field from the image in slot A even when booting slot B,
-+    # so both slots need the same value.
-+    hex32 "$loadaddr"
-+
-+    # "reserved" 128 bytes of zeros
-+    head -c 128 /dev/zero | to_hex
-+}
-+
-+tclinux_trx_hdr | from_hex
-+cat "$kernel"
-+padding
-+if [ -f "$rootfs" ]; then
-+    cat "$rootfs"
-+fi
-diff --git a/target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch b/target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch
-new file mode 100644
-index 0000000000..bb72645272
---- /dev/null
-+++ b/target/linux/airoha/patches-6.18/205-mtd-spinand-add-Foresee-F35SQB002G-flash-support.patch
-@@ -0,0 +1,72 @@
-+From 1d9d5f5a5040ff9c8b7b22d54845b3a464286435 Mon Sep 17 00:00:00 2001
-+From: Mikhail Kshevetskiy <mikhail.kshevetskiy@iopsys.eu>
-+Date: Mon, 19 Jan 2026 07:02:37 +0300
-+Subject: [PATCH] mtd: spinand: add Foresee F35SQB002G flash support
-+
-+Add support of Foresee F35SQB002G spinand flash
-+
-+Signed-off-by: Mikhail Kshevetskiy <mikhail.kshevetskiy@iopsys.eu>
-+Signed-off-by: Miquel Raynal <miquel.raynal@bootlin.com>
-+---
-+ drivers/mtd/nand/spi/foresee.c | 34 ++++++++++++++++++++++++++++++++++
-+ 1 file changed, 34 insertions(+)
-+
-+diff --git a/drivers/mtd/nand/spi/foresee.c b/drivers/mtd/nand/spi/foresee.c
-+index c521dd6abc4b97..5ff18316092cd4 100644
-+--- a/drivers/mtd/nand/spi/foresee.c
-++++ b/drivers/mtd/nand/spi/foresee.c
-+@@ -11,6 +11,11 @@
-+ 
-+ #define SPINAND_MFR_FORESEE		0xCD
-+ 
-++#define F35SQB002G_STATUS_ECC_MASK		(7 << 4)
-++#define F35SQB002G_STATUS_ECC_NO_BITFLIPS	(0 << 4)
-++#define F35SQB002G_STATUS_ECC_1_3_BITFLIPS	(1 << 4)
-++#define F35SQB002G_STATUS_ECC_UNCOR_ERROR	(7 << 4)
-++
-+ static SPINAND_OP_VARIANTS(read_cache_variants,
-+ 		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_4S_OP(0, 1, NULL, 0, 0),
-+ 		SPINAND_PAGE_READ_FROM_CACHE_1S_1S_2S_OP(0, 1, NULL, 0, 0),
-+@@ -70,6 +75,25 @@ static int f35sqa002g_ecc_get_status(struct spinand_device *spinand, u8 status)
-+ 	return -EBADMSG;
-+ }
-+ 
-++static int f35sqb002g_ecc_get_status(struct spinand_device *spinand, u8 status)
-++{
-++	switch (status & F35SQB002G_STATUS_ECC_MASK) {
-++	case F35SQB002G_STATUS_ECC_NO_BITFLIPS:
-++		return 0;
-++
-++	case F35SQB002G_STATUS_ECC_1_3_BITFLIPS:
-++		return 3;
-++
-++	case F35SQB002G_STATUS_ECC_UNCOR_ERROR:
-++		return -EBADMSG;
-++
-++	default: /* (2 << 4) through (6 << 4) are 4-8 corrected errors */
-++		return ((status & F35SQB002G_STATUS_ECC_MASK) >> 4) + 2;
-++	}
-++
-++	return -EINVAL;
-++}
-++
-+ static const struct spinand_info foresee_spinand_table[] = {
-+ 	SPINAND_INFO("F35SQA002G",
-+ 		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x72, 0x72),
-+@@ -91,6 +115,16 @@ static const struct spinand_info foresee_spinand_table[] = {
-+ 		     SPINAND_HAS_QE_BIT,
-+ 		     SPINAND_ECCINFO(&f35sqa002g_ooblayout,
-+ 				     f35sqa002g_ecc_get_status)),
-++	SPINAND_INFO("F35SQB002G",
-++		     SPINAND_ID(SPINAND_READID_METHOD_OPCODE_DUMMY, 0x52, 0x52),
-++		     NAND_MEMORG(1, 2048, 128, 64, 2048, 40, 1, 1, 1),
-++		     NAND_ECCREQ(8, 512),
-++		     SPINAND_INFO_OP_VARIANTS(&read_cache_variants,
-++					      &write_cache_variants,
-++					      &update_cache_variants),
-++		     SPINAND_HAS_QE_BIT,
-++		     SPINAND_ECCINFO(&f35sqa002g_ooblayout,
-++				     f35sqb002g_ecc_get_status)),
-+ };
-+ 
-+ static const struct spinand_manufacturer_ops foresee_spinand_manuf_ops = {

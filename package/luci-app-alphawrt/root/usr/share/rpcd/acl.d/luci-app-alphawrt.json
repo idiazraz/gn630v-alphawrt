@@ -1,0 +1,18 @@
+{
+	"luci-app-alphawrt": {
+		"description": "Grant access to the AlphaWRT Quick Setup",
+		"read": {
+			"ubus": {
+				"alphawrt": [ "presets", "stock_identity" ],
+				"omci.agent": [ "status" ]
+			},
+			"uci": [ "alphawrt", "network", "omci", "system", "wireless" ]
+		},
+		"write": {
+			"ubus": {
+				"luci": [ "setPassword" ]
+			},
+			"uci": [ "alphawrt", "network", "omci", "system", "wireless" ]
+		}
+	}
+}

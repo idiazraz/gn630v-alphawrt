@@ -11,8 +11,8 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
          /_/                     Skyworth GN630V | AN7529CT | Linux 6.18
 ```
 
-> **Status: early test builds.** Verified on hardware: booting from either bank, the persistent overlay, the LAN switch, Wi-Fi 6 on both bands, encrypted DNS, LuCI, installing from the stock web UI, and going back to stock.
-> **Not yet:** GPON (no fibre internet while AlphaWRT runs). Read [Recovery](docs/RECOVERY.md) before flashing.
+> **Status: early test builds.** Verified on hardware: booting from either bank, the persistent overlay, the LAN switch, Wi-Fi 6 on both bands, encrypted DNS, LuCI, installing from the stock web UI, and going back to stock. GPON: the optics (EN7571, with the unit's own calibration) and the PON MAC come up and report loss of signal without fibre.
+> **Not yet:** GPON registration on a live line (O5) and Internet over fibre. Read [Recovery](docs/RECOVERY.md) before flashing.
 
 ## What you get
 * **OpenWrt** (procd, ubus, LuCI, apk, dropbear, firewall4) on Linux 6.18, with a persistent UBIFS overlay.
@@ -21,6 +21,11 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
 * **Real board support**, not a generic EN7523 build: GN630V partition map, MAC from the bootloader env, MT7916 calibration from flash, MT7530 switch, LEDs, and the FORESEE SPI-NAND driver backported from mainline.
 * **Wi-Fi that keeps working.** On first boot AlphaWRT reuses the network names, passwords and country from the stock settings, now as WPA2/WPA3. Each band gets its stock MAC, and 5 GHz runs at 160 MHz.
 * **Encrypted DNS by default.** dnsmasq serves the LAN and forwards to [dnsproxy](https://github.com/AdguardTeam/dnsproxy): DNS-over-QUIC and DNS-over-HTTPS (HTTP/3) upstreams, DNS-over-TLS fallback. To go back to the ISP's DNS, see the commands at the top of `/etc/uci-defaults/95_alphawrt_dns`.
+* **Quick Setup** (top bar, and the first page after the first login):
+  * **ISP presets** for Unifi, Maxis, CelcomDigi, TIME and Allo, which fill in the Internet VLAN and connection type.
+  * **ONT-model presets** for the ONTs those ISPs supply.
+  * **Your own serial number and PLOAM password**, or the identity the stock firmware saved, plus PPPoE, Wi-Fi and the admin password.
+  * A **fibre card on Status > Overview** shows the PON state and optical levels.
 * **Its own LuCI theme**, `luci-theme-alphawrt`: follows the device's light/dark setting, works at phone width. Bootstrap stays installed as a fallback.
 
 ## Install
@@ -49,15 +54,15 @@ The output lands in `openwrt/bin/targets/airoha/en7523/`.
 
 | Path | |
 |---|---|
-| `patches/` | OpenWrt patches: EN7523 baseline, the GN630V board, then Wi-Fi and DNS defaults |
-| `package/` | `luci-theme-alphawrt`, built as a local feed |
+| `patches/` | patches on the pinned EN7523 tree: the GN630V board (dual bank, image, Wi-Fi/DNS defaults, xPON wiring) |
+| `package/` | `luci-theme-alphawrt` and `luci-app-alphawrt` (Quick Setup), built as a local feed |
 | `config/gn630v.config` | build config seed |
 | `tools/` | UART/U-Boot helpers: chunked TFTP RAM boot, TFTP server, flash dump, image checker |
 | `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [roadmap](docs/ROADMAP.md) |
 
 ## Credits
+* [openwrt/openwrt#20104](https://github.com/openwrt/openwrt/pull/20104) (Sirherobrine23) and the trees it collects: the EN7523 tree AlphaWRT builds on, with the open xPON PHY/MAC, EN7571 optics and OMCI stack
 * [Kiwironic/openwrt-en7523](https://github.com/Kiwironic/openwrt-en7523): the EN7523 + MT7916 board support this port started from
-* [openwrt/openwrt#20104](https://github.com/openwrt/openwrt/pull/20104) (Sirherobrine23) and the trees it collects: EN7523 Ethernet/DSA/PCS
 * [realldz/econet-42x6-openwrt](https://github.com/realldz/econet-42x6-openwrt) and [gilsonolegario/px3321-en7523-notes](https://github.com/gilsonolegario/px3321-en7523-notes): vendor U-Boot and EN7523 ONU notes
 * OpenWrt's EcoNet target for `tclinux-trx.sh`, and the mainline FORESEE F35SQB002G driver
 

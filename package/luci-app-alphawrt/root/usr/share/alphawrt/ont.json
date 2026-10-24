@@ -1,0 +1,82 @@
+[
+	{
+		"id": "huawei-hg8240h5",
+		"name": "Huawei HG8240H5",
+		"vendor_id": "HWTC",
+		"equipment_id": "HG8240H5",
+		"hardware_version": "168D.A",
+		"software_version_0": "V5R019C00S105",
+		"software_version_1": "V5R019C00S105",
+		"traffic_management_option": "2"
+	},
+	{
+		"id": "huawei-hg8140h5",
+		"name": "Huawei HG8140H5",
+		"vendor_id": "HWTC",
+		"equipment_id": "HG8140H5",
+		"hardware_version": "31AD.A",
+		"software_version_0": "V5R022C10S458",
+		"software_version_1": "V5R022C10S458",
+		"traffic_management_option": "0"
+	},
+	{
+		"id": "huawei-hg8145x6",
+		"name": "Huawei HG8145X6",
+		"vendor_id": "HWTC",
+		"equipment_id": "HG8145X6",
+		"hardware_version": "1CDD.A",
+		"software_version_0": "V5R020C10S135",
+		"software_version_1": "V5R020C10S135",
+		"traffic_management_option": "2"
+	},
+	{
+		"id": "huawei-eg8010gv6",
+		"name": "Huawei EG8010Gv6",
+		"vendor_id": "HWTC",
+		"equipment_id": "EG8010Gv6",
+		"hardware_version": "260F.A",
+		"software_version_0": "V5R020C10S035",
+		"software_version_1": "V5R020C10S035",
+		"traffic_management_option": "2"
+	},
+	{
+		"id": "skyworth-gn630e",
+		"name": "Skyworth GN630E",
+		"vendor_id": "CWTC",
+		"equipment_id": "GN630E",
+		"hardware_version": "CW1.0",
+		"software_version_0": "V1.0.0.3A",
+		"software_version_1": "V1.0.0.3A",
+		"traffic_management_option": "0"
+	},
+	{
+		"id": "skyworth-sk-g7220",
+		"name": "Skyworth SK-G7220",
+		"vendor_id": "CWTC",
+		"equipment_id": "SK-G7220",
+		"hardware_version": "CW3.0",
+		"software_version_0": "V1.0.0.6",
+		"software_version_1": "V1.0.0.6",
+		"traffic_management_option": "0"
+	},
+	{
+		"id": "dlink-dpn-fx3060v",
+		"name": "D-Link DPN-FX3060V (B1)",
+		"vendor_id": "DLNK",
+		"equipment_id": "DPN-FX3060V",
+		"hardware_version": "B1",
+		"software_version_0": "V2.0.6",
+		"software_version_1": "V2.0.6",
+		"traffic_management_option": "2"
+	},
+	{
+		"id": "nokia-g-240g-e",
+		"name": "Nokia G-240G-E",
+		"vendor_id": "ALCL",
+		"equipment_id": "G-240G-E",
+		"hardware_version": "3FE48153CBAA",
+		"software_version_0": "3FE46606BGCB45",
+		"software_version_1": "3FE46606BGCB45",
+		"traffic_management_option": "0"
+	}
+]

@@ -69,7 +69,9 @@ return baseclass.extend({
 			const submenu = this.renderMainMenu(child, url + '/' + child.name, (level || 0) + 1);
 			const hasSub = !level && submenu.firstElementChild;
 			const isActive = (L.env.dispatchpath[(level || 0) + 1] == child.name);
-			const classes = [ hasSub ? 'dropdown' : null, isActive ? 'active' : null ].filter(Boolean).join(' ');
+			/* topmenu-<name>: lets the stylesheet place Quick Setup and Log out */
+			const classes = [ hasSub ? 'dropdown' : null, isActive ? 'active' : null,
+				level ? null : 'topmenu-' + child.name ].filter(Boolean).join(' ');
 
 			const li = E('li', { 'class': classes || null }, [
 				E('a', {

@@ -11,8 +11,12 @@ AlphaWRT's goal is a full replacement for the GN630V's stock firmware, **includi
 - [x] Wi-Fi 6 AP out of the box on both bands (stock SSIDs/keys/country, WPA2/WPA3, 160 MHz on 5 GHz)
 - [x] Encrypted DNS by default (DoQ, DoH over HTTP/3, DoT fallback)
 - [x] AlphaWRT LuCI theme
+- [x] Moved onto the EN7523 tree with the open GPON stack; EN7571 optics (DDMI) and PON MAC up without fibre
+- [x] Quick Setup: Malaysian ISP and ONT presets, GPON identity, Internet, Wi-Fi; fibre card on the Overview
 
 ## Next
+- [ ] GPON on a live line: O2 to O5, OMCI services, Internet on the ISP VLAN
+- [ ] Quick Setup operating modes: router, bridge, combo (one port bridged) and mesh
 - [ ] Router features: WireGuard, SQM/cake, TCP BBR, packet steering, adblock, attended sysupgrade; a LuCI page for the DNS settings
 - [ ] Wi-Fi: band steering, 802.11r/k/v, throughput vs stock
 - [ ] Branding (release name, hostname, banner)

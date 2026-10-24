@@ -1,0 +1,74 @@
+[
+	{
+		"id": "unifi",
+		"name": "Unifi (TM)",
+		"proto": "pppoe",
+		"vlan": 500,
+		"omcc_version": "128",
+		"olt_profile": "auto",
+		"note": "Voice is VLAN 400 and IPTV VLAN 600; Quick Setup only sets up the Internet VLAN. TM usually maps service to a LAN port (PPTP)."
+	},
+	{
+		"id": "maxis",
+		"name": "Maxis Fibre on the TM network",
+		"proto": "pppoe",
+		"vlan": 621,
+		"omcc_version": "128",
+		"olt_profile": "auto",
+		"note": "Voice is VLAN 822."
+	},
+	{
+		"id": "maxis-own",
+		"name": "Maxis Fibre on Maxis's own network",
+		"proto": "pppoe",
+		"vlan": 11,
+		"omcc_version": "128",
+		"olt_profile": "auto",
+		"note": "Voice is VLAN 14. Most Maxis lines run on the TM network (VLAN 621): pick that if you are not sure."
+	},
+	{
+		"id": "celcomdigi-celcom",
+		"name": "CelcomDigi Fibre, ex-Celcom plan (TM network)",
+		"proto": "pppoe",
+		"vlan": 623,
+		"omcc_version": "128",
+		"olt_profile": "auto",
+		"note": "Voice is VLAN 400. Former Digi lines use VLAN 629."
+	},
+	{
+		"id": "celcomdigi-digi",
+		"name": "CelcomDigi Fibre, ex-Digi plan (TM network)",
+		"proto": "pppoe",
+		"vlan": 629,
+		"omcc_version": "128",
+		"olt_profile": "auto",
+		"note": "Voice is VLAN 400. Former Celcom lines use VLAN 623."
+	},
+	{
+		"id": "time",
+		"name": "TIME",
+		"proto": "dhcp",
+		"vlan": 499,
+		"omcc_version": "128",
+		"olt_profile": "auto",
+		"note": "Voice is VLAN 140. The Internet VLAN is usually 499 but can differ by area. If TIME gave you a PPPoE username, choose PPPoE."
+	},
+	{
+		"id": "allo",
+		"name": "Allo",
+		"proto": "dhcp",
+		"vlan": 990,
+		"omcc_version": "160",
+		"olt_profile": "auto",
+		"note": "Voice is VLAN 992. If Allo gave you a PPPoE username, choose PPPoE."
+	},
+	{
+		"id": "other",
+		"name": "Other / manual",
+		"proto": "dhcp",
+		"vlan": 0,
+		"omcc_version": "",
+		"olt_profile": "auto",
+		"note": "Enter the values your ISP gave you."
+	}
+]

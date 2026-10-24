@@ -1,7 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-only
-# Build AlphaWRT for the Skyworth GN630V: OpenWrt at a pinned commit plus the
-# patches in patches/. Needs the OpenWrt build prerequisites and a
+# Build AlphaWRT for the Skyworth GN630V: the EN7523 OpenWrt branch with the
+# open GPON stack (Sirherobrine23's tree, openwrt/openwrt#20104) at a pinned
+# commit, plus the patches in patches/. Needs the OpenWrt build prerequisites and a
 # case-sensitive filesystem (see README.md).
 #
 #   ./build.sh [openwrt-dir]      default: ./openwrt
@@ -12,18 +13,20 @@
 #   *-initramfs-kernel.bin           RAM boot over U-Boot TFTP (docs/INSTALL.md)
 set -eu
 
-BASE=7287a40ccf2d0b17508c68c0c0bd5ac8ac9aa74a
+BASE=90f5ac78ddce3b9be42d16c869248d85d8eaecfd
+TREE=https://github.com/Sirherobrine23/openwrt.git
 HERE=$(cd "$(dirname "$0")" && pwd)
 DIR=${1:-openwrt}
 
-[ -d "$DIR/.git" ] || git clone https://github.com/openwrt/openwrt.git "$DIR"
+[ -d "$DIR/.git" ] || git clone "$TREE" "$DIR"
 cd "$DIR"
+git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q "$TREE" "$BASE"
 git checkout -q -B alphawrt "$BASE"
 git am -q "$HERE"/patches/*.patch
 
 { cat feeds.conf.default; echo "src-link alphawrt $HERE/package"; } > feeds.conf
 ./scripts/feeds update -a
-./scripts/feeds install luci dnsproxy luci-theme-alphawrt
+./scripts/feeds install luci dnsproxy luci-theme-alphawrt luci-app-alphawrt
 
 cp "$HERE/config/gn630v.config" .config
 make defconfig
