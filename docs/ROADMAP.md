@@ -13,6 +13,7 @@ AlphaWRT's goal is a full replacement for the GN630V's stock firmware, **includi
 - [x] AlphaWRT LuCI theme
 - [x] Moved onto the EN7523 tree with the open GPON stack; EN7571 optics (DDMI) and PON MAC up without fibre
 - [x] Quick Setup: Malaysian ISP and ONT presets, GPON identity, Internet, Wi-Fi; fibre card on the Overview
+- [x] Basic (stock-style) and Advanced (full LuCI) web interfaces
 
 ## Next
 - [ ] GPON on a live line: O2 to O5, OMCI services, Internet on the ISP VLAN

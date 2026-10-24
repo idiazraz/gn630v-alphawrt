@@ -1,16 +1,22 @@
 {
 	"luci-app-alphawrt": {
-		"description": "Grant access to the AlphaWRT Quick Setup",
+		"description": "Grant access to the AlphaWRT Quick Setup and Basic pages",
 		"read": {
 			"ubus": {
 				"alphawrt": [ "presets", "stock_identity" ],
-				"omci.agent": [ "status" ]
+				"iwinfo": [ "assoclist", "info" ],
+				"luci-rpc": [ "getDHCPLeases", "getNetworkDevices", "getWirelessDevices", "getBoardJSON", "getHostHints" ],
+				"network": [ "get_proto_handlers" ],
+				"network.interface": [ "dump" ],
+				"omci.agent": [ "status" ],
+				"system": [ "board", "info" ]
 			},
 			"uci": [ "alphawrt", "network", "omci", "system", "wireless" ]
 		},
 		"write": {
 			"ubus": {
-				"luci": [ "setPassword" ]
+				"luci": [ "setPassword" ],
+				"system": [ "reboot" ]
 			},
 			"uci": [ "alphawrt", "network", "omci", "system", "wireless" ]
 		}

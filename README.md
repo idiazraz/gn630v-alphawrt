@@ -21,6 +21,9 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
 * **Real board support**, not a generic EN7523 build: GN630V partition map, MAC from the bootloader env, MT7916 calibration from flash, MT7530 switch, LEDs, and the FORESEE SPI-NAND driver backported from mainline.
 * **Wi-Fi that keeps working.** On first boot AlphaWRT reuses the network names, passwords and country from the stock settings, now as WPA2/WPA3. Each band gets its stock MAC, and 5 GHz runs at 160 MHz.
 * **Encrypted DNS by default.** dnsmasq serves the LAN and forwards to [dnsproxy](https://github.com/AdguardTeam/dnsproxy): DNS-over-QUIC and DNS-over-HTTPS (HTTP/3) upstreams, DNS-over-TLS fallback. To go back to the ISP's DNS, see the commands at the top of `/etc/uci-defaults/95_alphawrt_dns`.
+* **Two web interfaces.** Switch between them with the link at the top right.
+  * **Basic** (the default): Home, Wi-Fi, Devices and System pages, like the stock firmware's.
+  * **Advanced**: the full OpenWrt interface (LuCI).
 * **Quick Setup** (top bar, and the first page after the first login):
   * **ISP presets** for Unifi, Maxis, CelcomDigi, TIME and Allo, which fill in the Internet VLAN and connection type.
   * **ONT-model presets** for the ONTs those ISPs supply.
@@ -31,7 +34,7 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
 ## Install
 Download `*-tclinux-factory.bin` and, on the stock web UI, go to **System → Upgrade**, choose **firmware** and flash it. Keep `tclinux` in the file name: the stock page rejects anything else. Details, and the UART/U-Boot route with a full flash backup, are in [docs/INSTALL.md](docs/INSTALL.md).
 
-After the reboot: http://192.168.1.1, user `root`, set a password.
+After the reboot: http://192.168.1.1, user `root`, no password. The first login opens Quick Setup.
 
 ## Back to stock
 ```
@@ -55,7 +58,7 @@ The output lands in `openwrt/bin/targets/airoha/en7523/`.
 | Path | |
 |---|---|
 | `patches/` | patches on the pinned EN7523 tree: the GN630V board (dual bank, image, Wi-Fi/DNS defaults, xPON wiring) |
-| `package/` | `luci-theme-alphawrt` and `luci-app-alphawrt` (Quick Setup), built as a local feed |
+| `package/` | `luci-theme-alphawrt` and `luci-app-alphawrt` (Quick Setup, Basic interface), copied into the tree as `package/alphawrt/` |
 | `config/gn630v.config` | build config seed |
 | `tools/` | UART/U-Boot helpers: chunked TFTP RAM boot, TFTP server, flash dump, image checker |
 | `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [roadmap](docs/ROADMAP.md) |

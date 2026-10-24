@@ -12,8 +12,8 @@
 <main class="login-shell">
 	<form method="post" class="login-card">
 		<div class="login-brand">
-			<svg class="login-mark" aria-hidden="true"><use href="{{ media }}/logo.svg#mark"/></svg>
-			<svg class="login-word" role="img" aria-label="AlphaWRT"><use href="{{ media }}/logo.svg#word"/></svg>
+			<svg class="login-mark" aria-hidden="true"><use href="{{ media }}/logo.svg?v={{ version.distrevision }}#mark"/></svg>
+			<svg class="login-word" role="img" aria-label="AlphaWRT"><use href="{{ media }}/logo.svg?v={{ version.distrevision }}#word"/></svg>
 			<span class="brand-host">{{ striptags(boardinfo.hostname ?? '?') }}</span>
 		</div>
 

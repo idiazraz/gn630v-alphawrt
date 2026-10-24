@@ -1,4 +1,108 @@
 {
+	"basic": {
+		"title": "Basic",
+		"order": 5,
+		"action": {
+			"type": "firstchild",
+			"recurse": true
+		},
+		"auth": {
+			"methods": [ "cookie:sysauth_https", "cookie:sysauth_http" ],
+			"login": true
+		}
+	},
+
+	"basic/home": {
+		"title": "Home",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/basic/home"
+		},
+		"depends": {
+			"acl": [ "luci-app-alphawrt" ]
+		}
+	},
+
+	"basic/wifi": {
+		"title": "Wi-Fi",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/basic/wifi"
+		},
+		"depends": {
+			"acl": [ "luci-app-alphawrt" ]
+		}
+	},
+
+	"basic/devices": {
+		"title": "Devices",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/basic/devices"
+		},
+		"depends": {
+			"acl": [ "luci-app-alphawrt" ]
+		}
+	},
+
+	"basic/system": {
+		"title": "System",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/basic/system"
+		},
+		"depends": {
+			"acl": [ "luci-app-alphawrt" ]
+		}
+	},
+
+	"basic/advanced": {
+		"title": "Advanced",
+		"order": 997,
+		"action": {
+			"type": "alias",
+			"path": "admin/status/overview"
+		},
+		"firstchild_ineligible": true
+	},
+
+	"basic/quicksetup": {
+		"title": "Quick Setup",
+		"order": 998,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/quicksetup"
+		},
+		"depends": {
+			"acl": [ "luci-app-alphawrt" ]
+		}
+	},
+
+	"basic/logout": {
+		"title": "Log out",
+		"order": 999,
+		"action": {
+			"type": "function",
+			"module": "luci.controller.admin.index",
+			"function": "action_logout"
+		},
+		"firstchild_ineligible": true
+	},
+
+	"admin/basic": {
+		"title": "Basic",
+		"order": 997,
+		"action": {
+			"type": "alias",
+			"path": "basic/home"
+		},
+		"firstchild_ineligible": true
+	},
+
 	"admin/quicksetup": {
 		"title": "Quick Setup",
 		"order": 998,

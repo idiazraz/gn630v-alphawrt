@@ -47,11 +47,11 @@
 	{
 		"id": "time",
 		"name": "TIME",
-		"proto": "dhcp",
+		"proto": "pppoe",
 		"vlan": 499,
 		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "Voice is VLAN 140. The Internet VLAN is usually 499 but can differ by area. If TIME gave you a PPPoE username, choose PPPoE."
+		"note": "Voice is VLAN 140. The Internet VLAN is usually 499 but can differ by area."
 	},
 	{
 		"id": "allo",

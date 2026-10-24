@@ -1146,8 +1146,16 @@ header #topmenu {
 	flex: 1;
 }
 
+/* the Basic/Advanced switch, then Quick Setup, then Log out */
+.nav > li.topmenu-basic,
+.nav > li.topmenu-advanced,
 .nav > li.topmenu-quicksetup {
 	margin-left: auto;
+}
+
+.nav > li.topmenu-basic ~ li.topmenu-quicksetup,
+.nav > li.topmenu-advanced ~ li.topmenu-quicksetup {
+	margin-left: 0;
 }
 
 .nav > li.topmenu-quicksetup > a {
@@ -3034,6 +3042,8 @@ footer.login-foot {
 		order: 2;
 	}
 
+	.nav > li.topmenu-basic,
+	.nav > li.topmenu-advanced,
 	.nav > li.topmenu-quicksetup {
 		margin-left: 0;
 	}

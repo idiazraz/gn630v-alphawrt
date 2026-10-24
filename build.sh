@@ -24,9 +24,11 @@ git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q "$TREE" "$BASE"
 git checkout -q -B alphawrt "$BASE"
 git am -q "$HERE"/patches/*.patch
 
-{ cat feeds.conf.default; echo "src-link alphawrt $HERE/package"; } > feeds.conf
+# AlphaWRT's own packages go inside the tree (not a linked feed), so the
+# images carry no path from the build machine
+rm -rf package/alphawrt && cp -R "$HERE/package" package/alphawrt
 ./scripts/feeds update -a
-./scripts/feeds install luci dnsproxy luci-theme-alphawrt luci-app-alphawrt
+./scripts/feeds install luci dnsproxy
 
 cp "$HERE/config/gn630v.config" .config
 make defconfig
