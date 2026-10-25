@@ -1,5 +1,7 @@
 # Installing AlphaWRT
 
+> **Do not flash this firmware on the 2.5G GN630V.** This build is for the AX3000 GN630V variant only. The 2.5G variant is untested and may be incompatible.
+
 ## The easy way: stock web UI
 1. Connect a computer to a LAN port and open the stock web UI.
 2. System → Upgrade, choose the **firmware** type, select `*-squashfs-tclinux-factory.bin` (keep `tclinux` in the file name) and start.

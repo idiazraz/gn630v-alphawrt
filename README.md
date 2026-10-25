@@ -2,6 +2,8 @@
 
 OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN7523 family) box. It runs a current OpenWrt kernel (6.18) and LuCI, installs from the **stock web UI**, and keeps the stock firmware in the second flash bank so you can always go back.
 
+> **Hardware restriction: Do not flash this firmware on the 2.5G GN630V.** Only the AX3000 GN630V variant is covered by this build; the 2.5G variant has not been tested and may be incompatible.
+
 ```
      ___    __      __          _      ______  ______
     /   |  / /___  / /_  ____ _| |    / / __ \/_  __/
