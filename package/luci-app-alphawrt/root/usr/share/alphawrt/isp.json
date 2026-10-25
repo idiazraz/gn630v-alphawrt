@@ -3,23 +3,25 @@
 		"id": "unifi",
 		"name": "Unifi (TM)",
 		"proto": "pppoe",
-		"vlan": 0,
+		"vlan": 500,
 		"omcc_version": "",
 		"olt_profile": "auto",
-		"note": "If TM supplied and provisioned this GN630V, use the identity saved by the stock firmware button below. Internet VLAN and OMCI details are left unfilled for line-specific verification.",
+		"note": "Values from the GN630V's own stock firmware, which TM supplies: Internet is PPPoE on VLAN 500; IPTV is VLAN 600 (stock puts it on LAN 4), voice VLAN 400 and TR-069 management VLAN 209. Quick Setup sets up the Internet VLAN. If TM supplied and provisioned this GN630V, use the identity saved by the stock firmware button below.",
 		"stock_identity": true,
-		"short": "Unifi"
+		"short": "Unifi",
+		"source": "GN630V stock firmware defaults (TM)"
 	},
 	{
 		"id": "time",
-		"name": "TIME (manual VLAN)",
+		"name": "TIME",
 		"proto": "pppoe",
-		"vlan": 0,
-		"omcc_version": "",
+		"vlan": 499,
+		"omcc_version": "128",
 		"olt_profile": "auto",
-		"note": "PPPoE is preselected. This profile is still under test; VLAN and OMCI values are not prefilled. Verify them on your own line before use.",
+		"note": "Tested on a live TIME line (Huawei OLT): Internet is PPPoE on VLAN 499, which the OLT provisions itself; once the fibre registers, Quick Setup uses the VLAN your OLT sends, in case your area differs. TIME's PLOAM password is the ONT authentication password, the same as your PPPoE password in TIME Self Care. Pick your Huawei ONT model below and copy its serial number.",
 		"stock_identity": false,
-		"short": "TIME"
+		"short": "TIME",
+		"source": "live TIME line, 2026-10-25"
 	},
 	{
 		"id": "allo",

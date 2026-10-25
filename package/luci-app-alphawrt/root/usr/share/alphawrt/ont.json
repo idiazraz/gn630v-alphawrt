@@ -1,1 +1,16 @@
-[]
+[
+	{
+		"id": "huawei-hg8145x6",
+		"name": "Huawei HG8145X6",
+		"vendor_id": "HWTC",
+		"equipment_id": "HG8145X6",
+		"hardware_version": "1CDD.A",
+		"software_version_0": "V5R020C10S202",
+		"software_version_1": "V5R020C10S202",
+		"traffic_management_option": "2",
+		"isps": [
+			"time"
+		],
+		"source": "registered with these values on a live TIME line, 2026-10-25 (the owner's TIME-supplied unit)"
+	}
+]

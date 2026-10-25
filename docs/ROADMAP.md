@@ -13,7 +13,7 @@ AlphaWRT's goal is a full replacement for the GN630V's stock firmware, **includi
 - [x] AlphaWRT LuCI theme
 - [x] Moved onto the EN7523 tree with the open GPON stack; EN7571 optics (DDMI) and PON MAC up without fibre
 - [x] GPON live registration reaches O5 and OMCI responds on the tested line
-- [x] Quick Setup flow for ISP selection, GPON identity, Internet and Wi-Fi; unverified ISP/ONT presets removed pending tester evidence
+- [x] Quick Setup flow for ISP selection, GPON identity, Internet and Wi-Fi; presets only from the project's own sources (Unifi from the stock firmware, TIME from a live line); others pending tester evidence
 - [x] Basic (stock-style) and Advanced (full LuCI) web interfaces
 - [x] Stock web UI login hidden from /proc/cmdline, the kernel log and the device tree (the vendor U-Boot passes its whole env)
 
