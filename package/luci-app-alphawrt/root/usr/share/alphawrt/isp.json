@@ -1,5 +1,16 @@
 [
 	{
+		"id": "unifi",
+		"name": "Unifi (TM)",
+		"proto": "pppoe",
+		"vlan": 0,
+		"omcc_version": "",
+		"olt_profile": "auto",
+		"note": "If TM supplied and provisioned this GN630V, use the identity saved by the stock firmware button below. Internet VLAN and OMCI details are left unfilled for line-specific verification.",
+		"stock_identity": true,
+		"short": "Unifi"
+	},
+	{
 		"id": "time",
 		"name": "TIME (manual VLAN)",
 		"proto": "pppoe",

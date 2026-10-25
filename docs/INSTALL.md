@@ -14,7 +14,7 @@ Stock stays in the other bank. Preserve that stock bank as your rollback path. T
 
 ### TM UniFi identity
 
-If TM supplied and provisioned the same GN630V you are flashing, open Quick Setup, choose **Other / manual**, then click **Use the identity saved by the stock firmware** on the fibre identity step. It copies the identity from this box's stock configuration, so you do not need to type those identity fields. This does not configure Internet or VLAN settings; set those for your own service. Do not use this option if the GN630V was not supplied and provisioned for your line.
+If TM supplied and provisioned the same GN630V you are flashing, open Quick Setup, choose **Unifi (TM)**, then click **Use the identity saved by the stock firmware** on the fibre identity step. It copies the identity from this box's stock configuration, so you do not need to type those identity fields. This does not configure Internet or VLAN settings; set those for your own service. Do not use this option if the GN630V was not supplied and provisioned for your line.
 
 ## The developer way: UART + U-Boot (with a full backup)
 Use this if you want a complete flash backup first (recommended), or the stock web UI isn't available.
