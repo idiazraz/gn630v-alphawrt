@@ -70,6 +70,7 @@ The output lands in `openwrt/bin/targets/airoha/en7523/`.
 * [Kiwironic/openwrt-en7523](https://github.com/Kiwironic/openwrt-en7523): the EN7523 + MT7916 board support this port started from
 * [realldz/econet-42x6-openwrt](https://github.com/realldz/econet-42x6-openwrt) and [gilsonolegario/px3321-en7523-notes](https://github.com/gilsonolegario/px3321-en7523-notes): vendor U-Boot and EN7523 ONU notes
 * OpenWrt's EcoNet target for `tclinux-trx.sh`, and the mainline FORESEE F35SQB002G driver
+* [Anime4000's RTL960x project](https://github.com/Anime4000/RTL960x): public OMCI/xPON research that informed our background understanding of ONU identity and OLT behaviour. AlphaWRT's GPON implementation is based on the upstream EN7523 xPON stack above.
 
 ## License
 GPL-2.0, like OpenWrt; `package/luci-theme-alphawrt` is Apache-2.0, like LuCI. No proprietary firmware is part of this repository: the MT7916 firmware comes from OpenWrt's mt76 package, and the NPU firmware stays on the user's own stock image.
