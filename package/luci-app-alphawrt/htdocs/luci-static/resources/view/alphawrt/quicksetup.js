@@ -85,7 +85,7 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			L.resolveDefault(callPresets(), {}),
-			uci.load([ 'alphawrt', 'network', 'omci', 'system', 'wireless' ])
+			uci.load([ 'alphawrt', 'firewall', 'network', 'omci', 'system', 'wireless' ])
 		]);
 	},
 
@@ -118,6 +118,10 @@ return view.extend({
 		d.username = uci.get('network', 'wan', 'username') || '';
 		d.ppp_password = uci.get('network', 'wan', 'password') || '';
 		d.wifi_keep = false;
+		/* trunk: an existing bridge on pon0 itself, else the ISP's default */
+		d.trunk = uci.sections('network', 'device').some(function(s) {
+			return s.type == 'bridge' && L.toArray(s.ports).indexOf('pon0') >= 0;
+		}) || !!(byId(this.presets, d.isp) || {}).bridge_trunk;
 		[ '0', '1' ].forEach(function(r) {
 			d['ssid' + r] = uci.get('wireless', 'default_radio' + r, 'ssid') || '';
 			d['key' + r] = uci.get('wireless', 'default_radio' + r, 'key') || '';
@@ -254,6 +258,7 @@ return view.extend({
 					self.d.vlan = p.vlan ? String(p.vlan) : '';
 					self.d.omcc_version = p.omcc_version || self.d.omcc_version;
 					self.d.olt_profile = p.olt_profile || '';
+					self.d.trunk = !!p.bridge_trunk;
 				})
 			]),
 			check: L.bind(function() { return this.d.isp ? null : _('Pick your provider (or Other).'); }, this)
@@ -370,8 +375,14 @@ return view.extend({
 			body = [
 				this.identity(),
 				E('h4', {}, _('Your router')),
-				this.portField(_('Plug your own router\'s WAN/Internet port into this port. Do not pick the port your computer is on; the other ports keep this page at 192.168.1.1.')),
-				this.field(_('VLAN ID'), 'vlan', _('Filled in from the provider. Once the fibre is registered, the VLAN your ISP\'s equipment sends replaces it.')),
+				this.portField(_('Plug your own router\'s WAN/Internet port into this port. Do not pick the port your computer is on; the other ports keep this page at 192.168.1.1, and your router can reach it at 192.168.100.1.')),
+				E('label', { 'class': 'cbi-value', 'style': 'display:flex;gap:.75em' }, [
+					E('input', { 'type': 'checkbox', 'checked': d.trunk ? '' : null,
+						'change': function(ev) { d.trunk = ev.target.checked; self.draw(); } }),
+					E('span', {}, [ _('Pass every ISP VLAN, tagged (trunk)'), E('br'),
+						E('small', {}, _('Your router then handles the Internet, IPTV and voice VLANs itself, as with TM\'s own bridge mode (Unifi: Internet 500, IPTV 600, voice 400). Leave off to give your router only the Internet, untagged.')) ])
+				]),
+				d.trunk ? '' : this.field(_('VLAN ID'), 'vlan', _('Filled in from the provider. Once the fibre is registered, the VLAN your ISP\'s equipment sends replaces it.')),
 				E('h4', {}, _('Wi-Fi')),
 				E('label', { 'class': 'cbi-value', 'style': 'display:flex;gap:.75em' }, [
 					E('input', { 'type': 'checkbox', 'checked': d.wifi_keep ? '' : null,
@@ -561,20 +572,24 @@ return view.extend({
 	/* ---- writing the configuration ---- */
 
 	writeNetwork: function() {
-		var d = this.d, vlan = +d.vlan || 0, lanBr, ports, br, brIf;
+		var d = this.d, vlan = +d.vlan || 0, lanBr, ports, br, brIfs;
 
-		/* an earlier bridge mode: the pon0 bridge and its interface. Reused
-		 * in bridge mode (removing and re-adding the same names in one save
-		 * is not safe), removed otherwise. */
+		/* an earlier bridge mode: the pon0 bridge and the interfaces on it
+		 * (ontbridge, and gnmgmt for the management address). Reused in
+		 * bridge mode (removing and re-adding the same names in one save is
+		 * not safe), removed otherwise. */
 		br = uci.sections('network', 'device').filter(function(s) {
 			return s.type == 'bridge' && L.toArray(s.ports).some(function(p) { return /^pon\d/.test(p); });
 		})[0];
-		brIf = br ? uci.sections('network', 'interface').filter(function(i) { return i.device == br.name; })[0] : null;
+		brIfs = br ? uci.sections('network', 'interface').filter(function(i) { return i.device == br.name; }) : [];
 		if (d.mode != 'bridge') {
-			if (brIf)
-				uci.remove('network', brIf['.name']);
+			brIfs.forEach(function(i) { uci.remove('network', i['.name']); });
 			if (br)
 				uci.remove('network', br['.name']);
+			uci.sections('firewall', 'zone').forEach(function(z) {
+				if (z.name == 'gnmgmt')
+					uci.remove('firewall', z['.name']);
+			});
 		}
 
 		/* LAN bridge: every port except the one this mode takes */
@@ -588,12 +603,29 @@ return view.extend({
 
 		if (d.mode == 'bridge') {
 			var bsid = br ? br['.name'] : uci.add('network', 'device', 'br_wan'),
-			    isid = brIf ? brIf['.name'] : uci.add('network', 'interface', 'ontbridge');
+			    isid = uci.get('network', 'ontbridge') ? 'ontbridge' : uci.add('network', 'interface', 'ontbridge'),
+			    msid = uci.get('network', 'gnmgmt') ? 'gnmgmt' : uci.add('network', 'interface', 'gnmgmt'),
+			    zone = uci.sections('firewall', 'zone').filter(function(z) { return z.name == 'gnmgmt'; })[0];
 			uci.set('network', bsid, 'type', 'bridge');
 			uci.set('network', bsid, 'name', 'br-wan');
-			uci.set('network', bsid, 'ports', [ d.port, vlan ? 'pon0.' + vlan : 'pon0' ]);
+			/* trunk: pon0 itself passes every ISP VLAN tagged, as TM's own
+			 * bridge mode does; otherwise only the Internet VLAN, untagged */
+			uci.set('network', bsid, 'ports', [ d.port, (vlan && !d.trunk) ? 'pon0.' + vlan : 'pon0' ]);
 			uci.set('network', isid, 'proto', 'none');
 			uci.set('network', isid, 'device', 'br-wan');
+			/* the box stays reachable from the router's side, like an ISP
+			 * ONT: 192.168.100.1 (frames from the fibre side are dropped) */
+			uci.set('network', msid, 'proto', 'static');
+			uci.set('network', msid, 'device', 'br-wan');
+			uci.set('network', msid, 'ipaddr', '192.168.100.1');
+			uci.set('network', msid, 'netmask', '255.255.255.0');
+			if (!zone)
+				zone = { '.name': uci.add('firewall', 'zone') };
+			uci.set('firewall', zone['.name'], 'name', 'gnmgmt');
+			uci.set('firewall', zone['.name'], 'network', [ 'gnmgmt' ]);
+			uci.set('firewall', zone['.name'], 'input', 'ACCEPT');
+			uci.set('firewall', zone['.name'], 'output', 'ACCEPT');
+			uci.set('firewall', zone['.name'], 'forward', 'REJECT');
 			uci.set('network', 'wan', 'device', 'pon0');
 			uci.set('network', 'wan', 'disabled', '1');
 			if (uci.get('network', 'wan6'))

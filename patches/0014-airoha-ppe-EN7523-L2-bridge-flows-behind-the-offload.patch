@@ -1,0 +1,70 @@
+From 53213db2853f59769c3a0a192932261f3ff5c17c Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 17:03:37 +0800
+Subject: [PATCH] airoha: ppe: EN7523 L2 bridge flows behind the offload mask
+
+Bit 4 (16) of en7523_offload lets L2 bridge flows (bridger, tc flower)
+into the PPE. Off by default until verified on the GN630V.
+---
+ ...-en7523-ipv6-entries-and-offload-mask.patch | 18 +++++++++++-------
+ 1 file changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/target/linux/airoha/patches-6.18/993-net-airoha-ppe-en7523-ipv6-entries-and-offload-mask.patch b/target/linux/airoha/patches-6.18/993-net-airoha-ppe-en7523-ipv6-entries-and-offload-mask.patch
+index 47e5108b21..57c70400ef 100644
+--- a/target/linux/airoha/patches-6.18/993-net-airoha-ppe-en7523-ipv6-entries-and-offload-mask.patch
++++ b/target/linux/airoha/patches-6.18/993-net-airoha-ppe-en7523-ipv6-entries-and-offload-mask.patch
+@@ -13,24 +13,25 @@ stay in the software flowtable.
+ ---
+ --- a/drivers/net/ethernet/airoha/airoha_ppe.c
+ +++ b/drivers/net/ethernet/airoha/airoha_ppe.c
+-@@ -14,6 +14,16 @@
++@@ -14,6 +14,17 @@
+  #include <net/flow_offload.h>
+  #include <net/netlink.h>
+  #include <net/pkt_cls.h>
+ +
+ +/*
+ + * EN7523 hardware offload per flow kind, writable at runtime: bit 0 IPv4
+-+ * TCP, bit 1 IPv4 UDP, bit 2 IPv6 TCP, bit 3 IPv6 UDP. Only IPv4 TCP has
+-+ * been verified on a GPON ONT routing PPPoE (line rate both ways).
+++ * TCP, bit 1 IPv4 UDP, bit 2 IPv6 TCP, bit 3 IPv6 UDP, bit 4 L2 bridge flows
+++ * (bridger, tc flower). Only IPv4 TCP has been verified on a GPON ONT
+++ * routing PPPoE (line rate both ways).
+ + */
+ +static unsigned int en7523_offload = BIT(0);
+ +module_param(en7523_offload, uint, 0644);
+ +MODULE_PARM_DESC(en7523_offload,
+-+		 "EN7523 PPE offload mask: 1 IPv4 TCP, 2 IPv4 UDP, 4 IPv6 TCP, 8 IPv6 UDP");
+++		 "EN7523 PPE offload mask: 1 IPv4 TCP, 2 IPv4 UDP, 4 IPv6 TCP, 8 IPv6 UDP, 16 L2 bridge");
+  #include <net/route.h>
+  #include <uapi/linux/ppp_defs.h>
+  
+-@@ -757,14 +767,18 @@
++@@ -757,14 +768,18 @@
+  
+  	l2->dest_mac_hi = get_unaligned_be32(data->eth.h_dest);
+  	l2->dest_mac_lo = get_unaligned_be16(data->eth.h_dest + 4);
+@@ -54,7 +55,7 @@ stay in the software flowtable.
+  		mac_info->pppoe_id = data->pppoe.sid;
+  	} else {
+  		l2->src_mac_hi = FIELD_PREP(AIROHA_FOE_MAC_SMAC_ID, smac_id) |
+-@@ -1877,6 +1891,20 @@
++@@ -1877,6 +1892,23 @@
+  		return -EOPNOTSUPP;
+  	}
+  
+@@ -65,7 +66,10 @@ stay in the software flowtable.
+ +	if (airoha_is(eth, airoha_en7523)) {
+ +		bool ipv6 = addr_type == FLOW_DISSECTOR_KEY_IPV6_ADDRS;
+ +
+-+		if ((!ipv6 && addr_type != FLOW_DISSECTOR_KEY_IPV4_ADDRS) ||
+++		if (!addr_type) {
+++			if (!(READ_ONCE(en7523_offload) & BIT(4)))
+++				return -EOPNOTSUPP;
+++		} else if ((!ipv6 && addr_type != FLOW_DISSECTOR_KEY_IPV4_ADDRS) ||
+ +		    (l4proto != IPPROTO_TCP && l4proto != IPPROTO_UDP) ||
+ +		    !(READ_ONCE(en7523_offload) &
+ +		      BIT(ipv6 * 2 + (l4proto == IPPROTO_UDP))))
+-- 
+2.54.0 (Apple Git-157)
+

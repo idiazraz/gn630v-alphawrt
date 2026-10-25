@@ -38,6 +38,7 @@
 			},
 			"uci": [
 				"alphawrt",
+				"firewall",
 				"network",
 				"omci",
 				"system",
@@ -59,6 +60,7 @@
 			},
 			"uci": [
 				"alphawrt",
+				"firewall",
 				"network",
 				"omci",
 				"system",

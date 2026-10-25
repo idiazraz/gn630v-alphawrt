@@ -1,0 +1,37 @@
+#!/bin/sh
+# Bridge mode tuning, when the interfaces on the fibre bridge (br-wan) go up
+# or down:
+#  - GRO off on the bridged LAN port: frames merged there would only be split
+#    again for pon0, which has no segmentation offload (about +20% upload).
+#  - Frames for the box itself that arrive from the fibre side are dropped,
+#    so the management address (192.168.100.1) answers only the router.
+
+[ "$INTERFACE" = gnmgmt ] || [ "$INTERFACE" = ontbridge ] || exit 0
+
+ports=$(uci -q get network.br_wan.ports)
+
+case "$ACTION" in
+ifup)
+	for p in $ports; do
+		case "$p" in lan*) ethtool -K "$p" gro off 2>/dev/null ;; esac
+	done
+	nft -f - 2>/dev/null <<EOF
+table bridge alphawrt_guard
+delete table bridge alphawrt_guard
+table bridge alphawrt_guard {
+	chain input {
+		type filter hook input priority 0; policy accept;
+		iifname "pon0*" drop
+	}
+}
+EOF
+	;;
+ifdown)
+	for p in lan1 lan2 lan3 lan4; do
+		ethtool -K "$p" gro on 2>/dev/null
+	done
+	nft delete table bridge alphawrt_guard 2>/dev/null
+	;;
+esac
+
+exit 0
