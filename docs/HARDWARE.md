@@ -2,7 +2,7 @@
 
 Everything here was read from a GN630V over UART, from its own flash, and from the stock firmware. Unit-specific values (MAC, serials, passwords) are deliberately left out.
 
-> **Variant warning:** AlphaWRT images are built for the AX3000 GN630V only. Do not flash them on the 2.5G GN630V; that variant has not been tested and may be incompatible.
+> **Variant warning:** AlphaWRT images are built for the AX3000 GN630V only. Do not flash them on the 2.5G GN630V; that variant has not been tested and may be incompatible. Check the full model/variant marking on the device label.
 
 ## Board
 | | |

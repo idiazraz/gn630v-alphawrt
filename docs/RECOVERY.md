@@ -8,6 +8,7 @@ How to get a GN630V back from any state where U-Boot still runs. Everything belo
 3. **Never write the U-Boot env or the bootloader.** The env (bootloader +0x7c000) shares an erase block with U-Boot code. A bad env CRC can lock you out of the U-Boot shell.
 4. **Never program a Linux dump with an external SPI programmer.** Linux dumps have no OOB/ECC bytes, so pages programmed from them fail ECC. Only a raw dump taken *with* a programmer can be written back that way.
 5. Verify before and after every write (CRC32 or SHA-256).
+6. **Do not manually erase or program the bootloader, environment, calibration, or factory-identity regions.** Use only the documented bank/bootflag procedures; never write a whole-device image or an unverified dump.
 
 ## Getting to U-Boot
 - UART: 115200 8N1, **3.3 V**. Adapter TX to board RX, adapter RX to board TX, GND to GND. Don't connect VCC.

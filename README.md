@@ -2,7 +2,7 @@
 
 OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN7523 family) box. It runs a current OpenWrt kernel (6.18) and LuCI, installs from the **stock web UI**, and keeps the stock firmware in the second flash bank so you can always go back.
 
-> **Hardware restriction: Do not flash this firmware on the 2.5G GN630V.** Only the AX3000 GN630V variant is covered by this build; the 2.5G variant has not been tested and may be incompatible.
+> **Hardware restriction: Do not flash this firmware on the 2.5G GN630V.** Only the AX3000 GN630V variant is covered by this build; the 2.5G variant has not been tested and may be incompatible. Check the full model/variant marking on the device label; do not infer compatibility from appearance.
 
 ```
      ___    __      __          _      ______  ______
@@ -34,7 +34,7 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
 * **Its own LuCI theme**, `luci-theme-alphawrt`: follows the device's light/dark setting, works at phone width. Bootstrap stays installed as a fallback.
 
 ## Install
-Download `*-tclinux-factory.bin` and, on the stock web UI, go to **System → Upgrade**, choose **firmware** and flash it. Keep `tclinux` in the file name: the stock page rejects anything else. Details, and the UART/U-Boot route with a full flash backup, are in [docs/INSTALL.md](docs/INSTALL.md).
+From stock firmware, use only `*-tclinux-factory.bin` through the stock web UI. Use `*-sysupgrade.bin` only when upgrading a running AlphaWRT installation. Do not sysupgrade the stock firmware. Keep `tclinux` in the factory image name: the stock page rejects anything else. Details and recovery steps are in [docs/INSTALL.md](docs/INSTALL.md).
 
 After the reboot: http://192.168.1.1, user `root`, no password. The first login opens Quick Setup.
 

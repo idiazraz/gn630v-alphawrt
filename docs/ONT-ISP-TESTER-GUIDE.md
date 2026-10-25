@@ -2,7 +2,7 @@
 
 Use this guide to collect first-hand, reproducible observations from an ISP-provided ONT and line. The goal is to learn which settings are required for a particular ISP, OLT and service area without relying on unverified preset tables.
 
-> **Device restriction:** Do not flash AlphaWRT on the 2.5G GN630V. This build supports only the AX3000 GN630V variant; the 2.5G variant is untested.
+> **Device restriction:** Do not flash AlphaWRT on the 2.5G GN630V. This build supports only the AX3000 GN630V variant; the 2.5G variant is untested. Verify the full model/variant marking on the device label.
 
 Only test equipment and lines you own or are authorized to use. Do not change the ISP ONT, GPON identity, VLANs or bridge configuration without the account holder's and ISP's approval. Keep the ISP's original ONT available so service can be restored.
 

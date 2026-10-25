@@ -1,6 +1,8 @@
 # Installing AlphaWRT
 
-> **Do not flash this firmware on the 2.5G GN630V.** This build is for the AX3000 GN630V variant only. The 2.5G variant is untested and may be incompatible.
+> **Do not flash this firmware on the 2.5G GN630V.** This build is for the AX3000 GN630V variant only. The 2.5G variant is untested and may be incompatible. Verify the full model/variant marking on the device label; do not guess from appearance.
+
+Choose the image for the firmware currently running: **factory** is only for the stock web UI; **sysupgrade** is only for a running AlphaWRT system. Never use `sysupgrade` on stock firmware.
 
 ## The easy way: stock web UI
 1. Connect a computer to a LAN port and open the stock web UI.
@@ -8,7 +10,7 @@
 3. Stock writes AlphaWRT into the **inactive** bank, switches to it and reboots. The first boot sets up the overlay.
 4. AlphaWRT is at http://192.168.1.1, user `root`, no password until you set one.
 
-Stock stays in the other bank. To go back: `alphawrt-bootbank stock`, then `reboot`.
+Stock stays in the other bank. Preserve that stock bank as your rollback path. To go back: `alphawrt-bootbank stock`, then `reboot`.
 
 ## The developer way: UART + U-Boot (with a full backup)
 Use this if you want a complete flash backup first (recommended), or the stock web UI isn't available.
