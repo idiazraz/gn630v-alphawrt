@@ -69,7 +69,7 @@ The output lands in `openwrt/bin/targets/airoha/en7523/`.
 | `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [ONT/ISP tester guide](docs/ONT-ISP-TESTER-GUIDE.md), [roadmap](docs/ROADMAP.md) |
 
 ## Credits
-* [openwrt/openwrt#20104](https://github.com/openwrt/openwrt/pull/20104) (Sirherobrine23) and the trees it collects: the EN7523 tree AlphaWRT builds on, with the open xPON PHY/MAC, EN7571 optics and OMCI stack
+* **Sirherobrine23**: the EN7523 OpenWrt tree AlphaWRT builds on ([Sirherobrine23/openwrt](https://github.com/Sirherobrine23/openwrt), [openwrt/openwrt#20104](https://github.com/openwrt/openwrt/pull/20104)) and the trees it collects, with the open xPON PHY/MAC, EN7571 optics and OMCI stack. AlphaWRT's fibre support is this stack plus our fixes.
 * [Kiwironic/openwrt-en7523](https://github.com/Kiwironic/openwrt-en7523): the EN7523 + MT7916 board support this port started from
 * [realldz/econet-42x6-openwrt](https://github.com/realldz/econet-42x6-openwrt) and [gilsonolegario/px3321-en7523-notes](https://github.com/gilsonolegario/px3321-en7523-notes): vendor U-Boot and EN7523 ONU notes
 * OpenWrt's EcoNet target for `tclinux-trx.sh`, and the mainline FORESEE F35SQB002G driver
