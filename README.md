@@ -29,6 +29,7 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
 * **Quick Setup** (top bar, and the first page after the first login):
   * TIME preselects PPPoE; Allo preselects DHCP. VLAN and OMCI values are left manual until independently validated.
   * ONT identity must be entered from the unit registered with the ISP; no third-party ONT identity presets are bundled.
+  * **TM UniFi:** if TM supplied and provisioned this GN630V, select **Other / manual**, then click **Use the identity saved by the stock firmware**. This copies the GPON identity from this box; configure Internet and VLAN settings separately for your service.
   * **Your own serial number and PLOAM password**, or the identity the stock firmware saved, plus PPPoE, Wi-Fi and the admin password.
   * A **fibre card on Status > Overview** shows the PON state and optical levels.
 * **Its own LuCI theme**, `luci-theme-alphawrt`: follows the device's light/dark setting, works at phone width. Bootstrap stays installed as a fallback.

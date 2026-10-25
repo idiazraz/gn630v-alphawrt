@@ -4,6 +4,8 @@ Use this guide to collect first-hand, reproducible observations from an ISP-prov
 
 > **Device restriction:** Do not flash AlphaWRT on the 2.5G GN630V. This build supports only the AX3000 GN630V variant; the 2.5G variant is untested. Verify the full model/variant marking on the device label.
 
+For TM UniFi testers whose ISP supplied and provisioned this same GN630V, Quick Setup can copy its saved GPON identity: choose **Other / manual**, then click **Use the identity saved by the stock firmware**. This only copies the identity; Internet protocol and VLAN settings still need to match the tester's service. Do not include the copied identity in a report.
+
 Only test equipment and lines you own or are authorized to use. Do not change the ISP ONT, GPON identity, VLANs or bridge configuration without the account holder's and ISP's approval. Keep the ISP's original ONT available so service can be restored.
 
 ## Privacy and files
