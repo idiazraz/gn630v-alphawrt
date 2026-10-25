@@ -4,11 +4,12 @@
 'require rpc';
 'require uci';
 'require network';
+'require alphawrt.line as line';
 
 /*
  * Basic > Home: what the stock firmware's status page shows, at a glance.
- * Internet, fibre, Wi-Fi and the number of connected devices; refreshed
- * every 5 seconds.
+ * Internet (per operating mode), fibre with a line verdict, Wi-Fi and the
+ * number of connected devices; refreshed every 5 seconds.
  */
 
 var callOmciStatus = rpc.declare({
@@ -31,6 +32,8 @@ var callLeases = rpc.declare({
 
 var PON_STATES = [ null, _('Initial'), _('Standby'), _('Serial number'),
 	_('Ranging'), _('Registered'), _('Signal lost'), _('Stopped by the ISP') ];
+
+var LEVEL = { ok: 'label success', warn: 'label warning', bad: 'label important' };
 
 function card(title, rows, link, linkText) {
 	return E('div', { 'class': 'cbi-section' }, [
@@ -55,7 +58,7 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			L.resolveDefault(callPresets(), {}),
-			uci.load([ 'alphawrt', 'wireless' ])
+			uci.load([ 'alphawrt', 'wireless', 'network' ])
 		]);
 	},
 
@@ -64,7 +67,9 @@ return view.extend({
 			network.getWANNetworks(),
 			network.getWifiNetworks(),
 			L.resolveDefault(callOmciStatus(0), {}),
-			L.resolveDefault(callLeases(), [])
+			L.resolveDefault(callLeases(), []),
+			L.resolveDefault(network.getDevice(line.mode()[1] || 'lan1'), null),
+			line.load()
 		]).then(function(r) {
 			return Promise.all(r[1].map(function(n) {
 				return L.resolveDefault(n.getAssocList(), []);
@@ -77,27 +82,57 @@ return view.extend({
 
 	update: function(node, data) {
 		var wan = data[0][0], wifi = data[1], st = data[2] || {},
-		    leases = data[3] || [], assoc = data[4], isp, pon, cards;
+		    leases = data[3] || [], port = data[4], ln = data[5], assoc = data[6],
+		    mode = line.mode(), wanUp = !!(wan && wan.isUp()), isp, pon, v, cards, internet;
 
 		isp = (this.presets || []).filter(function(p) {
 			return p.id == uci.get('alphawrt', 'setup', 'isp');
 		})[0];
 
+		/* telemetry can be missing in a single poll: keep the last reading */
 		if (st.bosa_rx_power_nw != null)
 			this.rx = st.bosa_rx_power_nw;
+		st.bosa_rx_power_nw = this.rx;
 		pon = (st.state == 5);
+		v = line.verdict(st, ln, mode[0], wanUp);
 
-		cards = [
-			card(_('Internet'), [
-				[ _('Status'), badge(wan && wan.isUp(), _('Connected'), _('Not connected')) ],
+		/* in bridge mode the router on the bridged port dials the Internet */
+		if (mode[0] == 'bridge')
+			internet = [
+				[ _('Mode'), line.MODES.bridge ],
+				[ _('Status'), !pon ? badge(false, '', _('Waiting for the fibre'))
+					: badge(port && port.getCarrier(), _('Passing through to %s').format(line.portName(mode[1])),
+						_('No router on %s').format(line.portName(mode[1]))) ],
+				[ _('Provider'), isp ? isp.name : _('not set up') ],
+				[ _('Internet address'), _('Shown on your own router') ]
+			];
+		else {
+			var said = !wanUp && line.ispMessage(ln);
+			internet = [
+				[ _('Mode'), line.MODES[mode[0]] || mode[0] ],
+				[ _('Status'), E('span', {}, [ badge(wanUp, _('Connected'), _('Not connected')),
+					/* why the login failed, as netifd reports it (e.g. authentication) */
+					(!wanUp && wan && wan.getErrors()) ? ' ' + wan.getErrors().join(' ') : '' ]) ]
+			].concat(said ? [
+				/* the ISP server's own words, e.g. "You are already logged in" */
+				[ _('Your ISP says'), E('span', {}, [ E('strong', {}, '“%s”'.format(said[1])), ' ',
+					E('small', {}, _('(%s)').format(said[0])) ]) ]
+			] : [], [
 				[ _('Provider'), isp ? isp.name : _('not set up') ],
 				[ _('Internet address'), (wan && wan.getIPAddr()) || '-' ]
-			], 'basic/quicksetup', _('Change provider')),
+			]);
+		}
 
-			card(_('Fibre'), [
+		cards = [
+			card(_('Internet'), internet, 'basic/quicksetup', _('Change setup')),
+
+			card(_('Fibre'), mode[0] == 'router' ? [
+				[ _('Status'), _('Not used in router mode') ]
+			] : [
 				[ _('Status'), badge(pon, _('Registered'), PON_STATES[st.state] || _('No fibre')) ],
-				[ _('Signal received'), (this.rx > 0) ? '%.1f dBm'.format(10 * Math.log10(this.rx / 1e6)) : '-' ]
-			]),
+				[ _('Signal received'), line.fmtDbm(this.rx) ],
+				[ _('Line quality'), E('span', {}, [ E('span', { 'class': LEVEL[v.level] }, v.title), ' ', v.text ]) ]
+			], 'basic/fibre', _('Fibre details')),
 
 			card(_('Wi-Fi'), wifi.map(function(n, i) {
 				var band = (uci.get('wireless', n.get('device'), 'band') == '5g') ? _('5 GHz') : _('2.4 GHz');
@@ -119,15 +154,20 @@ return view.extend({
 
 		this.presets = (data[0] && data[0].presets) || [];
 
-		/* first login, as on the stock firmware: start in Quick Setup */
-		if (uci.get('alphawrt', 'setup', 'done') == '0') {
-			try {
-				if (!sessionStorage.getItem('alphawrt-quicksetup')) {
-					sessionStorage.setItem('alphawrt-quicksetup', '1');
+		/*
+		 * First login, as on the stock firmware: start in Quick Setup. Once
+		 * set up, an advanced user lands in the full interface instead (once
+		 * per session, so the Basic link in the top bar still works).
+		 */
+		try {
+			if (!sessionStorage.getItem('alphawrt-landing')) {
+				sessionStorage.setItem('alphawrt-landing', '1');
+				if (uci.get('alphawrt', 'setup', 'done') == '0')
 					location.href = L.url('basic/quicksetup');
-				}
-			} catch (e) {}
-		}
+				else if (uci.get('alphawrt', 'setup', 'ui') == 'advanced')
+					location.href = L.url('admin/status/overview');
+			}
+		} catch (e) {}
 
 		var refresh = function() {
 			return self.fetch().then(function(d) { self.update(node, d); });

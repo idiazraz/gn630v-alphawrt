@@ -1,0 +1,137 @@
+From 535ffa0c0ed184ac4b656319f2aa9fc2185ed089 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 12:28:46 +0800
+Subject: [PATCH 10/13] airoha: en7523: gn630v: LAN, USB and phone LEDs
+
+---
+ .../airoha/dts/en7523-skyworth-gn630v.dts     | 47 +++++++++++++++++--
+ .../en7523/base-files/etc/board.d/01_leds     |  4 ++
+ .../etc/uci-defaults/97_gn630v_leds           | 21 +++++++++
+ 3 files changed, 68 insertions(+), 4 deletions(-)
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/uci-defaults/97_gn630v_leds
+
+diff --git a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+index f1d9c4799d..3d217ba555 100644
+--- a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
++++ b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+@@ -42,10 +42,11 @@
+ 
+ 	/*
+ 	 * LED GPIOs from the stock kernel cmdline: power_gpio=0b, dsl_gpio=0a (PON),
+-	 * internet_gpio=01, active low. LAN LEDs (GPIO22-25, in
+-	 * multi_upgrade_gpio) are MT7530 PHY LED outputs. LOS/Wi-Fi/WPS LEDs and
+-	 * the buttons are left out until their GPIOs are identified: a wrong
+-	 * reset-button GPIO could trigger reboots.
++	 * internet_gpio=01, active low; gpio_active_high marks GPIO2-5 active high.
++	 * USB (2) and phone (3) were found by blinking them on this unit. LAN LEDs
++	 * (GPIO22-25) are the MT7530 PHYs' LED0 outputs; GPIO4-7, which the SoC
++	 * dtsi gives the PHYs as LED1, are board LEDs here (the stock table puts
++	 * Wi-Fi on 6 and WPS on 26) and are left free until each is identified.
+ 	 */
+ 	leds {
+ 		compatible = "gpio-leds";
+@@ -65,6 +66,16 @@
+ 			label = "green:internet";
+ 			gpios = <&pinctrl 1 GPIO_ACTIVE_LOW>;
+ 		};
++
++		led-usb {
++			label = "green:usb";
++			gpios = <&pinctrl 2 GPIO_ACTIVE_HIGH>;
++		};
++
++		led-phone {
++			label = "green:phone";
++			gpios = <&pinctrl 3 GPIO_ACTIVE_HIGH>;
++		};
+ 	};
+ };
+ 
+@@ -326,17 +337,45 @@
+ };
+ 
+ &gsw_phy1 {
++	/* one LAN LED per port: LED0 only, GPIO4-7 stay free */
++	pinctrl-0 = <&swp1_led0>;
++	status = "okay";
++};
++
++&gsw_phy1_led0 {
++	color = <LED_COLOR_ID_GREEN>;
+ 	status = "okay";
+ };
+ 
+ &gsw_phy2 {
++	/* one LAN LED per port: LED0 only, GPIO4-7 stay free */
++	pinctrl-0 = <&swp2_led0>;
++	status = "okay";
++};
++
++&gsw_phy2_led0 {
++	color = <LED_COLOR_ID_GREEN>;
+ 	status = "okay";
+ };
+ 
+ &gsw_phy3 {
++	/* one LAN LED per port: LED0 only, GPIO4-7 stay free */
++	pinctrl-0 = <&swp3_led0>;
++	status = "okay";
++};
++
++&gsw_phy3_led0 {
++	color = <LED_COLOR_ID_GREEN>;
+ 	status = "okay";
+ };
+ 
+ &gsw_phy4 {
++	/* one LAN LED per port: LED0 only, GPIO4-7 stay free */
++	pinctrl-0 = <&swp4_led0>;
++	status = "okay";
++};
++
++&gsw_phy4_led0 {
++	color = <LED_COLOR_ID_GREEN>;
+ 	status = "okay";
+ };
+diff --git a/target/linux/airoha/en7523/base-files/etc/board.d/01_leds b/target/linux/airoha/en7523/base-files/etc/board.d/01_leds
+index c4e3528693..a306166416 100644
+--- a/target/linux/airoha/en7523/base-files/etc/board.d/01_leds
++++ b/target/linux/airoha/en7523/base-files/etc/board.d/01_leds
+@@ -61,6 +61,10 @@ case "$board" in
+     ;;
+   skyworth,gn630v)
+     ucidef_set_led_default "power" "power" "green:power" "1"
++    ucidef_set_led_netdev "lan1" "lan1" "mt7530-0:09:green:lan" "lan1" "link tx rx"
++    ucidef_set_led_netdev "lan2" "lan2" "mt7530-0:0a:green:lan" "lan2" "link tx rx"
++    ucidef_set_led_netdev "lan3" "lan3" "mt7530-0:0b:green:lan" "lan3" "link tx rx"
++    ucidef_set_led_netdev "lan4" "lan4" "mt7530-0:0c:green:lan" "lan4" "link tx rx"
+     ;;
+   tplink,xx230v-v1)
+     ucidef_set_led_netdev "lan1" "lan1" "mt7530-0:09:green:lan" "lan1" "link tx rx"
+diff --git a/target/linux/airoha/en7523/base-files/etc/uci-defaults/97_gn630v_leds b/target/linux/airoha/en7523/base-files/etc/uci-defaults/97_gn630v_leds
+new file mode 100755
+index 0000000000..6ea14bdf7d
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/uci-defaults/97_gn630v_leds
+@@ -0,0 +1,21 @@
++#!/bin/sh
++# GN630V: LAN LEDs follow link and blink with traffic. board.d only writes
++# these on a fresh install, so add them to configs kept across an upgrade.
++
++. /lib/functions.sh
++[ "$(board_name)" = "skyworth,gn630v" ] || exit 0
++
++for n in 1 2 3 4; do
++	uci -q get system.led_lan$n >/dev/null && continue
++	uci -q batch <<UCI
++set system.led_lan$n=led
++set system.led_lan$n.name='lan$n'
++set system.led_lan$n.sysfs='mt7530-0:0$(printf %x $((8 + n))):green:lan'
++set system.led_lan$n.trigger='netdev'
++set system.led_lan$n.dev='lan$n'
++set system.led_lan$n.mode='link tx rx'
++UCI
++done
++uci commit system
++
++exit 0

@@ -1,0 +1,37 @@
+From 1fe7669388574ada7395dde5e420e0bd640e9234 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 12:44:59 +0800
+Subject: [PATCH 12/13] airoha: en7523: gn630v: reset and WPS buttons
+
+---
+ .../linux/airoha/dts/en7523-skyworth-gn630v.dts | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+index 3d217ba555..680741e55a 100644
+--- a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
++++ b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+@@ -77,6 +77,23 @@
+ 			gpios = <&pinctrl 3 GPIO_ACTIVE_HIGH>;
+ 		};
+ 	};
++
++	/* found by watching the pins while pressing each button on this unit */
++	keys {
++		compatible = "gpio-keys";
++
++		key-reset {
++			label = "reset";
++			gpios = <&pinctrl 0 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_RESTART>;
++		};
++
++		key-wps {
++			label = "wps";
++			gpios = <&pinctrl 7 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_WPS_BUTTON>;
++		};
++	};
+ };
+ 
+ &spi0 {

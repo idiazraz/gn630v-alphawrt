@@ -6,6 +6,11 @@
 #   banks           what each flash bank holds, which one runs and which one
 #                   U-Boot boots next (alphawrt-bootbank)
 #   set_bank        {"bank": "a"|"b"}: boot that bank from the next boot
+#   pon_info        registration state and the Internet VLAN the OLT
+#                   provisioned, if it can be read from the MIB
+#   set_identity    {serial, password, ...}: write and apply the GPON
+#                   identity at once (before the fibre goes in)
+#   line            line counters, 24 h history and events (alphawrt-linemon)
 
 . /lib/functions.sh
 . /usr/share/libubox/jshn.sh
@@ -95,9 +100,62 @@ set_bank() {
 	json_dump
 }
 
+pon_info() {
+	local data vid
+
+	json_init
+	json_add_int state "$(ubus call omci.agent status '{"device":0}' 2>/dev/null | jsonfilter -e @.status.state)"
+	# ME 78 (VLAN tagging operation) on Ethernet UNI 1 (entity 0x0101): the
+	# tag the OLT adds upstream on the first LAN port is the ISP's Internet
+	# VLAN (TIME's Huawei OLTs provision it this way). Bytes 1-2 are the TCI.
+	data=$(ubus call omci.agent mib_get '{"device":0,"class_id":78,"entity_id":257}' 2>/dev/null |
+		jsonfilter -e @.object.data)
+	if [ ${#data} -ge 8 ]; then
+		vid=$(( 0x$(echo "$data" | cut -c3-6) & 0xfff ))
+		# VLAN 1 is the default the OLT gives unused ports
+		[ "$vid" -gt 1 ] && [ "$vid" -lt 4095 ] && json_add_int vlan "$vid"
+	fi
+	json_dump
+}
+
+set_identity() {
+	local k v serial
+
+	read -r input
+	json_load "$input"
+	for k in serial password equipment_id hardware_version software_version_0 \
+		software_version_1 omcc_version traffic_management_option olt_profile; do
+		json_get_var v "$k"
+		uci -q set "omci.main.$k=$v"
+	done
+	json_get_var serial serial
+	# the vendor ID is the serial's own first four characters
+	uci -q set "omci.main.vendor_id=$(echo "$serial" | cut -c1-4)"
+	uci -q set omci.main.enabled=1
+	uci commit omci
+	ubus call omci.agent apply '{"device":0}' >/dev/null 2>&1
+	json_init
+	json_add_boolean ok 1
+	json_dump
+}
+
+# file -> JSON array of its lines
+json_lines() {
+	[ -f "$1" ] && awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "%s\"%s\"", (NR > 1 ? "," : ""), $0 }' "$1"
+}
+
+line() {
+	printf '{ "counters": "%s", "history": [ %s ], "events": [ %s ] }\n' \
+		"$(tr '\n' ' ' < /sys/bus/platform/devices/1fb60000.xmac/gpon_counters 2>/dev/null)" \
+		"$(json_lines /tmp/alphawrt/line.hist)" "$(json_lines /tmp/alphawrt/events.log)"
+}
+
 case "$1" in
 list)
-	echo '{ "presets": {}, "stock_identity": {}, "banks": {}, "set_bank": { "bank": "a" } }'
+	echo '{ "presets": {}, "stock_identity": {}, "banks": {}, "set_bank": { "bank": "a" }, "pon_info": {}, "line": {},
+		"set_identity": { "serial": "", "password": "", "equipment_id": "", "hardware_version": "",
+			"software_version_0": "", "software_version_1": "", "omcc_version": "",
+			"traffic_management_option": "", "olt_profile": "" } }'
 	;;
 call)
 	case "$2" in
@@ -113,6 +171,9 @@ call)
 		;;
 	set_bank)
 		set_bank
+		;;
+	pon_info|set_identity|line)
+		$2
 		;;
 	esac
 	;;

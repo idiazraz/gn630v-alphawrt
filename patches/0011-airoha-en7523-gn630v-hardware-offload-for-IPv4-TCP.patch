@@ -1,0 +1,53 @@
+From 632d7e351596983a80cef9326cc9e70ef31d74b6 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 12:34:58 +0800
+Subject: [PATCH 11/13] airoha: en7523: gn630v: hardware offload for IPv4 TCP
+
+---
+ .../etc/uci-defaults/96_alphawrt_offload          | 10 ++++++++--
+ .../usr/share/alphawrt/gn630v-hw-offload.nft      | 15 +++++++++++++++
+ 2 files changed, 23 insertions(+), 2 deletions(-)
+ create mode 100644 target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft
+
+diff --git a/target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload b/target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload
+index f27c83b017..defbe56a02 100755
+--- a/target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload
++++ b/target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload
+@@ -2,8 +2,14 @@
+ # AlphaWRT: routing on both cores. Software flow offload lets established
+ # connections skip most of the firewall, and packet steering spreads the
+ # receive work over the two CPUs (about 2x download in combo mode on a
+-# 1 Gbps TIME line, 2026-10-25). The PPE hardware offload stays off until it
+-# passes a controlled test: with it on, some offloaded connections stalled.
++# 1 Gbps TIME line, 2026-10-25). IPv4 TCP goes to the PPE hardware through
++# its own flowtable (GN630V: /etc/nftables.d/20-alphawrt-hw-offload.nft: about 900
++# down / 550 up), so fw4's own flowtable stays software-only: offloaded IPv6
++# entries pass no traffic on EN7523 yet.
++
++. /lib/functions.sh
++[ "$(board_name)" = "skyworth,gn630v" ] &&
++	cp /usr/share/alphawrt/gn630v-hw-offload.nft /etc/nftables.d/20-alphawrt-hw-offload.nft
+ 
+ uci -q batch <<UCI
+ set firewall.@defaults[0].flow_offloading=1
+diff --git a/target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft b/target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft
+new file mode 100644
+index 0000000000..67ce5ebe7b
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft
+@@ -0,0 +1,15 @@
++# AlphaWRT: hardware (PPE) offload for IPv4 TCP only. On EN7523 the
++# offloaded IPv6 entries pass no traffic (source MAC/PPPoE layout), so IPv6
++# and UDP stay in fw4's software flowtable "ft". Runs just before fw4's
++# forward chain, so these flows land here first.
++flowtable ft_hw {
++	hook ingress priority filter
++	devices = { "lan1", "lan2", "lan3", "lan4", "pon0" }
++	flags offload
++	counter
++}
++
++chain alphawrt_hw_offload {
++	type filter hook forward priority filter - 1; policy accept;
++	meta nfproto ipv4 meta l4proto tcp flow add @ft_hw
++}

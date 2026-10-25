@@ -1,0 +1,49 @@
+From 9aef231197ac227f36ec542424bd188d79a22346 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 02:31:17 +0800
+Subject: [PATCH 5/6] airoha: no TX offloads on the xPON port
+
+---
+ ...roha-no-tx-offloads-on-the-xpon-port.patch | 30 +++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/991-net-airoha-no-tx-offloads-on-the-xpon-port.patch
+
+diff --git a/target/linux/airoha/patches-6.18/991-net-airoha-no-tx-offloads-on-the-xpon-port.patch b/target/linux/airoha/patches-6.18/991-net-airoha-no-tx-offloads-on-the-xpon-port.patch
+new file mode 100644
+index 0000000000..3fd58e4311
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/991-net-airoha-no-tx-offloads-on-the-xpon-port.patch
+@@ -0,0 +1,30 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: no TX offloads on the xPON port
++
++The xPON TX offload strip only matches nbq 2 with a non-"internal"
++phy-mode, so the EN7523 PON MAC (GDM2, nbq 0) kept scatter-gather and
++TSO. The first multi-descriptor frame queued to a GPON T-CONT never
++completes, BQL then holds the queue stopped and the upstream is dead.
++Strip the same features on every xpon-managed port.
++---
++--- a/drivers/net/ethernet/airoha/airoha_eth.c
+++++ b/drivers/net/ethernet/airoha/airoha_eth.c
++@@ -9591,6 +9591,18 @@
++ 		netdev->features &= ~AIROHA_XPON_TX_OFFLOAD_FEATURES;
++ 		netdev->vlan_features &= ~AIROHA_XPON_TX_OFFLOAD_FEATURES;
++ 	}
+++
+++	/*
+++	 * The check above never matches the EN7523 PON MAC (GDM2 has nbq 0).
+++	 * A multi-descriptor frame queued towards a GPON T-CONT is never
+++	 * completed and stalls the upstream for good, so segment and
+++	 * checksum in software there too.
+++	 */
+++	if (of_property_read_bool(np, "airoha,xpon-managed")) {
+++		netdev->hw_features &= ~AIROHA_XPON_TX_OFFLOAD_FEATURES;
+++		netdev->features &= ~AIROHA_XPON_TX_OFFLOAD_FEATURES;
+++		netdev->vlan_features &= ~AIROHA_XPON_TX_OFFLOAD_FEATURES;
+++	}
++ 	port->devs[index] = dev;
++ 
++ 	return airoha_setup_phylink(netdev);
+-- 
+2.54.0 (Apple Git-157)
+

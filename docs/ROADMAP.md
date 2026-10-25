@@ -12,12 +12,13 @@ AlphaWRT's goal is a full replacement for the GN630V's stock firmware, **includi
 - [x] Encrypted DNS by default (DoQ, DoH over HTTP/3, DoT fallback)
 - [x] AlphaWRT LuCI theme
 - [x] Moved onto the EN7523 tree with the open GPON stack; EN7571 optics (DDMI) and PON MAC up without fibre
-- [x] Quick Setup: Malaysian ISP and ONT presets, GPON identity, Internet, Wi-Fi; fibre card on the Overview
+- [x] GPON live registration reaches O5 and OMCI responds on the tested line
+- [x] Quick Setup flow for ISP selection, GPON identity, Internet and Wi-Fi; unverified ISP/ONT presets removed pending tester evidence
 - [x] Basic (stock-style) and Advanced (full LuCI) web interfaces
 - [x] Stock web UI login hidden from /proc/cmdline, the kernel log and the device tree (the vendor U-Boot passes its whole env)
 
 ## Next
-- [ ] GPON on a live line: O2 to O5, OMCI services, Internet on the ISP VLAN
+- [ ] Stable Internet service on a live GPON line; investigate the observed upstream transmit stall
 - [ ] Quick Setup operating modes: router, bridge, combo (one port bridged) and mesh
 - [ ] Router features: WireGuard, SQM/cake, TCP BBR, packet steering, adblock, attended sysupgrade; a LuCI page for the DNS settings
 - [ ] Wi-Fi: band steering, 802.11r/k/v, throughput vs stock

@@ -1,0 +1,44 @@
+From 776427a707a88f8e85fc5c5c21deb050923d88e3 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 11:02:07 +0800
+Subject: [PATCH] airoha: en7523: gn630v: keep dnsproxy out of the system log
+
+---
+ .../en7523/base-files/etc/uci-defaults/95_alphawrt_dns     | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns b/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+index c83f54056d..f43b426d92 100755
+--- a/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
++++ b/target/linux/airoha/en7523/base-files/etc/uci-defaults/95_alphawrt_dns
+@@ -5,6 +5,10 @@
+ # with DNS-over-TLS as the fallback. The plain bootstrap servers only resolve
+ # the upstreams' own names.
+ #
++# dnsproxy's own log goes to /dev/null: without a WAN it logs every failed
++# lookup and pushes everything else out of the system log, which is made
++# bigger (512 KB) for the same reason.
++#
+ # Back to the ISP's DNS:
+ #   uci set dnsproxy.global.enabled=0; uci commit dnsproxy
+ #   uci -q delete dhcp.@dnsmasq[0].server; uci -q delete dhcp.@dnsmasq[0].noresolv
+@@ -15,6 +19,7 @@ uci -q get dnsproxy.global >/dev/null || exit 0
+ uci -q batch <<EOF
+ set dnsproxy.global.enabled=1
+ set dnsproxy.global.http3=1
++set dnsproxy.global.log_file=/dev/null
+ delete dnsproxy.servers.bootstrap
+ add_list dnsproxy.servers.bootstrap=1.1.1.1
+ add_list dnsproxy.servers.bootstrap=9.9.9.9
+@@ -28,6 +33,8 @@ delete dhcp.@dnsmasq[0].server
+ add_list dhcp.@dnsmasq[0].server='127.0.0.1#5353'
+ set dhcp.@dnsmasq[0].noresolv=1
+ commit dhcp
++set system.@system[0].log_size=512
++commit system
+ EOF
+ 
+ exit 0
+-- 
+2.54.0 (Apple Git-157)
+

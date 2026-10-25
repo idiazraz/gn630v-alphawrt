@@ -1,0 +1,147 @@
+#!/bin/sh
+# Fibre line monitor for the AlphaWRT diagnostics pages and the PON and
+# Internet LEDs. Every 2 s it sets the LEDs and notes changes worth an
+# event (registration state, light, line errors, Internet up/down); every
+# 60 s it adds one history line. Everything stays in RAM under
+# /tmp/alphawrt, so the flash is never written.
+#
+# LEDs, as the stock firmware does them:
+#   PON       on while the fibre has light; off with no light or when the
+#             OLT disables the box (O7)
+#   LOS (red) blinking with no light / below sensitivity, or disabled by
+#             the OLT; off otherwise
+#   Internet  on = IP connected, blinking = traffic, off = down, PPP
+#             failed or bridge mode (the customer's router has the Internet)
+#
+# history: ts state rx_nw tx_nw bias_ua temp_mc hec1 hec2 hecu crc bip lof
+#          fec_cw fec_ucw ping_ms loss_pct   (1440 lines = 24 h)
+
+D=/tmp/alphawrt
+HIST=$D/line.hist
+EVENTS=$D/events.log
+CNT=/sys/bus/platform/devices/1fb60000.xmac/gpon_counters
+
+mkdir -p $D
+
+ev() {
+	echo "$(date '+%F %T') $*" >> $EVENTS
+	[ $(wc -l < $EVENTS) -gt 300 ] && { tail -n 200 $EVENTS > $EVENTS.t; mv $EVENTS.t $EVENTS; }
+}
+
+cnt() { sed -n "s/^$1=//p" $CNT 2>/dev/null; }
+
+dbm() { [ "${1:-0}" -gt 0 ] && awk -v p=$1 'BEGIN { printf "%.1f dBm", 10 * log(p / 1e6) / log(10) }' || echo "no light"; }
+
+name() {
+	case "$1" in
+	1) echo "initial (O1)" ;; 2) echo "standby (O2)" ;; 3) echo "serial number (O3)" ;;
+	4) echo "ranging (O4)" ;; 5) echo "registered (O5)" ;; 6) echo "signal lost (O6)" ;;
+	7) echo "stopped by the ISP (O7)" ;; *) echo "no fibre" ;;
+	esac
+}
+
+# led <name> off|on|<on_ms>|dev:<netdev>: set an LED, only when it changes.
+# dev: is on while the device has link and blinks on its traffic.
+led() {
+	local l=/sys/class/leds/$1 last
+	[ -d $l ] || return
+	eval last=\$led_$(echo $1 | tr -c 'a-z0-9\n' _)
+	[ "$last" = "$2" ] && return
+	eval led_$(echo $1 | tr -c 'a-z0-9\n' _)=$2
+	case "$2" in
+	off|on)
+		echo none > $l/trigger
+		echo $([ $2 = on ] && cat $l/max_brightness || echo 0) > $l/brightness
+		;;
+	dev:*)
+		echo netdev > $l/trigger
+		echo ${2#dev:} > $l/device_name
+		echo 1 > $l/link
+		echo 1 > $l/tx
+		echo 1 > $l/rx
+		;;
+	*)
+		echo timer > $l/trigger
+		echo $2 > $l/delay_on
+		echo $2 > $l/delay_off
+		;;
+	esac
+}
+
+ping_gw() {
+	local gw out
+	gw=$(ifstatus wan 2>/dev/null | jsonfilter -e '@.route[@.target="0.0.0.0"].nexthop' 2>/dev/null)
+	[ -n "$gw" ] || { echo "- -"; return; }
+	out=$(ping -c 3 -W 1 -q "$gw" 2>/dev/null)
+	echo "$(echo "$out" | sed -n 's|.*= [0-9.]*/\([0-9.]*\)/.*|\1|p' | cut -d. -f1) $(echo "$out" | sed -n 's/.* \([0-9]*\)% packet loss.*/\1/p')" |
+		awk '{ print ($1 == "" ? "-" : $1), ($2 == "" ? "-" : $2) }'
+}
+
+state=x wan=x errs= weak= n=0
+ev "monitor started"
+while :; do
+	s=$(ubus call omci.agent status '{"device":0}' 2>/dev/null)
+	eval "$(echo "$s" | jsonfilter -e 'st=@.status.state' -e 'rx=@.status.bosa_rx_power_nw' \
+		-e 'tx=@.status.bosa_tx_power_nw' -e 'bias=@.status.bosa_bias_ua' -e 'temp=@.status.bosa_temperature_mc' 2>/dev/null)"
+	st=${st:-0} rx=${rx:-0} tx=${tx:-0} bias=${bias:-0} temp=${temp:-0}
+
+	[ "$st" != "$state" ] && { [ "$state" != x ] && ev "fibre: $(name $state) -> $(name $st), light $(dbm $rx)"; state=$st; }
+
+	# below -28 dBm: past the 28 dB loss TM accepts this box at
+	w=$(awk -v p=$rx 'BEGIN { print (p > 0 && p < 1585) ? 1 : 0 }')
+	[ "$w" != "$weak" ] && { [ -n "$weak" ] && [ "$w" = 1 ] && ev "light is weak: $(dbm $rx)"; weak=$w; }
+
+	e="$(cnt hec_uncorrectable) $(cnt bip_errors) $(cnt lof) $(cnt rx_crc_errors)"
+	[ -n "$errs" ] && [ "$e" != "$errs" ] && ev "line errors: uncorrectable HEC/BIP/LOF/CRC now $e (was $errs)"
+	errs=$e
+
+	w=$(ifstatus wan 2>/dev/null | jsonfilter -e @.up 2>/dev/null)
+	w=${w:-false}
+	[ "$w" != "$wan" ] && { [ "$wan" != x ] && ev "internet: $([ "$w" = true ] && echo up || echo down)"; wan=$w; }
+	# why the login fails (netifd error codes, e.g. AUTH_FAILED)
+	e=$(ifstatus wan 2>/dev/null | jsonfilter -e '@.errors[*].code' 2>/dev/null | tr '\n' ' ')
+	[ "$e" != "$werr" ] && { [ -n "$e" ] && ev "internet login failed: $e"; werr=$e; }
+	# and what the ISP's server said while the login fails, e.g. "You are
+	# already logged in" (it also greets a successful login: not a reason)
+	r=$(logread -e "Remote message:" 2>/dev/null | tail -n 1 | sed 's/.*Remote message: //')
+	[ "$w" != true ] && [ -n "$r" ] && [ "$r" != "$rmsg" ] && ev "ISP says: $r"
+	rmsg=$r
+
+	# below -28 dBm (the 28 dB loss TM accepts this box at) counts as no light
+	dark=$(awk -v p=$rx 'BEGIN { print (p < 1585) ? 1 : 0 }')
+	# upstream stall: bytes queued on pon0 (BQL in flight) while its
+	# transmit counter stands still for 30 s, with the fibre registered
+	q=$(cat /sys/class/net/pon0/queues/tx-*/byte_queue_limits/inflight 2>/dev/null | awk '{ s += $1 } END { print s + 0 }')
+	t=$(cat /sys/class/net/pon0/statistics/tx_packets 2>/dev/null)
+	if [ "$st" = 5 ] && [ "$q" -gt 0 ] && [ "$t" = "$ptx" ]; then
+		stall=$((stall + 1))
+		[ $stall = 15 ] && ev "upstream stall: $q bytes stuck on pon0, nothing sent for 30 s"
+	else
+		[ "${stall:-0}" -ge 15 ] && ev "upstream moving again"
+		stall=0
+	fi
+	ptx=$t
+
+	# PON on whenever the fibre has light (stock behaviour), LOS blinking
+	# when it has none; the ISP disabling the box (O7) counts as down
+	if [ $dark = 1 ] || [ "$st" = 7 ]; then
+		led green:pon off
+		led red:los 500
+	else
+		led green:pon on
+		led red:los off
+	fi
+
+	mode=$(uci -q get alphawrt.setup.mode)
+	[ -z "$mode" ] && uci -q get network.ontbridge >/dev/null && mode=bridge
+	l3=$([ "$w" = true ] && [ "$mode" != bridge ] && ifstatus wan | jsonfilter -e @.l3_device)
+	[ -n "$l3" ] && led green:internet dev:$l3 || led green:internet off
+
+	if [ $((n % 30)) = 0 ]; then
+		p=$([ "$w" = true ] && ping_gw || echo "- -")
+		echo "$(date +%s) $st $rx $tx $bias $temp $(cnt hec_corrected_1bit) $(cnt hec_corrected_2bit) $(cnt hec_uncorrectable) $(cnt rx_crc_errors) $(cnt bip_errors) $(cnt lof) $(cnt fec_corrected_codewords) $(cnt fec_uncorrectable_codewords) $p" >> $HIST
+		[ $(wc -l < $HIST) -gt 1500 ] && { tail -n 1440 $HIST > $HIST.t; mv $HIST.t $HIST; }
+	fi
+	n=$((n + 1))
+	sleep 2
+done

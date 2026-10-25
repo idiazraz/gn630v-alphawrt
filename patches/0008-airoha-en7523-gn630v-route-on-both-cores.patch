@@ -1,0 +1,54 @@
+From 51a5d836c56b66182d0c43f89444c2a7a4d47806 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 11:52:33 +0800
+Subject: [PATCH 08/13] airoha: en7523: gn630v: route on both cores
+
+---
+ .../en7523/base-files/etc/init.d/gn630v-irq      | 14 ++++++++++++++
+ .../etc/uci-defaults/96_alphawrt_offload         | 16 ++++++++++++++++
+ 2 files changed, 30 insertions(+)
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/init.d/gn630v-irq
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload
+
+diff --git a/target/linux/airoha/en7523/base-files/etc/init.d/gn630v-irq b/target/linux/airoha/en7523/base-files/etc/init.d/gn630v-irq
+new file mode 100755
+index 0000000000..a4cbdbb808
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/init.d/gn630v-irq
+@@ -0,0 +1,14 @@
++#!/bin/sh /etc/rc.common
++# GN630V: run the WAN QDMA interrupt (fibre side) on the second core; the
++# LAN one stays on the first. Packet steering then hands the receive work
++# of each side to the other core.
++
++START=99
++
++start() {
++	local irq
++
++	[ "$(board_name)" = "skyworth,gn630v" ] || return 0
++	irq=$(awk '$NF == "airoha_eth.4" { sub(":", "", $1); print $1 }' /proc/interrupts)
++	[ -n "$irq" ] && echo 2 > /proc/irq/$irq/smp_affinity
++}
+diff --git a/target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload b/target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload
+new file mode 100755
+index 0000000000..f27c83b017
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/uci-defaults/96_alphawrt_offload
+@@ -0,0 +1,16 @@
++#!/bin/sh
++# AlphaWRT: routing on both cores. Software flow offload lets established
++# connections skip most of the firewall, and packet steering spreads the
++# receive work over the two CPUs (about 2x download in combo mode on a
++# 1 Gbps TIME line, 2026-10-25). The PPE hardware offload stays off until it
++# passes a controlled test: with it on, some offloaded connections stalled.
++
++uci -q batch <<UCI
++set firewall.@defaults[0].flow_offloading=1
++set firewall.@defaults[0].flow_offloading_hw=0
++commit firewall
++set network.globals.packet_steering=1
++commit network
++UCI
++
++exit 0

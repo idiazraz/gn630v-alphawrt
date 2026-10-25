@@ -12,7 +12,7 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
 ```
 
 > **Status: early test builds.** Verified on hardware: booting from either bank, the persistent overlay, the LAN switch, Wi-Fi 6 on both bands, encrypted DNS, LuCI, installing from the stock web UI, and going back to stock. GPON: the optics (EN7571, with the unit's own calibration) and the PON MAC come up and report loss of signal without fibre.
-> **Not yet:** GPON registration on a live line (O5) and Internet over fibre. Read [Recovery](docs/RECOVERY.md) before flashing.
+> **Test status:** GPON registration has reached O5 on a live line. Stable Internet service over fibre is still under test. Read [Recovery](docs/RECOVERY.md) before flashing.
 
 ## What you get
 * **OpenWrt** (procd, ubus, LuCI, apk, dropbear, firewall4) on Linux 6.18, with a persistent UBIFS overlay.
@@ -25,8 +25,8 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
   * **Basic** (the default): Home, Wi-Fi, Devices and System pages, like the stock firmware's.
   * **Advanced**: the full OpenWrt interface (LuCI).
 * **Quick Setup** (top bar, and the first page after the first login):
-  * **ISP presets** for Unifi, Maxis, CelcomDigi, TIME and Allo, which fill in the Internet VLAN and connection type.
-  * **ONT-model presets** for the ONTs those ISPs supply.
+  * TIME preselects PPPoE; Allo preselects DHCP. VLAN and OMCI values are left manual until independently validated.
+  * ONT identity must be entered from the unit registered with the ISP; no third-party ONT identity presets are bundled.
   * **Your own serial number and PLOAM password**, or the identity the stock firmware saved, plus PPPoE, Wi-Fi and the admin password.
   * A **fibre card on Status > Overview** shows the PON state and optical levels.
 * **Its own LuCI theme**, `luci-theme-alphawrt`: follows the device's light/dark setting, works at phone width. Bootstrap stays installed as a fallback.
@@ -61,7 +61,7 @@ The output lands in `openwrt/bin/targets/airoha/en7523/`.
 | `package/` | `luci-theme-alphawrt` and `luci-app-alphawrt` (Quick Setup, Basic interface), copied into the tree as `package/alphawrt/` |
 | `config/gn630v.config` | build config seed |
 | `tools/` | UART/U-Boot helpers: chunked TFTP RAM boot, TFTP server, flash dump, image checker |
-| `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [roadmap](docs/ROADMAP.md) |
+| `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [ONT/ISP tester guide](docs/ONT-ISP-TESTER-GUIDE.md), [roadmap](docs/ROADMAP.md) |
 
 ## Credits
 * [openwrt/openwrt#20104](https://github.com/openwrt/openwrt/pull/20104) (Sirherobrine23) and the trees it collects: the EN7523 tree AlphaWRT builds on, with the open xPON PHY/MAC, EN7571 optics and OMCI stack

@@ -1,78 +1,23 @@
 [
 	{
-		"id": "unifi",
-		"name": "Unifi (TM)",
-		"proto": "pppoe",
-		"vlan": 500,
-		"omcc_version": "128",
-		"olt_profile": "auto",
-		"note": "Voice is VLAN 400 and IPTV VLAN 600; Quick Setup only sets up the Internet VLAN. TM usually maps service to a LAN port (PPTP).",
-		"stock_identity": true,
-		"short": "Unifi"
-	},
-	{
-		"id": "maxis",
-		"name": "Maxis Fibre on the TM network",
-		"proto": "pppoe",
-		"vlan": 621,
-		"omcc_version": "128",
-		"olt_profile": "auto",
-		"note": "Voice is VLAN 822.",
-		"stock_identity": true,
-		"short": "Maxis"
-	},
-	{
-		"id": "maxis-own",
-		"name": "Maxis Fibre on Maxis's own network",
-		"proto": "pppoe",
-		"vlan": 11,
-		"omcc_version": "128",
-		"olt_profile": "auto",
-		"note": "Voice is VLAN 14. Most Maxis lines run on the TM network (VLAN 621): pick that if you are not sure.",
-		"stock_identity": false,
-		"short": "Maxis"
-	},
-	{
-		"id": "celcomdigi-celcom",
-		"name": "CelcomDigi Fibre, ex-Celcom plan (TM network)",
-		"proto": "pppoe",
-		"vlan": 623,
-		"omcc_version": "128",
-		"olt_profile": "auto",
-		"note": "Voice is VLAN 400. Former Digi lines use VLAN 629.",
-		"stock_identity": true,
-		"short": "CelcomDigi"
-	},
-	{
-		"id": "celcomdigi-digi",
-		"name": "CelcomDigi Fibre, ex-Digi plan (TM network)",
-		"proto": "pppoe",
-		"vlan": 629,
-		"omcc_version": "128",
-		"olt_profile": "auto",
-		"note": "Voice is VLAN 400. Former Celcom lines use VLAN 623.",
-		"stock_identity": true,
-		"short": "CelcomDigi"
-	},
-	{
 		"id": "time",
-		"name": "TIME",
+		"name": "TIME (manual VLAN)",
 		"proto": "pppoe",
-		"vlan": 499,
-		"omcc_version": "128",
+		"vlan": 0,
+		"omcc_version": "",
 		"olt_profile": "auto",
-		"note": "TIME supplies Huawei ONTs: pick yours under ISP ONT model and copy its serial (HWTC...). TIME's PLOAM password is the ONT authentication password, the same as your PPPoE password in TIME Self Care. Internet VLAN is usually 499 (it can differ by area); voice is VLAN 140.",
+		"note": "PPPoE is preselected. This profile is still under test; VLAN and OMCI values are not prefilled. Verify them on your own line before use.",
 		"stock_identity": false,
 		"short": "TIME"
 	},
 	{
 		"id": "allo",
-		"name": "Allo",
+		"name": "Allo (manual VLAN)",
 		"proto": "dhcp",
-		"vlan": 990,
-		"omcc_version": "160",
+		"vlan": 0,
+		"omcc_version": "",
 		"olt_profile": "auto",
-		"note": "Allo supplies Huawei ONTs: pick yours and copy its serial and password. Voice is VLAN 992.",
+		"note": "Automatic IP is preselected. VLAN and OMCI values are not prefilled; verify them with your ISP.",
 		"stock_identity": false,
 		"short": "Allo"
 	},
@@ -83,7 +28,7 @@
 		"vlan": 0,
 		"omcc_version": "",
 		"olt_profile": "auto",
-		"note": "Enter the values your ISP gave you.",
+		"note": "Enter only settings verified for your own line or supplied by your ISP.",
 		"stock_identity": true,
 		"short": ""
 	}

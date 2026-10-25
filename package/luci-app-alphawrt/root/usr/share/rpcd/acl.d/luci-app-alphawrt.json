@@ -6,7 +6,9 @@
 				"alphawrt": [
 					"banks",
 					"presets",
-					"stock_identity"
+					"stock_identity",
+					"pon_info",
+					"line"
 				],
 				"iwinfo": [
 					"assoclist",
@@ -23,7 +25,8 @@
 					"get_proto_handlers"
 				],
 				"network.interface": [
-					"dump"
+					"dump",
+					"status"
 				],
 				"omci.agent": [
 					"status"
@@ -50,7 +53,8 @@
 					"reboot"
 				],
 				"alphawrt": [
-					"set_bank"
+					"set_bank",
+					"set_identity"
 				]
 			},
 			"uci": [

@@ -7,11 +7,13 @@
 			"recurse": true
 		},
 		"auth": {
-			"methods": [ "cookie:sysauth_https", "cookie:sysauth_http" ],
+			"methods": [
+				"cookie:sysauth_https",
+				"cookie:sysauth_http"
+			],
 			"login": true
 		}
 	},
-
 	"basic/home": {
 		"title": "Home",
 		"order": 10,
@@ -20,10 +22,24 @@
 			"path": "alphawrt/basic/home"
 		},
 		"depends": {
-			"acl": [ "luci-app-alphawrt" ]
+			"acl": [
+				"luci-app-alphawrt"
+			]
 		}
 	},
-
+	"basic/fibre": {
+		"title": "Fibre",
+		"order": 15,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/fibre"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-alphawrt"
+			]
+		}
+	},
 	"basic/wifi": {
 		"title": "Wi-Fi",
 		"order": 20,
@@ -32,10 +48,11 @@
 			"path": "alphawrt/basic/wifi"
 		},
 		"depends": {
-			"acl": [ "luci-app-alphawrt" ]
+			"acl": [
+				"luci-app-alphawrt"
+			]
 		}
 	},
-
 	"basic/devices": {
 		"title": "Devices",
 		"order": 30,
@@ -44,10 +61,11 @@
 			"path": "alphawrt/basic/devices"
 		},
 		"depends": {
-			"acl": [ "luci-app-alphawrt" ]
+			"acl": [
+				"luci-app-alphawrt"
+			]
 		}
 	},
-
 	"basic/system": {
 		"title": "System",
 		"order": 40,
@@ -56,10 +74,11 @@
 			"path": "alphawrt/basic/system"
 		},
 		"depends": {
-			"acl": [ "luci-app-alphawrt" ]
+			"acl": [
+				"luci-app-alphawrt"
+			]
 		}
 	},
-
 	"basic/advanced": {
 		"title": "Advanced",
 		"order": 997,
@@ -69,7 +88,6 @@
 		},
 		"firstchild_ineligible": true
 	},
-
 	"basic/quicksetup": {
 		"title": "Quick Setup",
 		"order": 998,
@@ -78,10 +96,11 @@
 			"path": "alphawrt/quicksetup"
 		},
 		"depends": {
-			"acl": [ "luci-app-alphawrt" ]
+			"acl": [
+				"luci-app-alphawrt"
+			]
 		}
 	},
-
 	"basic/logout": {
 		"title": "Log out",
 		"order": 999,
@@ -92,7 +111,6 @@
 		},
 		"firstchild_ineligible": true
 	},
-
 	"admin/basic": {
 		"title": "Basic",
 		"order": 997,
@@ -102,7 +120,6 @@
 		},
 		"firstchild_ineligible": true
 	},
-
 	"admin/quicksetup": {
 		"title": "Quick Setup",
 		"order": 998,
@@ -111,7 +128,22 @@
 			"path": "alphawrt/quicksetup"
 		},
 		"depends": {
-			"acl": [ "luci-app-alphawrt" ]
+			"acl": [
+				"luci-app-alphawrt"
+			]
+		}
+	},
+	"admin/status/fibre": {
+		"title": "Fibre diagnostics",
+		"order": 15,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/fibre"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-alphawrt"
+			]
 		}
 	}
 }
