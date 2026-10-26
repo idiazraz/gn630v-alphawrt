@@ -1,9 +1,11 @@
 #!/bin/sh
 # Fibre line monitor for the AlphaWRT diagnostics pages and the PON and
 # Internet LEDs. Every 2 s it sets the LEDs and notes changes worth an
-# event (registration state, light, line errors, Internet up/down); every
-# 60 s it adds one history line. Everything stays in RAM under
-# /tmp/alphawrt, so the flash is never written.
+# event (registration state, PLOAM and OMCI news from the xpon driver,
+# light, line errors, Internet up/down); every 60 s it adds one history
+# line and checks the bit error rate against the OLT's SD/SF thresholds.
+# Everything stays in RAM under /tmp/alphawrt, so the flash is never
+# written.
 #
 # LEDs, as the stock firmware does them:
 #   PON       on while the fibre has light; off with no light or when the
@@ -14,17 +16,23 @@
 #             failed or bridge mode (the customer's router has the Internet)
 #
 # history: ts state rx_nw tx_nw bias_ua temp_mc hec1 hec2 hecu crc bip lof
-#          fec_cw fec_ucw ping_ms loss_pct   (1440 lines = 24 h)
+#          fec_cw fec_ucw ping_ms loss_pct rx_frames   (1440 lines = 24 h)
+# thresholds: sf sd rx_low rx_high (BER 10^-x; dBm x 10), from the ANI-G
 
 D=/tmp/alphawrt
 HIST=$D/line.hist
 EVENTS=$D/events.log
+THR=$D/thresholds
 CNT=/sys/bus/platform/devices/1fb60000.xmac/gpon_counters
 
 mkdir -p $D
 
 ev() {
 	echo "$(date '+%F %T') $*" >> $EVENTS
+	trim
+}
+
+trim() {
 	[ $(wc -l < $EVENTS) -gt 300 ] && { tail -n 200 $EVENTS > $EVENTS.t; mv $EVENTS.t $EVENTS; }
 }
 
@@ -36,7 +44,7 @@ name() {
 	case "$1" in
 	1) echo "initial (O1)" ;; 2) echo "standby (O2)" ;; 3) echo "serial number (O3)" ;;
 	4) echo "ranging (O4)" ;; 5) echo "registered (O5)" ;; 6) echo "signal lost (O6)" ;;
-	7) echo "stopped by the ISP (O7)" ;; *) echo "no fibre" ;;
+	7) echo "stopped by the ISP (O7, Disable_SN)" ;; *) echo "no fibre" ;;
 	esac
 }
 
@@ -77,18 +85,91 @@ ping_gw() {
 		awk '{ print ($1 == "" ? "-" : $1), ($2 == "" ? "-" : $2) }'
 }
 
-state=x wan=x errs= weak= n=0
+# The OLT's ANI-G (ME 263): SF and SD thresholds (BER 10^-x, G.988
+# defaults 5 and 9) and the lower and upper received-light thresholds
+# (-0.5 dB steps; 0 or 0xff = the ONU's own, here -28 and -8 dBm).
+anig() {
+	local d sf sd lo hi
+	d=$(ubus call omci.agent mib_get '{"device":0,"class_id":263,"entity_id":32769}' 2>/dev/null |
+		jsonfilter -e @.object.data 2>/dev/null)
+	byte() { local h=$(echo "$d" | cut -c$(($1 * 2 + 1))-$(($1 * 2 + 2))); [ -n "$h" ] && printf %d "0x$h" || echo 0; }
+	sf=$(byte 7) sd=$(byte 8) lo=$(byte 13) hi=$(byte 14)
+	[ $sf -ge 3 ] && [ $sf -le 8 ] || sf=5
+	[ $sd -ge 4 ] && [ $sd -le 10 ] || sd=9
+	[ $lo -gt 0 ] && [ $lo -lt 255 ] && lo=$((lo * -5)) || lo=-280
+	[ $hi -gt 0 ] && [ $hi -lt 255 ] && hi=$((hi * -5)) || hi=-80
+	echo "$sf $sd $lo $hi"
+}
+
+# xpon driver lines newer than kernel time $kt, as "<epoch> <kind> <arg>":
+# PLOAM state changes (also the short ones between two polls),
+# Deactivate_ONU-ID, ranging (EqD), OMCI MIB resets and dying gasp;
+# the OMCI agent logs as "xpon pon0:", the rest as "airoha-xpon ..."
+kernel() {
+	logread -t -e 'airoha-xpon\|OMCI MIB reset' 2>/dev/null | awk -v last=$kt '
+		{ u = substr($0, index($0, "kernel: [") + 9) + 0 }
+		u <= last { next }
+		{ t = int(substr($6, 2)) }
+		/GPON state -> / && match($0, /\([0-7]\), /) { print t, u, "state", substr($0, RSTART + 1, 1) }
+		/Deactivate_ONU-ID from the OLT/ { print t, u, "deactivate" }
+		/GPON O4 EqD: / && match($0, /byte_delay=[0-9]+/) { print t, u, "eqd", substr($0, RSTART + 11, RLENGTH - 11) }
+		/GPON O5 EqD adjustment/ && match($0, /delta=-?[0-9]+/) { print t, u, "reranged", substr($0, RSTART + 6, RLENGTH - 6) }
+		/OMCI MIB reset from the OLT/ { print t, u, "mib" }
+		/dying-gasp interrupt/ { print t, u, "gasp" }'
+}
+
+# a fresh boot reports the boot's own driver lines too; a restarted
+# monitor only new ones
+[ -s $EVENTS ] && kt=$(cut -d' ' -f1 /proc/uptime) || kt=0
+state=x wan=x errs= weak= sdf=0 o5at=0 n=0
+set -- $(anig)
+sf=$1 sd=$2 lo=$3 hi=$4
+echo "$sf $sd $lo $hi" > $THR
 ev "monitor started"
+# stop with the sleep killed and reaped: procd removes the cgroup as soon
+# as this shell exits and warns if anything, even a zombie, is left in it
+trap 'kill $! 2>/dev/null; wait $!; exit 0' TERM INT
 while :; do
 	s=$(ubus call omci.agent status '{"device":0}' 2>/dev/null)
 	eval "$(echo "$s" | jsonfilter -e 'st=@.status.state' -e 'rx=@.status.bosa_rx_power_nw' \
 		-e 'tx=@.status.bosa_tx_power_nw' -e 'bias=@.status.bosa_bias_ua' -e 'temp=@.status.bosa_temperature_mc' 2>/dev/null)"
 	st=${st:-0} rx=${rx:-0} tx=${tx:-0} bias=${bias:-0} temp=${temp:-0}
 
-	[ "$st" != "$state" ] && { [ "$state" != x ] && ev "fibre: $(name $state) -> $(name $st), light $(dbm $rx)"; state=$st; }
+	while read -r t u k a; do
+		[ -n "$u" ] || continue
+		kt=$u m=
+		case $k in
+		state)
+			m="fibre: $(name $a), light $(dbm $rx)"
+			[ $a = 5 ] && o5at=$t
+			;;
+		deactivate)
+			m="the ISP's OLT dropped the registration (Deactivate_ONU-ID); registering again" ;;
+		eqd)
+			# a changed delay between two rangings = a different fibre path
+			[ -n "$eqd" ] && [ $((a - eqd)) -gt 64 -o $((eqd - a)) -gt 64 ] &&
+				m="ranging: the delay to the OLT changed, EqD $eqd -> $a (fibre path changed?)"
+			eqd=$a
+			;;
+		reranged)
+			m="the OLT re-ranged the box in service, EqD changed by $a (fibre path changed?)" ;;
+		mib)
+			[ "$state" = 5 ] && [ $((t - o5at)) -gt 60 ] &&
+				m="the ISP re-provisioned the box in service (OMCI MIB reset)" ||
+				m="the ISP sent the box's configuration (OMCI MIB reset)"
+			;;
+		gasp)
+			m="power failing: dying gasp sent to the ISP" ;;
+		esac
+		[ -n "$m" ] && echo "$(date -d @$t '+%F %T') $m" >> $EVENTS
+	done <<-EOF
+	$(kernel)
+	EOF
+	trim
+	state=$st
 
-	# below -28 dBm: past the 28 dB loss TM accepts this box at
-	w=$(awk -v p=$rx 'BEGIN { print (p > 0 && p < 1585) ? 1 : 0 }')
+	# below the OLT's (or the box's own -28 dBm) lower light threshold
+	w=$(awk -v p=$rx -v lo=$lo 'BEGIN { print (p > 0 && 100 * log(p / 1e6) / log(10) < lo) ? 1 : 0 }')
 	[ "$w" != "$weak" ] && { [ -n "$weak" ] && [ "$w" = 1 ] && ev "light is weak: $(dbm $rx)"; weak=$w; }
 
 	e="$(cnt hec_uncorrectable) $(cnt bip_errors) $(cnt lof) $(cnt rx_crc_errors)"
@@ -139,9 +220,32 @@ while :; do
 
 	if [ $((n % 30)) = 0 ]; then
 		p=$([ "$w" = true ] && ping_gw || echo "- -")
-		echo "$(date +%s) $st $rx $tx $bias $temp $(cnt hec_corrected_1bit) $(cnt hec_corrected_2bit) $(cnt hec_uncorrectable) $(cnt rx_crc_errors) $(cnt bip_errors) $(cnt lof) $(cnt fec_corrected_codewords) $(cnt fec_uncorrectable_codewords) $p" >> $HIST
+		b=$(cnt bip_errors) f=$(cnt rx_frames)
+		echo "$(date +%s) $st $rx $tx $bias $temp $(cnt hec_corrected_1bit) $(cnt hec_corrected_2bit) $(cnt hec_uncorrectable) $(cnt rx_crc_errors) $b $(cnt lof) $(cnt fec_corrected_codewords) $(cnt fec_uncorrectable_codewords) $p ${f:--}" >> $HIST
 		[ $(wc -l < $HIST) -gt 1500 ] && { tail -n 1440 $HIST > $HIST.t; mv $HIST.t $HIST; }
+
+		# downstream bit error rate since the last sample (BIP over the
+		# 311040 bits of each 125 us frame) against the OLT's SD and SF
+		set -- $(anig)
+		sf=$1 sd=$2 lo=$3 hi=$4
+		echo "$sf $sd $lo $hi" > $THR
+		set -- $(awk -v b=$b -v pb=$pb -v f=$f -v pf=$pf -v sf=$sf -v sd=$sd 'BEGIN {
+			d = f - pf; if (d < 0) d += 4294967296; e = b - pb; if (e < 0) e += 4294967296
+			if (pf == "" || f == "" || d == 0) { print "- -"; exit }
+			ber = e / (d * 311040)
+			l = ber >= 10 ^ -sf ? 2 : ber >= 10 ^ -sd ? 1 : 0
+			printf "%.0e %d\n", ber, l }')
+		if [ "$st" = 5 ] && [ "$2" != - ] && [ "$2" != $sdf ]; then
+			case $2 in
+			2) ev "signal fail (SF): bit error rate $1 in the last minute, past the ISP's 1e-$sf alarm" ;;
+			1) ev "signal degraded (SD): bit error rate $1 in the last minute, past the ISP's 1e-$sd alarm" ;;
+			0) ev "bit error rate back under the ISP's 1e-$sd SD alarm" ;;
+			esac
+			sdf=$2
+		fi
+		pb=$b pf=$f
 	fi
 	n=$((n + 1))
-	sleep 2
+	sleep 2 &
+	wait $!
 done

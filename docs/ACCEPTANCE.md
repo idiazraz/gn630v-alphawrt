@@ -49,6 +49,7 @@ acceptance/<version>-<YYYYMMDD>/
 | A11 | Revert to stock | stock boots from its bank with its own settings |
 | A12 | PON link | O5 from cold, light and error counters sane |
 | A13 | Internet over fibre | combo and bridge mode carry traffic |
+| A14 | Fresh install from stock | the factory image from the stock web UI boots, and the LAN works before and after Quick Setup |
 
 ### A1. Cold boot ×20
 - **Before:** this release installed, default or tester config saved.
@@ -124,10 +125,18 @@ The real test of the dual bank. U-Boot checks the bank image and switches to the
 - **Pass:** both modes carry traffic; record throughput both ways.
 - **Evidence:** `A13/`: speed results, `ifstatus wan` without addresses.
 
+### A14. Fresh install from the stock web UI
+The path most users take, and the one a sysupgrade (A5) doesn't cover: stock writes the bank, and AlphaWRT's first boot formats its data partition.
+- **Before:** stock running (`alphawrt-bootbank stock`, reboot), its version noted in `run.txt`. UART logging. A LAN client on DHCP.
+- **Do:** stock web UI → firmware upgrade with this release's `*-tclinux-factory.bin`. **Don't touch the power**, even if the box looks stuck; wait at least 10 minutes. Then run Quick Setup in combo mode with the line's PPPoE account.
+- **Watch:** UART from the upload to `procd: - init complete -` (time it, and note any long pause); the client's DHCP lease and LuCI after the install and again after Quick Setup.
+- **Pass:** boots AlphaWRT from the bank stock wrote, the client gets a 192.168.1.x lease and LuCI loads, both after the install and after Quick Setup; PPPoE comes up. Record the minutes from upload to the first DHCP lease.
+- **Evidence:** `A14/uart.log`, `A14/timing.txt` (upload, reboot, init complete, first lease), `A14/after.txt` (`alphawrt-bootbank`, `ip -br addr`, `ifstatus wan` without addresses).
+
 ## Badges
 
 - **Build verification only:** CI built the images; nothing above has run.
 - **Partly HIL verified:** some rows passed; the release notes list which, and every row not run or failed is a known issue.
-- **HIL verified:** every row A1–A13 has a PASS (or N/A with a reason) from one run on these images.
+- **HIL verified:** every row A1–A14 has a PASS (or N/A with a reason) from one run on these images.
 
 One unit passing is one unit. It says nothing about other hardware revisions (the 2.5G GN630V is not covered at all), other OLT vendors, or other ISPs.

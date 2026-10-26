@@ -1,0 +1,88 @@
+From 4f9708278233cf9c1e02d1ef35032eba8c732040 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 15:22:41 +0800
+Subject: [PATCH 20/20] airoha: en7523: gn630v: Wi-Fi and power LEDs
+
+The Wi-Fi LED is the MT7916's own LED (GPIO14 for 2.4 GHz, GPIO15 for
+5 GHz), not a SoC GPIO. mt76 sets the MT7916 pin mux at probe, but the
+write doesn't stick on the EN7523, so a hotplug script sets it again
+when phy0 appears. The dts gains comments for it.
+
+The power LED (GPIO 11) is active-high: as active-low it stayed dark
+once the boot blinking ended.
+---
+ .../airoha/dts/en7523-skyworth-gn630v.dts     | 10 +++++--
+ .../hotplug.d/ieee80211/13-gn630v-wifi-led    | 30 +++++++++++++++++++
+ 2 files changed, 38 insertions(+), 2 deletions(-)
+ create mode 100755 target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/13-gn630v-wifi-led
+
+diff --git a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+index 849bcd35ea..e08ffad85e 100644
+--- a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
++++ b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+@@ -46,14 +46,15 @@
+ 	 * board's wiring, and neither does env gpio_active_high: the polarities
+ 	 * below were confirmed on the panel too. LAN LEDs (GPIO22-25) are the MT7530 PHYs' LED0
+ 	 * outputs. GPIO5 is not a panel LED (it disturbed LAN4's LED). The Wi-Fi
+-	 * LED is not found yet.
++	 * LED is not on a SoC GPIO: it is the MT7916's own LED (see &wifi).
+ 	 */
+ 	leds {
+ 		compatible = "gpio-leds";
+ 
+ 		led_power: led-power {
+ 			label = "green:power";
+-			gpios = <&pinctrl 11 GPIO_ACTIVE_LOW>;
++			/* active-high: checked on 0.2.4, brightness 1 left it dark */
++			gpios = <&pinctrl 11 GPIO_ACTIVE_HIGH>;
+ 			default-state = "on";
+ 		};
+ 
+@@ -284,6 +285,11 @@
+ 			nvmem-cells = <&mt7916_eeprom_factory>, <&macaddr_uboot 4>;
+ 			nvmem-cell-names = "eeprom", "mac-address";
+ 
++			/* MT7916 LED controller: with DBDC, mt76 muxes GPIO14 to the
++			 * 2.4 GHz LED and GPIO15 to the 5 GHz one whatever the pin
++			 * number (non-zero only matters without DBDC); the polarity
++			 * applies to both. The mux is redone after probe by
++			 * hotplug.d/ieee80211/13-gn630v-wifi-led. */
+ 			led {
+ 				led-sources = <2>;
+ 				led-active-low;
+diff --git a/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/13-gn630v-wifi-led b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/13-gn630v-wifi-led
+new file mode 100755
+index 0000000000..3d0d849359
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/etc/hotplug.d/ieee80211/13-gn630v-wifi-led
+@@ -0,0 +1,30 @@
++#!/bin/sh
++# Skyworth GN630V: route the MT7916's LED pins to its LED controller.
++# mt7915_init_led_mux() sets MT_LED_GPIO_MUX1 (0x70005054) at probe, but on
++# the EN7523 the value does not stick (it reads 0 after boot), so the Wi-Fi
++# LED never lights. Bits 27:24 = 3 routes MT7916 GPIO14 (2.4 GHz LED), bits
++# 31:28 = 3 GPIO15 (5 GHz LED). The mt76 LEDs then follow their default
++# phyNtpt trigger: off with the radio down, on when up, blinking on traffic.
++# ponytail: debugfs poke after probe, as on Kiwironic's EN7523 AX3000; a mt76
++# fix belongs in the driver once we know what clears the mux (a firmware
++# recovery may clear it again until the next boot).
++
++[ "$ACTION" = add ] || exit 0
++[ "$DEVICENAME" = phy0 ] || exit 0
++
++. /lib/functions.sh
++[ "$(board_name)" = "skyworth,gn630v" ] || exit 0
++
++dbg=/sys/kernel/debug/ieee80211/phy0/mt76
++i=0
++while [ ! -e $dbg/regidx ] && [ $i -lt 10 ]; do
++	sleep 1
++	i=$((i + 1))
++done
++[ -e $dbg/regidx ] || exit 0
++
++echo 0x70005054 > $dbg/regidx
++val=$(cat $dbg/regval)
++printf '0x%08x\n' $(( (val & 0x00ffffff) | 0x33000000 )) > $dbg/regval
++
++exit 0

@@ -8,8 +8,9 @@
 
 /*
  * Basic > Home: what the stock firmware's status page shows, at a glance.
- * Internet (per operating mode), fibre with a line verdict, Wi-Fi and the
- * number of connected devices; refreshed every 5 seconds.
+ * Internet (per operating mode), fibre with a line verdict, Wi-Fi, the
+ * number of connected devices and the box's own addresses; refreshed every
+ * 5 seconds.
  */
 
 var callOmciStatus = rpc.declare({
@@ -22,6 +23,11 @@ var callOmciStatus = rpc.declare({
 var callPresets = rpc.declare({
 	object: 'alphawrt',
 	method: 'presets'
+});
+
+var callBoard = rpc.declare({
+	object: 'system',
+	method: 'board'
 });
 
 var callLeases = rpc.declare({
@@ -48,6 +54,19 @@ function card(title, rows, link, linkText) {
 	]);
 }
 
+/* dnsmasq forwarding to dnsproxy means encrypted DNS: name its upstreams */
+function dnsServers(wan) {
+	var port = uci.get('dnsproxy', 'global', 'listen_port');
+
+	if (uci.get('dnsproxy', 'global', 'enabled') == '1' &&
+	    L.toArray(uci.get('dhcp', '@dnsmasq[0]', 'server')).indexOf('127.0.0.1#' + port) > -1)
+		return _('Encrypted via %s').format(L.toArray(uci.get('dnsproxy', 'servers', 'upstream')).map(function(u) {
+			return u.replace(/^\w+:\/\/|\/.*$/g, '');
+		}).join(', '));
+
+	return (wan && wan.getDNSAddrs().join(', ')) || '-';
+}
+
 function badge(ok, yes, no) {
 	return E('span', { 'class': ok ? 'label success' : 'label warning' }, ok ? yes : no);
 }
@@ -58,7 +77,11 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			L.resolveDefault(callPresets(), {}),
-			uci.load([ 'alphawrt', 'wireless', 'network' ])
+			uci.load([ 'alphawrt', 'wireless', 'network' ]),
+			L.resolveDefault(callBoard(), {}),
+			/* may be missing: keep them apart so the page still loads */
+			L.resolveDefault(uci.load('dhcp'), null),
+			L.resolveDefault(uci.load('dnsproxy'), null)
 		]);
 	},
 
@@ -69,7 +92,8 @@ return view.extend({
 			L.resolveDefault(callOmciStatus(0), {}),
 			L.resolveDefault(callLeases(), []),
 			L.resolveDefault(network.getDevice(line.mode()[1] || 'lan1'), null),
-			line.load()
+			line.load(),
+			L.resolveDefault(network.getNetwork('lan'), null)
 		]).then(function(r) {
 			return Promise.all(r[1].map(function(n) {
 				return L.resolveDefault(n.getAssocList(), []);
@@ -82,8 +106,9 @@ return view.extend({
 
 	update: function(node, data) {
 		var wan = data[0][0], wifi = data[1], st = data[2] || {},
-		    leases = data[3] || [], port = data[4], ln = data[5], assoc = data[6],
-		    mode = line.mode(), wanUp = !!(wan && wan.isUp()), isp, pon, v, cards, internet;
+		    leases = data[3] || [], port = data[4], ln = data[5], lan = data[6], assoc = data[7],
+		    mode = line.mode(), wanUp = !!(wan && wan.isUp()), isp, pon, v, cards, internet, box,
+		    lanIP = (lan && lan.getIPAddr()) || String(uci.get('network', 'lan', 'ipaddr') || '-').split('/')[0];
 
 		isp = (this.presets || []).filter(function(p) {
 			return p.id == uci.get('alphawrt', 'setup', 'isp');
@@ -119,9 +144,21 @@ return view.extend({
 					E('small', {}, _('(%s)').format(said[0])) ]) ]
 			] : [], [
 				[ _('Provider'), isp ? isp.name : _('not set up') ],
-				[ _('Internet address'), (wan && wan.getIPAddr()) || '-' ]
+				[ _('Internet address'), (wan && wan.getIPAddr()) || '-' ],
+				[ _('Gateway'), (wan && wan.getGatewayAddr()) || '-' ],
+				[ _('DNS'), dnsServers(wan) ]
 			]);
 		}
+
+		/* in bridge mode the box answers only the bridged router, on the management address */
+		box = [ [ _('Firmware'), (this.board.release && this.board.release.description) || '-' ] ].concat(
+			mode[0] == 'bridge' ? [
+				[ _('Management address'), _('%s (from the router on %s)').format(
+					uci.get('network', 'gnmgmt', 'ipaddr') || '192.168.100.1', line.portName(mode[1])) ],
+				[ _('Address on the other ports and Wi-Fi'), lanIP ]
+			] : [
+				[ _('Address on LAN ports and Wi-Fi'), lanIP ]
+			]);
 
 		cards = [
 			card(_('Internet'), internet, 'basic/quicksetup', _('Change setup')),
@@ -143,7 +180,9 @@ return view.extend({
 
 			card(_('Devices'), [
 				[ _('Connected devices'), String(leases.length) ]
-			], 'basic/devices', _('Show devices'))
+			], 'basic/devices', _('Show devices')),
+
+			card(_('This box'), box, 'basic/system', _('System'))
 		];
 
 		node.replaceChildren.apply(node, cards);
@@ -153,6 +192,7 @@ return view.extend({
 		var self = this, node = E('div', { 'class': 'alphawrt-basic' }, E('p', {}, _('Loading…')));
 
 		this.presets = (data[0] && data[0].presets) || [];
+		this.board = data[2] || {};
 
 		/*
 		 * First login, as on the stock firmware: start in Quick Setup. Once

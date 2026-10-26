@@ -10,7 +10,8 @@
 #                   provisioned, if it can be read from the MIB
 #   set_identity    {serial, password, ...}: write and apply the GPON
 #                   identity at once (before the fibre goes in)
-#   line            line counters, 24 h history and events (alphawrt-linemon)
+#   line            line counters, the OLT's SD/SF and light thresholds,
+#                   24 h history and events (alphawrt-linemon)
 
 . /lib/functions.sh
 . /usr/share/libubox/jshn.sh
@@ -145,8 +146,9 @@ json_lines() {
 }
 
 line() {
-	printf '{ "counters": "%s", "history": [ %s ], "events": [ %s ] }\n' \
+	printf '{ "counters": "%s", "thresholds": "%s", "history": [ %s ], "events": [ %s ] }\n' \
 		"$(tr '\n' ' ' < /sys/bus/platform/devices/1fb60000.xmac/gpon_counters 2>/dev/null)" \
+		"$(cat /tmp/alphawrt/thresholds 2>/dev/null)" \
 		"$(json_lines /tmp/alphawrt/line.hist)" "$(json_lines /tmp/alphawrt/events.log)"
 }
 

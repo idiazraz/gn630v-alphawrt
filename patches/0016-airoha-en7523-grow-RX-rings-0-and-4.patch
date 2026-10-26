@@ -1,0 +1,53 @@
+From 9e7ddd8cdbc5dc12388e6166127ac3f30bcff773 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 15:22:41 +0800
+Subject: [PATCH 16/20] airoha: en7523: grow RX rings 0 and 4
+
+Patch 995: ring 0 (all downstream traffic from the PON) goes from 512
+to upstream's 1024 descriptors, and ring 4 (PPPoE Discovery and LCP)
+from 16 to 128.
+---
+ ...-airoha-en7523-grow-rx-rings-0-and-4.patch | 34 +++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/995-net-airoha-en7523-grow-rx-rings-0-and-4.patch
+
+diff --git a/target/linux/airoha/patches-6.18/995-net-airoha-en7523-grow-rx-rings-0-and-4.patch b/target/linux/airoha/patches-6.18/995-net-airoha-en7523-grow-rx-rings-0-and-4.patch
+new file mode 100644
+index 0000000000..a01b0479f4
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/995-net-airoha-en7523-grow-rx-rings-0-and-4.patch
+@@ -0,0 +1,34 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: en7523: grow RX rings 0 and 4
++
++The EN7523 RX_DSCP_NUM() table replaces the one upstream grew in
++"net: airoha: grow the small RX rings", so on EN7523 ring 0 still has
++512 descriptors and ring 4 only 16.
++
++Ring 0 carries all bridged and routed downstream traffic from the PON.
++At about 67k packets/s, 512 descriptors is about 7.6 ms of buffering,
++and with both cores busy the GN630V loses 6-9% of downstream frames
++between the GDM2 and GDM1 MAC counters, with no drop counter moving.
++Use upstream's 1024.
++
++Ring 4 is the forced-to-CPU ring that carries PPPoE Discovery and LCP;
++upstream moved it to 128 after it stalled PPPoE negotiation at 16.
++
++Cost: about 2.4 MiB more RX buffers over both QDMAs.
++---
++--- a/drivers/net/ethernet/airoha/airoha_eth.h
+++++ b/drivers/net/ethernet/airoha/airoha_eth.h
++@@ -225,11 +225,11 @@
++ 	(_n) == 6 ? 1024 : 	\
++ 	(_n) == 7 ? 4096 : 1024)
++ #define RX_DSCP_NUM(_n)		\
++-	((_n) == 0 ? 512 :	\
+++	((_n) == 0 ? 1024 :	\
++ 	(_n) == 1 ? 1024 :	\
++ 	(_n) == 2 ? 128 :	\
++ 	(_n) == 3 ? 16 :	\
++-	(_n) == 4 ? 16 :	\
+++	(_n) == 4 ? 128 :	\
++ 	(_n) == 5 ? 8 :		\
++ 	(_n) == 6 ? 8 :		\
++ 	(_n) == 7 ? 16 :	\

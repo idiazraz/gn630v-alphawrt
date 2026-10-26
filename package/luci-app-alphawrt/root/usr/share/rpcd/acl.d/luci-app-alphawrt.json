@@ -38,6 +38,8 @@
 			},
 			"uci": [
 				"alphawrt",
+				"dhcp",
+				"dnsproxy",
 				"firewall",
 				"network",
 				"omci",

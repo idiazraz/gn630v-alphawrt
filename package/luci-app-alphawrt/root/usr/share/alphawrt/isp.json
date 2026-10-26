@@ -6,11 +6,12 @@
 		"vlan": 500,
 		"omcc_version": "",
 		"olt_profile": "auto",
-		"note": "Values from the GN630V's own stock firmware, which TM supplies: Internet is PPPoE on VLAN 500; IPTV is VLAN 600 (stock puts it on LAN 4), voice VLAN 400 and TR-069 management VLAN 209. Quick Setup sets up the Internet VLAN. If TM supplied and provisioned this GN630V, use the identity saved by the stock firmware button below.",
+		"note": "Values from the GN630V's own stock firmware, which TM supplies: Internet is PPPoE on VLAN 500; IPTV is VLAN 600 (stock puts it on LAN 4), voice VLAN 400 and TR-069 management VLAN 209. Quick Setup sets up the Internet VLAN, and in combo mode can give LAN 4 to the IPTV box on VLAN 600. If TM supplied and provisioned this GN630V, use the identity saved by the stock firmware button below.",
 		"stock_identity": true,
 		"short": "Unifi",
 		"source": "GN630V stock firmware defaults (TM)",
-		"bridge_trunk": true
+		"bridge_trunk": true,
+		"iptv_vlan": 600
 	},
 	{
 		"id": "time",

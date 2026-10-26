@@ -79,6 +79,20 @@
 			]
 		}
 	},
+	"basic/vpn": {
+		"title": "VPN",
+		"order": 50,
+		"action": {
+			"type": "alias",
+			"path": "admin/network/network"
+		},
+		"depends": {
+			"fs": {
+				"/usr/bin/wg": "executable"
+			}
+		},
+		"firstchild_ineligible": true
+	},
 	"basic/advanced": {
 		"title": "Advanced",
 		"order": 997,

@@ -1,0 +1,11 @@
+#!/bin/sh
+# WireGuard tunnels without their own MTU get 1412 instead of the kernel's
+# 1420: PPPoE caps the WAN at 1492 (TIME refuses a larger MRU), and 1492
+# minus the 80 bytes of WireGuard over IPv6 is 1412. An MTU set on the
+# interface (Advanced > Interfaces > MTU) wins.
+
+[ "$ACTION" = ifup ] || exit 0
+[ "$(uci -q get network."$INTERFACE".proto)" = wireguard ] || exit 0
+[ -z "$(uci -q get network."$INTERFACE".mtu)" ] || exit 0
+
+ip link set mtu 1412 dev "${DEVICE:-$INTERFACE}"

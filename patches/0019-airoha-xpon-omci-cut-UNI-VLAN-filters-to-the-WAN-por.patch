@@ -1,0 +1,113 @@
+From c92071e6ed8eb0876672f795048dc4f5dbd78c1e Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 15:22:41 +0800
+Subject: [PATCH 19/20] airoha: xpon: omci: cut UNI VLAN filters to the WAN
+ port
+
+Patch 999: when the WAN-side bridge port has its own VLAN filter
+(ME 84), a LAN-side filter entry is staged on that path only for the
+VIDs the port admits, so each VLAN lands on one GEM port.
+---
+ ...cut-UNI-VLAN-filters-to-the-WAN-port.patch | 93 +++++++++++++++++++
+ 1 file changed, 93 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/999-net-xpon-omci-cut-UNI-VLAN-filters-to-the-WAN-port.patch
+
+diff --git a/target/linux/airoha/patches-6.18/999-net-xpon-omci-cut-UNI-VLAN-filters-to-the-WAN-port.patch b/target/linux/airoha/patches-6.18/999-net-xpon-omci-cut-UNI-VLAN-filters-to-the-WAN-port.patch
+new file mode 100644
+index 0000000000..8f1a1ff8fa
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/999-net-xpon-omci-cut-UNI-VLAN-filters-to-the-WAN-port.patch
+@@ -0,0 +1,93 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: xpon: omci: cut UNI VLAN filters to the WAN port's ME 84
++
++When several GEM IW TPs share a MAC bridge with a UNI, the UNI's own
++VLAN tagging filter (ME 84) counted as associated with every WAN-side
++path, so each of its VLANs was staged on every GEM port. A Huawei OLT
++on TIME (Malaysia) puts all four UNIs and four GEM IW TPs on bridge 0
++and gives UNI 1 a 499+599 filter, so VLAN 499 landed on GEMs 272, 400,
++528 and 1168. The backend takes the first matching slot, and only the
++stable cookie hashes kept that on the right GEM (400).
++
++When the WAN-side bridge port has its own ME 84 that names VLANs, keep
++only the LAN-side filter entries whose VID that port admits. Entries
++without a usable VID, and ports without such a filter, stage as before.
++---
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -3068,6 +3068,48 @@
++ 	return false;
++ }
++ 
+++/*
+++ * ME 84 belongs to the bridge port with the same entity ID.  When the
+++ * WAN-side port has one that names VLANs, return it, so the LAN-side
+++ * filters can be cut down to the VLANs that port admits.  Without this,
+++ * a UNI filter on a bridge shared by several GEM IW TPs puts each of its
+++ * VLANs on every GEM, and the backend picks whichever table slot it
+++ * finds first.
+++ */
+++static const struct omci_mib_object *
+++omci_agent_wan_vlan_filter_locked(struct omci_agent *agent,
+++				  u16 bridge_port_entity)
+++{
+++	const struct omci_mib_object *object;
+++	unsigned int i;
+++
+++	object = omci_mib_lookup(agent, OMCI_CLASS_VLAN_TAGGING_FILTER_DATA,
+++				 bridge_port_entity);
+++	if (!object || !omci_mib_object_active(agent, object) ||
+++	    !object->vlan_filter.valid)
+++		return NULL;
+++	for (i = 0; i < object->vlan_filter.num_entries; i++)
+++		if (omci_agent_service_vlan_valid(
+++			    object->vlan_filter.entries[i].vid))
+++			return object;
+++
+++	return NULL;
+++}
+++
+++static bool
+++omci_agent_wan_vlan_admits(const struct omci_mib_object *wan_filter, u16 vid)
+++{
+++	unsigned int i;
+++
+++	if (!wan_filter || !omci_agent_service_vlan_valid(vid))
+++		return true;
+++	for (i = 0; i < wan_filter->vlan_filter.num_entries; i++)
+++		if (wan_filter->vlan_filter.entries[i].vid == vid)
+++			return true;
+++
+++	return false;
+++}
+++
++ static int
++ omci_agent_stage_path_locked(struct omci_device *odev,
++ 			     struct xarray *services,
++@@ -3079,12 +3121,15 @@
++ 			     bool *default_installed)
++ {
++ 	struct omci_agent *agent = &odev->agent;
+++	const struct omci_mib_object *wan_filter;
++ 	struct omci_mib_object *object;
++ 	unsigned long index;
++ 	u16 selector = pcp_valid ? 0x100 | pcp : 0;
++ 	bool installed = false;
++ 	int ret;
++ 
+++	wan_filter = omci_agent_wan_vlan_filter_locked(agent,
+++						       bridge_port_entity);
++ 	xa_for_each(&agent->mib, index, object) {
++ 		unsigned int i;
++ 
++@@ -3096,6 +3141,10 @@
++ 		if (object->class_id == OMCI_CLASS_VLAN_TAGGING_FILTER_DATA &&
++ 		    object->vlan_filter.valid) {
++ 			for (i = 0; i < object->vlan_filter.num_entries; i++) {
+++				if (object != wan_filter &&
+++				    !omci_agent_wan_vlan_admits(wan_filter,
+++					object->vlan_filter.entries[i].vid))
+++					continue;
++ 				ret = omci_agent_stage_service_rule_locked(
++ 					odev, services, lan_port->entity_id,
++ 					uni_entity, gem_iwtp_entity, pcp, pcp_valid,

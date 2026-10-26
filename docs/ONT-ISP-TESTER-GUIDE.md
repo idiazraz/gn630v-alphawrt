@@ -42,6 +42,84 @@ Record the exact UI labels and menu paths. A cropped screenshot with all identif
 8. Repeat the optical/error-counter reading after the same interval as the stock baseline. Note whether counters increased; do not treat a counter's presence alone as proof of a fault.
 9. Restore the stock ONT and confirm the ISP service returns. Record the recovery result.
 
+## OMCI and VLAN capture for other ISPs and OLTs
+
+How the OLT asks the ONT to handle VLANs differs between ISPs and OLT vendors. AlphaWRT has been verified on one TIME line (Huawei OLT). There, the OLT uses the older ME 78 (VLAN tagging operation) to tag the first LAN port with the Internet VLAN. Unifi (TM) and other OLT vendors (Nokia/ALCL, ZTE, FiberHome and others) may use ME 171 (extended VLAN tagging), VLAN filters only, or an 802.1p mapper instead. Each of these needs separate confirmation, so the information below is the most useful thing a tester can send.
+
+All commands here are read-only. Run them on AlphaWRT over SSH after the fibre reaches O5. They print only the VLAN and service-mapping entities, which contain no identity or credentials.
+
+**Do not paste the full output of `ubus call omci.agent status`.** It includes the GPON serial and the ONT identity. Print only the safe fields instead:
+
+```sh
+ubus call omci.agent status '{"device":0}' | jsonfilter \
+  -e '@.status.state' -e '@.status.omcc_version' \
+  -e '@.status.olt_profile_effective_name' -e '@.status.olt_profile_quirk_names' \
+  -e '@.status.onu_type_name' -e '@.status.mib_objects' -e '@.status.unsupported'
+```
+
+Then print the VLAN and service entities. The allowlist covers ME 47 (bridge ports), 78 (VLAN tagging operation), 84 (VLAN filters), 130 (802.1p mapper), 171 (extended VLAN), 262 (T-CONT), 266 (GEM interworking point), 268 (GEM port) and 329 (VEIP):
+
+```sh
+for c in 47 78 84 130 171 262 266 268 329; do
+  ubus call omci.agent mib_list '{"device":0}' | jsonfilter -e "@.objects[@.class_id=$c]"
+done
+```
+
+Never share other classes. ONU-G (256), ONU2-G (257), IP host (134), authentication (148), large string (157), TR-069 (340) and vendor-specific classes can hold serials, addresses, URLs or passwords.
+
+From that output, report:
+
+- **Which VLAN entities the OLT created:** 78, 84, 130 and/or 171, and whether they attach to a LAN port (ME 11 entity 257–260) or to the VEIP (ME 329).
+- **For ME 78:** bytes 1–2 of `data` are the tag (the low 12 bits are the VLAN ID), byte 0 is the upstream mode and byte 3 the downstream mode. Report all three. On TIME both modes read `0f`.
+- **For ME 171:** the rule count and each rule's treatment VLAN. The `extended_vlan` block shows them.
+- **Which VLAN carries the Internet,** and which GEM port and T-CONT it maps to.
+- **Where the Internet works:** untagged on `pon0`, on `pon0.<VLAN>`, or both. Build 998 and later tag untagged `pon0` frames when the OLT uses ME 78. With ME 171 or filters only, expect `pon0.<VLAN>` to be needed; report it either way.
+- **Kernel messages about the OMCI service mapping:** `dmesg | grep -E "OMCI install failed|ME 78|MIB reset"`. These lines contain no identity.
+
+### Unifi (TM)
+
+The GN630V's own stock firmware, as TM supplies it, says Internet is PPPoE on VLAN 500, IPTV is VLAN 600, voice VLAN 400 and TR-069 management VLAN 209, with OMCC version `A0`. None of this has been confirmed on a live Unifi line with AlphaWRT yet. A Unifi tester should report:
+
+- whether registration reaches O5 with the identity saved by the stock firmware, and the OMCC version AlphaWRT reports;
+- the OMCI capture above, especially whether VLAN 500 arrives as ME 78, ME 171 or filters only, and whether it attaches to a LAN port or the VEIP;
+- whether PPPoE comes up on `pon0.500`, and (on build 998 or later) on untagged `pon0`;
+- IPTV only if the account has it: whether VLAN 600 is provisioned and multicast reaches the set-top box (see the next section).
+
+### Unifi IPTV on LAN 4 (combo mode)
+
+Only for Unifi accounts with TV and a set-top box, and only once the Internet already works in combo mode. Newer Unifi TV boxes may stream over the normal Internet rather than VLAN 600: if yours works on LAN 1 with this option off, report that and stop here.
+
+**Turn it on:** run **Quick Setup** again from the top menu, choose **Unifi (TM)** and **Combo**, tick **IPTV box on LAN 4 (VLAN 600)** on the settings page, then finish. Plug the set-top box into LAN 4. LAN 4 then carries only VLAN 600, passed straight through untagged, as TM's own ONT does; LAN 1–3 and Wi-Fi stay on the Internet. To undo it, run Quick Setup again and untick the box.
+
+**Check, in this order:**
+
+1. The set-top box gets an address (its own network or status screen). Report yes/no only, not the address.
+2. Live channels play, and how long a channel change takes. Then try catch-up or on-demand if the account has it.
+3. The Internet on LAN 1–3 and Wi-Fi still works while a channel plays: the PPPoE stays up, and a speed test is about the same as without TV.
+4. Leave a channel playing for 30 minutes and note any freezes.
+
+If the box gets an address but no channels play, or nothing at all arrives, say which; both are useful.
+
+**Read-only outputs to send** (run over SSH while a channel plays). These print no serials or MACs; do not add `bridge fdb show`, `ip link` or `ifconfig` output, which do.
+
+```sh
+uci show network.iptv; uci show network.br_iptv
+bridge link show | grep -E 'lan4|pon0\.600' | sed 's/ link-netnsid.*//'
+cat /sys/class/net/br-iptv/bridge/multicast_snooping
+bridge fdb show br br-iptv | grep -vc permanent
+for f in rx_bytes rx_packets multicast tx_bytes; do
+  echo "pon0.600 $f $(cat /sys/class/net/pon0.600/statistics/$f)"
+done
+echo "lan4 tx_bytes $(cat /sys/class/net/lan4/statistics/tx_bytes)"
+dmesg | grep -E "OMCI install failed|ME 78|MIB reset|multicast"
+```
+
+Run the counter loop twice, a minute apart, so the rate shows. Also send the OMCI capture from the section above with classes `281 309 310` added to the loop (multicast GEM port, multicast operations profile, multicast subscriber config). They hold multicast group addresses and VLANs, not your identity.
+
+### Other OLT vendors
+
+Report the OLT profile AlphaWRT selected (`olt_profile_effective_name`) and any quirks it lists, the `unsupported` count, and the capture above. If the ISP's own ONT shows the OLT vendor, record it. Do not probe the ISP network to find it. A line that registers (O5) but passes no traffic is worth reporting too: include the capture and say which of `pon0` or `pon0.<VLAN>` you tried.
+
 Do not infer ISP-wide settings from one line. Record the location at city/district level and mark each value as **ISP-provided**, **visible in stock UI**, **measured**, or **unknown**. A value observed on one line should not become a default until it has been independently confirmed on additional lines or by the ISP.
 
 ## Report template
@@ -72,6 +150,11 @@ Identity fields requested by ISP/stock UI (field name, format, length only):
 PLOAM/registration credential required? (yes/no/unknown; never include value):
 OMCC version (if displayed; otherwise unknown):
 OLT profile/vendor hint (if explicitly displayed; otherwise unknown):
+AlphaWRT OLT profile and quirks (olt_profile_effective_name):
+VLAN entities the OLT created (78 / 84 / 130 / 171; on LAN port or VEIP):
+ME 78 values if present (upstream mode, VLAN, downstream mode):
+Internet works on (untagged pon0 / pon0.<VLAN> / both / neither):
+OMCI unsupported count and sanitized dmesg OMCI lines:
 
 Stock GPON state and time to register:
 Stock optical RX/TX power (value and units):
@@ -82,6 +165,7 @@ AlphaWRT GPON state and time to register:
 OMCI state and non-secret service mapping:
 Internet test result (link / address acquired / PPP established / DNS / reachability):
 Other service test results:
+Unifi IPTV on LAN 4 (box address yes/no / live channels / catch-up / Internet unaffected / 30 min stable):
 AlphaWRT optical RX/TX power (value and units):
 AlphaWRT counters at start / after 10 minutes:
 Relevant sanitized error messages:

@@ -1,0 +1,479 @@
+From 08249e95d4b17622c486985091a81104783fb6ba Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 15:22:41 +0800
+Subject: [PATCH 18/20] airoha: xpon: apply OMCI ME 78 VLAN tagging
+
+Patch 998: OLTs that still provision the old ME 78 (a Huawei OLT on
+TIME tags UNI 1 upstream with the Internet VLAN that way) now get
+untagged upstream frames tagged with that VLAN and stripped downstream,
+so pon0 and pon0.<VLAN> use the same GEM port.
+---
+ ...t-xpon-apply-OMCI-ME-78-VLAN-tagging.patch | 459 ++++++++++++++++++
+ 1 file changed, 459 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/998-net-xpon-apply-OMCI-ME-78-VLAN-tagging.patch
+
+diff --git a/target/linux/airoha/patches-6.18/998-net-xpon-apply-OMCI-ME-78-VLAN-tagging.patch b/target/linux/airoha/patches-6.18/998-net-xpon-apply-OMCI-ME-78-VLAN-tagging.patch
+new file mode 100644
+index 0000000000..f59c1620e4
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/998-net-xpon-apply-OMCI-ME-78-VLAN-tagging.patch
+@@ -0,0 +1,459 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: xpon: apply OMCI ME 78 VLAN tagging
++
++Some OLTs still provision the old ME 78 (VLAN tagging operation
++configuration data) instead of ME 171: a Huawei OLT on TIME (Malaysia)
++tags Ethernet UNI 1 upstream with the Internet VLAN that way. The OMCI
++agent only kept ME 78 as a shadow object, so untagged frames on pon0
++matched no service and were dropped; the Internet only worked on
++pon0.<VLAN>.
++
++Give ME 78 a descriptor, so its Create, Set and Delete reconcile the
++services, and stage one tag rule for the first enabled UNI with a
++tagging ME 78. The backend tags untagged upstream frames with that TCI
++and classifies them like frames of that VLAN, so pon0 and pon0.<VLAN>
++use the same GEM port. When the ME asks for it, the tag is stripped
++from downstream frames unless a VLAN device still wants that VLAN.
++Tagged frames are left alone, and PPE offload is refused for flows that
++need the tag, since an FOE entry does not push it.
++---
++--- a/drivers/net/ethernet/airoha/airoha_eth.c
+++++ b/drivers/net/ethernet/airoha/airoha_eth.c
++@@ -2508,6 +2508,38 @@
++ 	return frame_desc;
++ }
++ 
+++/*
+++ * ME 78 downstream strip: drop the OLT's tag, so untagged pon0 users get
+++ * untagged frames, unless a VLAN device (pon0.<VID>, or one on a bridge
+++ * above pon0) still wants that VLAN.  Frees the skb only on failure.
+++ */
+++static struct sk_buff *airoha_xpon_rx_untag(struct airoha_gdm_dev *dev,
+++					    struct net_device *netdev,
+++					    struct sk_buff *skb)
+++{
+++	u16 vid = READ_ONCE(dev->xpon_strip_vid);
+++	const struct vlan_hdr *vhdr;
+++	bool wanted;
+++
+++	if (!vid || skb->protocol != htons(ETH_P_8021Q) ||
+++	    !pskb_may_pull(skb, VLAN_HLEN))
+++		return skb;
+++	vhdr = (const struct vlan_hdr *)skb->data;
+++	if ((ntohs(vhdr->h_vlan_TCI) & VLAN_VID_MASK) != vid)
+++		return skb;
+++
+++	rcu_read_lock();
+++	wanted = __vlan_find_dev_deep_rcu(netdev, htons(ETH_P_8021Q), vid);
+++	rcu_read_unlock();
+++	if (wanted)
+++		return skb;
+++
+++	skb = skb_vlan_untag(skb);
+++	if (skb)
+++		__vlan_hwaccel_clear_tag(skb);
+++	return skb;
+++}
+++
++ static int airoha_qdma_rx_process(struct airoha_queue *q, int budget)
++ {
++ 	enum dma_data_direction dir = page_pool_get_dma_dir(q->page_pool);
++@@ -2715,6 +2747,12 @@
++ 			airoha_ppe_check_skb(&eth->ppe->common.dev, q->skb, hash,
++ 					     false);
++ 
+++		q->skb = airoha_xpon_rx_untag(dev, netdev, q->skb);
+++		if (!q->skb) {
+++			done++;
+++			continue;
+++		}
+++
++ 		done++;
++ 		napi_gro_receive(&q->napi, q->skb);
++ 		q->skb = NULL;
++@@ -7740,16 +7778,15 @@
++ 	return 0;
++ }
++ 
++-static int
++-airoha_eth_xpon_lookup_service(struct airoha_gdm_dev *dev,
++-			       bool vlan_valid, u16 vlan_id,
++-			       bool pcp_valid, u8 pcp,
++-			       struct airoha_xpon_tx_info *info)
+++static const struct airoha_xpon_service_cfg *
+++airoha_eth_xpon_match_service(struct airoha_gdm_dev *dev,
+++			      bool vlan_valid, u16 vlan_id,
+++			      bool pcp_valid, u8 pcp)
++ {
++ 	const struct airoha_xpon_service_cfg *fallback = NULL;
++ 	int i;
++ 
++-	spin_lock_bh(&dev->xpon_service_lock);
+++	lockdep_assert_held(&dev->xpon_service_lock);
++ 	for (i = 0; i < AIROHA_XPON_MAX_SERVICES; i++) {
++ 		const struct airoha_xpon_service_cfg *service;
++ 
++@@ -7770,15 +7807,44 @@
++ 		break;
++ 	}
++ 
++-	if (fallback) {
++-		info->gem_port_id = fallback->gem_port_id;
++-		info->tcont = fallback->tcont;
++-		info->queue = fallback->queue;
+++	return fallback;
+++}
+++
+++static int
+++airoha_eth_xpon_lookup_service(struct airoha_gdm_dev *dev,
+++			       bool vlan_valid, u16 vlan_id,
+++			       bool pcp_valid, u8 pcp,
+++			       struct airoha_xpon_tx_info *info)
+++{
+++	const struct airoha_xpon_service_cfg *service = NULL;
+++	u16 tci;
+++
+++	spin_lock_bh(&dev->xpon_service_lock);
+++	/*
+++	 * ME 78: an untagged frame goes out with the OLT's tag, so it takes the
+++	 * path a frame of that VLAN (pon0.<VID>) takes.  Without a service for
+++	 * that VLAN it falls back to the untagged lookup, as before ME 78.
+++	 */
+++	tci = dev->xpon_tag_tci;
+++	if (!vlan_valid && tci)
+++		service = airoha_eth_xpon_match_service(dev, true,
+++				tci & VLAN_VID_MASK, true,
+++				(tci & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
+++	info->tag = !!service;
+++	info->tag_tci = tci;
+++	if (!service)
+++		service = airoha_eth_xpon_match_service(dev, vlan_valid,
+++							vlan_id, pcp_valid,
+++							pcp);
+++	if (service) {
+++		info->gem_port_id = service->gem_port_id;
+++		info->tcont = service->tcont;
+++		info->queue = service->queue;
++ 		info->oam = false;
++ 	}
++ 	spin_unlock_bh(&dev->xpon_service_lock);
++ 
++-	return fallback ? 0 : -ENOENT;
+++	return service ? 0 : -ENOENT;
++ }
++ 
++ static int airoha_xpon_get_tx_info(struct net_device *netdev, bool vlan_valid,
++@@ -7798,8 +7864,16 @@
++ 	    dev->xpon_mode != AIROHA_XPON_MODE_GPON)
++ 		return -EOPNOTSUPP;
++ 
++-	return airoha_eth_xpon_lookup_service(dev, vlan_valid, vlan_id,
+++	ret = airoha_eth_xpon_lookup_service(dev, vlan_valid, vlan_id,
++ 					     pcp_valid, pcp, info);
+++	/*
+++	 * ponytail: a PPE entry does not push the ME 78 tag, so those flows
+++	 * stay in software; add the tag to the FOE entry if they need offload.
+++	 */
+++	if (!ret && info->tag)
+++		return -EOPNOTSUPP;
+++
+++	return ret;
++ }
++ 
++ static int
++@@ -7880,6 +7954,7 @@
++ {
++ 	struct airoha_gdm_dev *dev;
++ 	int empty = -1, i, ret;
+++	bool tag_changed = false;
++ 
++ 	if (!cfg || cfg->gem_port_id > FIELD_MAX(QDMA_ETH_TXMSG_SP_TAG_MASK) ||
++ 	    cfg->tcont >= 32 || cfg->queue >= AIROHA_NUM_QOS_QUEUES)
++@@ -7908,7 +7983,17 @@
++ 			dev->xpon_services[i].default_service = false;
++ 	dev->xpon_services[empty] = *cfg;
++ 	dev->xpon_services[empty].valid = true;
+++	if (cfg->tag_untagged) {
+++		tag_changed = dev->xpon_tag_tci != cfg->tag_tci;
+++		dev->xpon_tag_tci = cfg->tag_tci;
+++		WRITE_ONCE(dev->xpon_strip_vid, cfg->strip_downstream ?
+++			   cfg->tag_tci & VLAN_VID_MASK : 0);
+++	}
++ 	spin_unlock_bh(&dev->xpon_service_lock);
+++	if (tag_changed)
+++		netdev_info(netdev, "ME 78: untagged upstream frames get VLAN %u%s\n",
+++			    cfg->tag_tci & VLAN_VID_MASK,
+++			    cfg->strip_downstream ? ", stripped downstream" : "");
++ 
++ 	return 0;
++ }
++@@ -7930,6 +8015,10 @@
++ 			continue;
++ 		if (gem_port_id)
++ 			*gem_port_id = dev->xpon_services[i].gem_port_id;
+++		if (dev->xpon_services[i].tag_untagged) {
+++			dev->xpon_tag_tci = 0;
+++			WRITE_ONCE(dev->xpon_strip_vid, 0);
+++		}
++ 		memset(&dev->xpon_services[i], 0,
++ 		       sizeof(dev->xpon_services[i]));
++ 		found = true;
++@@ -7953,6 +8042,7 @@
++ 	spin_lock_bh(&dev->xpon_service_lock);
++ 	for (i = 0; i < AIROHA_XPON_MAX_SERVICES; i++)
++ 		if (dev->xpon_services[i].valid &&
+++		    !dev->xpon_services[i].tag_untagged &&
++ 		    dev->xpon_services[i].gem_port_id == gem_port_id) {
++ 			found = true;
++ 			break;
++@@ -7971,6 +8061,8 @@
++ 
++ 	spin_lock_bh(&dev->xpon_service_lock);
++ 	memset(dev->xpon_services, 0, sizeof(dev->xpon_services));
+++	dev->xpon_tag_tci = 0;
+++	WRITE_ONCE(dev->xpon_strip_vid, 0);
++ 	spin_unlock_bh(&dev->xpon_service_lock);
++ }
++ 
++@@ -8007,6 +8099,13 @@
++ 	    dev->xpon_mode == AIROHA_XPON_MODE_GPON) {
++ 		if (airoha_eth_xpon_classify(dev, skb, &classified))
++ 			goto error;
+++		/* Frees the skb on failure; the error path copes with NULL. */
+++		if (classified.tag) {
+++			skb = vlan_insert_tag(skb, htons(ETH_P_8021Q),
+++					      classified.tag_tci);
+++			if (!skb)
+++				goto error;
+++		}
++ 		xpon = &classified;
++ 	}
++ 	qid = airoha_qdma_get_txq(qdma, xpon ? xpon->queue :
++--- a/drivers/net/ethernet/airoha/airoha_eth.h
+++++ b/drivers/net/ethernet/airoha/airoha_eth.h
++@@ -1042,6 +1042,10 @@
++ 	bool pcp_valid;
++ 	bool default_service;
++ 	bool valid;
+++	/* ME 78 rule: no GEM path, only the tag for untagged frames */
+++	u16 tag_tci;
+++	bool tag_untagged;
+++	bool strip_downstream;
++ };
++ 
++ struct airoha_xpon_tx_info {
++@@ -1049,6 +1053,9 @@
++ 	u8 tcont;
++ 	u8 queue;
++ 	bool oam;
+++	/* insert @tag_tci before transmitting (ME 78) */
+++	u16 tag_tci;
+++	bool tag;
++ };
++ 
++ struct airoha_gdm_dev {
++@@ -1114,6 +1121,9 @@
++ 	u32 xpon_service_cookies[AIROHA_XPON_MAX_SERVICES]
++ 				 [AIROHA_XPON_SVC_MAX_COOKIES];
++ 	u8 xpon_service_ncookies[AIROHA_XPON_MAX_SERVICES];
+++	/* ME 78: tag for untagged upstream frames, VID to strip downstream */
+++	u16 xpon_tag_tci;
+++	u16 xpon_strip_vid;
++ 
++ };
++ 
++--- a/drivers/net/ethernet/airoha/airoha_xpon.c
+++++ b/drivers/net/ethernet/airoha/airoha_xpon.c
++@@ -2051,6 +2051,22 @@
++ 	unsigned int tcont_index;
++ 	int ret;
++ 
+++	/* ME 78 tag rule: classification only, no GEM or T-CONT of its own. */
+++	if (service && service->tag_untagged) {
+++		cfg = (struct airoha_xpon_service_cfg) {
+++			.cookie = service->cookie,
+++			.tag_tci = service->tag_tci,
+++			.tag_untagged = true,
+++			.strip_downstream = service->strip_downstream,
+++		};
+++		dev_dbg(priv->dev,
+++			"OMCI ME 78 rule %#x: UNI %#x tag untagged upstream with TCI %#x%s\n",
+++			service->cookie, service->uni_entity_id,
+++			service->tag_tci,
+++			service->strip_downstream ? ", strip downstream" : "");
+++		return airoha_eth_xpon_add_service(priv->gdm_dev, &cfg);
+++	}
+++
++ 	if (!service || service->multicast || service->vlan_treatment_valid ||
++ 	    service->direction == OMCI_GEM_PORT_DIRECTION_ANI_TO_UNI)
++ 		return -EOPNOTSUPP;
++--- a/include/net/xpon/omci.h
+++++ b/include/net/xpon/omci.h
++@@ -256,6 +256,10 @@
++  * @multicast_ani_valid: @multicast_ani_entity_id was profile-resolved
++  * @multicast: service represents a multicast GEM path
++  * @default_service: fallback service when no VLAN/PCP rule matches
+++ * @tag_tci: ME 78 upstream tag, used with @tag_untagged
+++ * @tag_untagged: not a GEM path but an ME 78 rule: tag untagged upstream
+++ *	frames with @tag_tci and classify them as frames of that VLAN
+++ * @strip_downstream: ME 78 asks to remove @tag_tci's VLAN downstream
++  */
++ struct omci_service_config {
++ 	u32 cookie;
++@@ -276,6 +280,9 @@
++ 	bool multicast_ani_valid;
++ 	bool multicast;
++ 	bool default_service;
+++	u16 tag_tci;
+++	bool tag_untagged;
+++	bool strip_downstream;
++ };
++ 
++ struct omci_ani_topology {
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -3212,6 +3212,92 @@
++ 	return 0;
++ }
++ 
+++static bool omci_agent_tagging_op_matches(const struct omci_mib_object *op,
+++					  u16 port_entity, u8 tp_type,
+++					  u16 uni_entity)
+++{
+++	u16 pointer = get_unaligned_be16(op->data + 5);
+++
+++	/* Association type; 0 (an older OLT leaves it out) means PPTP = ME ID. */
+++	switch (op->data[4]) {
+++	case 0:
+++		return tp_type == OMCI_BRIDGE_TP_PPTP_ETH_UNI &&
+++		       op->entity_id == uni_entity;
+++	case 3:
+++		return pointer == port_entity;
+++	case 10:
+++		return tp_type == OMCI_BRIDGE_TP_VEIP && pointer == uni_entity;
+++	case 11:
+++		return tp_type == OMCI_BRIDGE_TP_PPTP_ETH_UNI &&
+++		       pointer == uni_entity;
+++	default:
+++		return false;
+++	}
+++}
+++
+++/*
+++ * ME 78 (VLAN tagging operation, the pre-ME 171 way) makes the ONU tag a
+++ * UNI's upstream frames with one TCI and optionally strip it downstream.
+++ * pon0 is the network side and already carries tagged frames as pon0.<VID>,
+++ * so the rule only says "tag untagged frames with this TCI"; the backend then
+++ * classifies them exactly like pon0.<VID> frames, keeping the GEM choice the
+++ * same for both.  pon0 is one host port, so the first enabled UNI with a
+++ * tagging ME 78 wins.  Any non-zero upstream mode tags: the Huawei OLT on
+++ * TIME sends 0x0f, which G.988 does not define, next to the TCI it wants.
+++ */
+++static int omci_agent_stage_tagging_op_locked(struct omci_device *odev,
+++					      struct xarray *services)
+++{
+++	struct omci_agent *agent = &odev->agent;
+++	struct omci_mib_object *port;
+++	struct omci_mib_object *op;
+++	unsigned long index;
+++	unsigned long op_index;
+++
+++	xa_for_each(&agent->mib, index, port) {
+++		struct omci_service_config service = {};
+++		u16 uni_entity;
+++		u8 tp_type;
+++
+++		if (!omci_mib_object_active(agent, port) ||
+++		    port->class_id != OMCI_CLASS_MAC_BRIDGE_PORT_CONFIG_DATA)
+++			continue;
+++		tp_type = port->data[3];
+++		uni_entity = get_unaligned_be16(port->data + 4);
+++		if ((tp_type != OMCI_BRIDGE_TP_PPTP_ETH_UNI &&
+++		     tp_type != OMCI_BRIDGE_TP_VEIP) ||
+++		    !omci_agent_uni_enabled(agent, tp_type, uni_entity))
+++			continue;
+++
+++		xa_for_each(&agent->mib, op_index, op) {
+++			u16 tci = get_unaligned_be16(op->data + 1);
+++
+++			if (op->class_id != OMCI_CLASS_VLAN_TAGGING_OPERATION ||
+++			    !omci_mib_object_active(agent, op) ||
+++			    !omci_agent_tagging_op_matches(op, port->entity_id,
+++							   tp_type, uni_entity) ||
+++			    !op->data[0] ||
+++			    !omci_agent_service_vlan_valid(tci & VLAN_VID_MASK))
+++				continue;
+++
+++			service.uni_entity_id = omci_profile_normalize_uni_entity(
+++				agent->profile_effective, uni_entity);
+++			service.tag_tci = tci;
+++			service.tag_untagged = true;
+++			service.strip_downstream = op->data[3] != 0;
+++			service.cookie = omci_agent_service_cookie(
+++				port->entity_id, op->entity_id, 0, 0x7800);
+++			dev_dbg(odev->parent,
+++				"OMCI stage ME 78 %#x: UNI %#x LAN port %#x upstream mode %#x TCI %#x downstream mode %#x\n",
+++				op->entity_id, uni_entity, port->entity_id,
+++				op->data[0], tci, op->data[3]);
+++			return omci_agent_stage_service(services, &service);
+++		}
+++	}
+++
+++	return 0;
+++}
+++
++ static int omci_agent_reconcile_services_locked(struct omci_device *odev)
++ {
++ 	struct omci_agent *agent = &odev->agent;
++@@ -3238,6 +3324,10 @@
++ 			goto out;
++ 	}
++ 
+++	ret = omci_agent_stage_tagging_op_locked(odev, &desired);
+++	if (ret)
+++		goto out;
+++
++ 	ret = omci_agent_apply_services_locked(odev, &desired);
++ 
++ out:
++--- a/net/xpon/omci/me.c
+++++ b/net/xpon/omci/me.c
++@@ -418,6 +418,15 @@
++ 	OMCI_ATTR(13, 25, 1, OMCI_RW_SC),
++ };
++ 
+++/* ME 78: upstream mode, upstream TCI, downstream mode, association. */
+++static const struct omci_attr_desc omci_vlan_tagging_op_attrs[] = {
+++	OMCI_ATTR(15, 0, 1, OMCI_RW_SC),
+++	OMCI_ATTR(14, 1, 2, OMCI_RW_SC),
+++	OMCI_ATTR(13, 3, 1, OMCI_RW_SC),
+++	OMCI_ATTR(12, 4, 1, OMCI_RW_SC),
+++	OMCI_ATTR(11, 5, 2, OMCI_RW_SC),
+++};
+++
++ static const struct omci_attr_desc omci_8021p_mapper_attrs[] = {
++ 	OMCI_ATTR(15, 0, 2, OMCI_RW_SC),
++ 	OMCI_ATTR(14, 2, 2, OMCI_RW_SC),
++@@ -652,6 +661,12 @@
++ 		      OMCI_ME_F_DATAPATH, GENMASK(15, 13), GENMASK(15, 13), 26,
++ 		      OMCI_CLASS_CATEGORY_LAYER2, OMCI_CLASS_SUPPORT_PROVISIONED,
++ 		      omci_vlan_filter_attrs),
+++	STANDARD_DESC(OMCI_CLASS_VLAN_TAGGING_OPERATION,
+++		      "VLAN tagging operation configuration data",
+++		      OLT_CREATED_ACTIONS, OMCI_ME_F_DATAPATH,
+++		      GENMASK(15, 11), GENMASK(15, 11), 7,
+++		      OMCI_CLASS_CATEGORY_LAYER2, OMCI_CLASS_SUPPORT_PROVISIONED,
+++		      omci_vlan_tagging_op_attrs),
++ 	STANDARD_DESC(OMCI_CLASS_8021P_MAPPER,
++ 		      "802.1p mapper service profile", OLT_CREATED_ACTIONS,
++ 		      OMCI_ME_F_DATAPATH, GENMASK(15, 3), GENMASK(15, 3), 45,
++--- a/net/xpon/omci/me.h
+++++ b/net/xpon/omci/me.h
++@@ -18,6 +18,7 @@
++ #define OMCI_CLASS_MAC_BRIDGE_SERVICE_PROFILE	45
++ #define OMCI_CLASS_MAC_BRIDGE_CONFIG_DATA	46
++ #define OMCI_CLASS_MAC_BRIDGE_PORT_CONFIG_DATA	47
+++#define OMCI_CLASS_VLAN_TAGGING_OPERATION	78
++ #define OMCI_CLASS_VLAN_TAGGING_FILTER_DATA	84
++ #define OMCI_CLASS_8021P_MAPPER		130
++ 

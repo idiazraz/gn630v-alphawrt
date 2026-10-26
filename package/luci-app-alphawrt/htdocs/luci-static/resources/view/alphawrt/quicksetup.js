@@ -43,6 +43,10 @@ var ONT_FIELDS = [ 'equipment_id', 'hardware_version',
 
 var LAN_PORTS = [ 'lan1', 'lan2', 'lan3', 'lan4' ];
 
+/* combo mode can give this port to the ISP's IPTV box, bridged to the IPTV
+ * VLAN (br-iptv), as the stock firmware does for Unifi */
+var IPTV_PORT = 'lan4';
+
 /* eye icon for the show/hide password button */
 function EYE() {
 	var ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'), p, c;
@@ -109,12 +113,18 @@ return view.extend({
 		uci.sections('network', 'device').forEach(function(s) {
 			L.toArray(s.ports).forEach(function(p) {
 				var v = /^pon0\.(\d+)$/.exec(p);
-				if (v && !d.vlan)
+				if (v && s.name == 'br-iptv') {
+					d.iptv = true;
+					d.iptv_vlan = v[1];
+				}
+				else if (v && !d.vlan)
 					d.vlan = v[1];
 			});
 		});
 		if (!d.vlan && (byId(this.presets, d.isp) || {}).vlan)
 			d.vlan = String(byId(this.presets, d.isp).vlan);
+		if (!d.iptv_vlan && (byId(this.presets, d.isp) || {}).iptv_vlan)
+			d.iptv_vlan = String(byId(this.presets, d.isp).iptv_vlan);
 		d.username = uci.get('network', 'wan', 'username') || '';
 		d.ppp_password = uci.get('network', 'wan', 'password') || '';
 		d.wifi_keep = false;
@@ -259,6 +269,9 @@ return view.extend({
 					self.d.omcc_version = p.omcc_version || self.d.omcc_version;
 					self.d.olt_profile = p.olt_profile || '';
 					self.d.trunk = !!p.bridge_trunk;
+					self.d.iptv_vlan = p.iptv_vlan ? String(p.iptv_vlan) : '';
+					if (!p.iptv_vlan)
+						self.d.iptv = false;
 				})
 			]),
 			check: L.bind(function() { return this.d.isp ? null : _('Pick your provider (or Other).'); }, this)
@@ -364,7 +377,17 @@ return view.extend({
 		var self = this, d = this.d, body;
 
 		if (d.mode == 'combo')
-			body = [ this.identity(), this.internet(false), this.wifi() ];
+			body = [ this.identity(), this.internet(false),
+				d.iptv_vlan ? E([], [
+					E('h4', {}, _('IPTV')),
+					E('label', { 'class': 'cbi-value', 'style': 'display:flex;gap:.75em' }, [
+						E('input', { 'type': 'checkbox', 'checked': d.iptv ? '' : null,
+							'change': function(ev) { d.iptv = ev.target.checked; } }),
+						E('span', {}, [ _('IPTV box on %s (VLAN %s)').format(line.portName(IPTV_PORT), d.iptv_vlan), E('br'),
+							E('small', {}, _('%s then passes the ISP\'s IPTV VLAN straight to the IPTV box, as the ISP\'s own fibre box does; the other LAN ports and Wi-Fi stay on the Internet. Leave off if you have no IPTV box: %s stays a normal LAN port.').format(line.portName(IPTV_PORT), line.portName(IPTV_PORT))) ])
+					])
+				]) : '',
+				this.wifi() ];
 		else if (d.mode == 'router')
 			body = [
 				E('h4', {}, _('Connection to the ISP box')),
@@ -498,6 +521,7 @@ return view.extend({
 			[ _('Mode'), line.MODES[d.mode] ],
 			d.mode != 'router' ? [ _('GPON serial'), d.serial ] : null,
 			d.mode != 'combo' ? [ _('LAN port'), line.portName(d.port) ] : null,
+			d.mode == 'combo' && d.iptv ? [ _('IPTV'), _('%s on VLAN %s').format(line.portName(IPTV_PORT), d.iptv_vlan) ] : null,
 			d.mode != 'bridge' ? [ _('Internet'), d.proto == 'pppoe' ? _('PPPoE as %s').format(d.username) : _('Automatic (DHCP)') ] : null,
 			[ _('VLAN'), d.vlan || _('untagged') ],
 			[ _('Wi-Fi'), (d.mode == 'bridge' && !d.wifi_keep) ? _('Off') : '%s / %s'.format(d.ssid0, d.ssid1) ]
@@ -572,14 +596,15 @@ return view.extend({
 	/* ---- writing the configuration ---- */
 
 	writeNetwork: function() {
-		var d = this.d, vlan = +d.vlan || 0, lanBr, ports, br, brIfs;
+		var d = this.d, vlan = +d.vlan || 0, iptv = d.mode == 'combo' && d.iptv && +d.iptv_vlan,
+		    lanBr, ports, br, brIfs, tv;
 
 		/* an earlier bridge mode: the pon0 bridge and the interfaces on it
 		 * (ontbridge, and gnmgmt for the management address). Reused in
 		 * bridge mode (removing and re-adding the same names in one save is
 		 * not safe), removed otherwise. */
 		br = uci.sections('network', 'device').filter(function(s) {
-			return s.type == 'bridge' && L.toArray(s.ports).some(function(p) { return /^pon\d/.test(p); });
+			return s.type == 'bridge' && s.name != 'br-iptv' && L.toArray(s.ports).some(function(p) { return /^pon\d/.test(p); });
 		})[0];
 		brIfs = br ? uci.sections('network', 'interface').filter(function(i) { return i.device == br.name; }) : [];
 		if (d.mode != 'bridge') {
@@ -592,9 +617,32 @@ return view.extend({
 			});
 		}
 
+		/* combo mode's IPTV port: IPTV_PORT bridged to the IPTV VLAN, with
+		 * no address on the box (an interface only so netifd brings it up).
+		 * Reused when kept, for the same reason as the bridge above. */
+		tv = uci.sections('network', 'device').filter(function(s) { return s.name == 'br-iptv'; })[0];
+		if (iptv) {
+			tv = tv ? tv['.name'] : uci.add('network', 'device', 'br_iptv');
+			uci.set('network', tv, 'type', 'bridge');
+			uci.set('network', tv, 'name', 'br-iptv');
+			uci.set('network', tv, 'ports', [ IPTV_PORT, 'pon0.' + iptv ]);
+			/* no IPv6 link-local either: the box stays unreachable from the IPTV side */
+			uci.set('network', tv, 'ipv6', '0');
+			if (!uci.get('network', 'iptv'))
+				uci.add('network', 'interface', 'iptv');
+			uci.set('network', 'iptv', 'proto', 'none');
+			uci.set('network', 'iptv', 'device', 'br-iptv');
+		}
+		else {
+			if (uci.get('network', 'iptv'))
+				uci.remove('network', 'iptv');
+			if (tv)
+				uci.remove('network', tv['.name']);
+		}
+
 		/* LAN bridge: every port except the one this mode takes */
 		lanBr = uci.sections('network', 'device').filter(function(s) { return s.name == 'br-lan'; })[0];
-		ports = LAN_PORTS.filter(function(p) { return d.mode == 'combo' || p != d.port; });
+		ports = LAN_PORTS.filter(function(p) { return d.mode == 'combo' ? !(iptv && p == IPTV_PORT) : p != d.port; });
 		if (lanBr)
 			uci.set('network', lanBr['.name'], 'ports', ports);
 

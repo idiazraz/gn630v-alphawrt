@@ -1,0 +1,168 @@
+From 3052e0e2c176b3d5199edc0ad08e7d37ae11d21f Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 15:22:40 +0800
+Subject: [PATCH 15/20] airoha: runtime interrupt coalescing knobs
+
+Patch 994 adds the napi_defer_hard_irqs, napi_gro_flush_timeout and
+rx_delay_int module parameters to airoha_eth, writable at runtime and
+0 (no change) by default, for tuning the IRQ load at high traffic.
+---
+ ...a-runtime-interrupt-coalescing-knobs.patch | 149 ++++++++++++++++++
+ 1 file changed, 149 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/994-net-airoha-runtime-interrupt-coalescing-knobs.patch
+
+diff --git a/target/linux/airoha/patches-6.18/994-net-airoha-runtime-interrupt-coalescing-knobs.patch b/target/linux/airoha/patches-6.18/994-net-airoha-runtime-interrupt-coalescing-knobs.patch
+new file mode 100644
+index 0000000000..3674da23c9
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/994-net-airoha-runtime-interrupt-coalescing-knobs.patch
+@@ -0,0 +1,149 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: runtime interrupt coalescing knobs
++
++At 670 Mbps bridged the GN630V takes about 35k IRQs/s on the LAN QDMA
++(mostly TX-done) and 10-29k/s on the WAN QDMA, with both cores about 85%
++busy. Add three module parameters, writable at runtime and off by
++default:
++
++- napi_defer_hard_irqs / napi_gro_flush_timeout: the kernel's software
++  IRQ deferral for every QDMA RX and TX-done NAPI. The usual per-netdev
++  sysfs knobs don't reach these NAPIs, which hang off a dummy netdev.
++  The polls now pass their work count to napi_complete_done(), which the
++  deferral needs; with both parameters 0 nothing changes.
++- rx_delay_int: raw value for each RX ring's QDMA RX_DELAY_INT register,
++  which the driver used to clear at init.
++---
++--- a/drivers/net/ethernet/airoha/airoha_eth.c
+++++ b/drivers/net/ethernet/airoha/airoha_eth.c
++@@ -78,6 +78,78 @@
++ }
++ EXPORT_SYMBOL_GPL(airoha_wr);
++ 
+++/*
+++ * Interrupt coalescing, writable at runtime, off (0) by default.
+++ * napi_defer_hard_irqs and napi_gro_flush_timeout (ns) are the kernel's
+++ * software IRQ deferral (Documentation/networking/napi.rst) for every QDMA
+++ * RX and TX-done NAPI: the per-netdev sysfs knobs don't reach these NAPIs,
+++ * which hang off a dummy netdev. rx_delay_int is written raw to the
+++ * RX_DELAY_INT register of every QDMA RX ring.
+++ */
+++static unsigned int napi_defer_hard_irqs;
+++module_param(napi_defer_hard_irqs, uint, 0644);
+++MODULE_PARM_DESC(napi_defer_hard_irqs,
+++		 "QDMA NAPI polls to defer IRQ re-enable by (needs napi_gro_flush_timeout)");
+++
+++static unsigned long napi_gro_flush_timeout;
+++module_param(napi_gro_flush_timeout, ulong, 0644);
+++MODULE_PARM_DESC(napi_gro_flush_timeout,
+++		 "QDMA NAPI re-poll timer in ns while IRQs are deferred");
+++
+++/* ponytail: one ethernet instance per SoC, so one global for the setter */
+++static struct airoha_eth *airoha_coalesce_eth;
+++static unsigned int rx_delay_int;
+++
+++static void airoha_qdma_set_rx_delay_int(struct airoha_qdma *qdma)
+++{
+++	int i;
+++
+++	for (i = 0; i < qdma->eth->soc->rx_ring; i++) {
+++		if (!qdma->q_rx[i].ndesc)
+++			continue;
+++
+++		airoha_qdma_rmw(qdma, REG_RX_DELAY_INT_IDX(i),
+++				RX_DELAY_INT_MASK,
+++				FIELD_PREP(RX_DELAY_INT_MASK,
+++					   READ_ONCE(rx_delay_int)));
+++	}
+++}
+++
+++static int airoha_rx_delay_int_set(const char *val,
+++				   const struct kernel_param *kp)
+++{
+++	struct airoha_eth *eth = READ_ONCE(airoha_coalesce_eth);
+++	int i, err;
+++
+++	err = param_set_uint(val, kp);
+++	if (err || !eth)
+++		return err;
+++
+++	for (i = 0; i < AIROHA_MAX_NUM_QDMA; i++) {
+++		if (eth->qdma[i].eth && eth->qdma[i].q_rx)
+++			airoha_qdma_set_rx_delay_int(&eth->qdma[i]);
+++	}
+++
+++	return 0;
+++}
+++
+++static const struct kernel_param_ops airoha_rx_delay_int_ops = {
+++	.set = airoha_rx_delay_int_set,
+++	.get = param_get_uint,
+++};
+++module_param_cb(rx_delay_int, &airoha_rx_delay_int_ops, &rx_delay_int, 0644);
+++MODULE_PARM_DESC(rx_delay_int,
+++		 "Raw QDMA RX_DELAY_INT value for every RX ring (0: off)");
+++
+++static bool airoha_napi_complete(struct napi_struct *napi, int done)
+++{
+++	/* Reloaded on every poll so the parameters apply at runtime. */
+++	WRITE_ONCE(napi->defer_hard_irqs, READ_ONCE(napi_defer_hard_irqs));
+++	WRITE_ONCE(napi->gro_flush_timeout, READ_ONCE(napi_gro_flush_timeout));
+++
+++	return napi_complete_done(napi, done);
+++}
+++
++ u32 airoha_rmw(void __iomem *base, u32 offset, u32 mask, u32 val)
++ {
++ 	val |= airoha_rr(base, offset) & ~mask;
++@@ -2669,7 +2741,7 @@
++ 		done += cur;
++ 	} while (cur && done < budget);
++ 
++-	if (done < budget && napi_complete(napi)) {
+++	if (done < budget && airoha_napi_complete(napi, done)) {
++ 		struct airoha_qdma *qdma = q->qdma;
++ 		int i, qid = q - &qdma->q_rx[0];
++ 		int intr_reg = qid < RX_DONE_HIGH_OFFSET ? QDMA_INT_REG_IDX1
++@@ -3002,7 +3074,7 @@
++ 				IRQ_CLEAR_LEN_MASK, (done & 0x7f));
++ 	}
++ 
++-	if (done < budget && napi_complete(napi))
+++	if (done < budget && airoha_napi_complete(napi, done))
++ 		airoha_qdma_irq_enable(&qdma->irq_banks[0], QDMA_INT_REG_IDX0,
++ 				       TX_DONE_INT_MASK(id));
++ 
++@@ -3402,14 +3474,8 @@
++ 
++ 	airoha_qdma_init_qos(qdma);
++ 
++-	/* disable qdma rx delay interrupt */
++-	for (i = 0; i < qdma->eth->soc->rx_ring; i++) {
++-		if (!qdma->q_rx[i].ndesc)
++-			continue;
++-
++-		airoha_qdma_clear(qdma, REG_RX_DELAY_INT_IDX(i),
++-				  RX_DELAY_INT_MASK);
++-	}
+++	/* qdma rx delay interrupt, off unless rx_delay_int is set */
+++	airoha_qdma_set_rx_delay_int(qdma);
++ 
++ 	airoha_qdma_set(qdma, REG_TXQ_CNGST_CFG,
++ 			TXQ_CNGST_DROP_EN | TXQ_CNGST_DEI_DROP_EN);
++@@ -10580,6 +10646,8 @@
++ 	    err != -EOPNOTSUPP)
++ 		dev_warn(eth->dev, "failed to start NPU: %d\n", err);
++ 
+++	WRITE_ONCE(airoha_coalesce_eth, eth);
+++
++ 	return 0;
++ 
++ error:
++@@ -10595,6 +10663,7 @@
++ 	if (!eth || !eth->soc)
++ 		return;
++ 
+++	WRITE_ONCE(airoha_coalesce_eth, NULL);
++ 	airoha_eth_cleanup(eth);
++ 	platform_set_drvdata(pdev, NULL);
++ }

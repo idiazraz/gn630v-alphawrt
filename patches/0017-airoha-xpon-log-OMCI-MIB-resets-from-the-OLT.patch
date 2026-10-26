@@ -1,0 +1,36 @@
+From 92e5dd4975b8e3a7141a5136bfde25eaed73b3c5 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 15:22:41 +0800
+Subject: [PATCH 17/20] airoha: xpon: log OMCI MIB resets from the OLT
+
+Patch 997 logs each MIB reset, so the line monitor can show in the
+Fibre page event log when the ISP re-provisioned the box.
+---
+ ...-net-omci-log-MIB-resets-from-the-OLT.patch | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/997-net-omci-log-MIB-resets-from-the-OLT.patch
+
+diff --git a/target/linux/airoha/patches-6.18/997-net-omci-log-MIB-resets-from-the-OLT.patch b/target/linux/airoha/patches-6.18/997-net-omci-log-MIB-resets-from-the-OLT.patch
+new file mode 100644
+index 0000000000..191030c7e3
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/997-net-omci-log-MIB-resets-from-the-OLT.patch
+@@ -0,0 +1,18 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: omci: log MIB resets from the OLT
++
++An OLT sends a MIB reset when it (re)provisions the ONU: after each
++registration, and when it decides to start the configuration over. Log
++it, so the line monitor can tell the user when the ISP re-provisioned
++the box.
++---
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -4233,6 +4233,7 @@
++ 		*content_len = 32;
++ 		break;
++ 	case OMCI_MSG_TYPE_MIB_RESET:
+++		dev_info(odev->parent, "OMCI MIB reset from the OLT\n");
++ 		if (omci_agent_mib_reset_locked(odev, false, profile_changed))
++ 			content[0] = OMCI_RESULT_PROCESSING_ERROR;
++ 		else

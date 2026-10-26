@@ -39,6 +39,7 @@ Rows from [ACCEPTANCE.md](https://github.com/idiazraz/gn630v-alphawrt/blob/<tag>
 | A11 | Revert to stock | | |
 | A12 | PON link | | |
 | A13 | Internet over fibre | | |
+| A14 | Fresh install from stock | | |
 
 Rows not run or failed are listed under "Known issues".
 
