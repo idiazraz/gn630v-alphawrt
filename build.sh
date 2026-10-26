@@ -14,6 +14,8 @@
 set -eu
 
 BASE=90f5ac78ddce3b9be42d16c869248d85d8eaecfd
+# the OpenWrt main commit BASE sits on: names the build r<main>+<ours>-<main>
+MAIN=e4974473dbae690a48c9b5fe72b5adeaf26dc70b
 TREE=https://github.com/Sirherobrine23/openwrt.git
 HERE=$(cd "$(dirname "$0")" && pwd)
 DIR=${1:-openwrt}
@@ -22,13 +24,23 @@ DIR=${1:-openwrt}
 cd "$DIR"
 git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q "$TREE" "$BASE"
 git checkout -q -B alphawrt "$BASE"
-git am -q "$HERE"/patches/*.patch
+# Same patches give the same commits, so the same SOURCE_DATE_EPOCH (the
+# last commit's date) and revision on every machine
+git -c user.name=AlphaWRT -c user.email=build@alphawrt.invalid \
+	am -q --committer-date-is-author-date "$HERE"/patches/*.patch
+git branch -q -f openwrt-main "$MAIN"
+git branch -q -u openwrt-main
+git config core.abbrev 10
 
 # AlphaWRT's own packages go inside the tree (not a linked feed), so the
-# images carry no path from the build machine
+# images carry no path from the build machine. They aren't in git, so they
+# take the tree's date instead of the checkout time.
 rm -rf package/alphawrt && cp -R "$HERE/package" package/alphawrt
+for p in package/alphawrt/*/; do git log -1 --format=%ct > "$p/version.date"; done
+cp "$HERE/config/feeds.conf" feeds.conf
 ./scripts/feeds update -a
-./scripts/feeds install luci dnsproxy
+# every feed package gn630v.config selects, or defconfig silently drops it
+./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode
 
 cp "$HERE/config/gn630v.config" .config
 make defconfig

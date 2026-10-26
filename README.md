@@ -65,8 +65,10 @@ The output lands in `openwrt/bin/targets/airoha/en7523/`.
 | `patches/` | patches on the pinned EN7523 tree: the GN630V board (dual bank, image, Wi-Fi/DNS defaults, xPON wiring) |
 | `package/` | `luci-theme-alphawrt` and `luci-app-alphawrt` (Quick Setup, Basic interface), copied into the tree as `package/alphawrt/` |
 | `config/gn630v.config` | build config seed |
+| `config/feeds.conf` | the feed commits the build uses |
+| `.github/workflows/build.yml` | Linux CI build with `build.sh`; run by hand with "repro" to build twice and compare |
 | `tools/` | UART/U-Boot helpers: chunked TFTP RAM boot, TFTP server, flash dump, image checker |
-| `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [ONT/ISP tester guide](docs/ONT-ISP-TESTER-GUIDE.md), [roadmap](docs/ROADMAP.md) |
+| `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [ONT/ISP tester guide](docs/ONT-ISP-TESTER-GUIDE.md), [hardware acceptance](docs/ACCEPTANCE.md), [roadmap](docs/ROADMAP.md) |
 
 ## Credits
 * **Sirherobrine23**: the EN7523 OpenWrt tree AlphaWRT builds on ([Sirherobrine23/openwrt](https://github.com/Sirherobrine23/openwrt), [openwrt/openwrt#20104](https://github.com/openwrt/openwrt/pull/20104)) and the trees it collects, with the open xPON PHY/MAC, EN7571 optics and OMCI stack. AlphaWRT's fibre support is this stack plus our fixes.
