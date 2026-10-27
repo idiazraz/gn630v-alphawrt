@@ -306,6 +306,7 @@ return view.extend({
 					var t = byId(self.onts, id);
 					if (t)
 						ONT_FIELDS.forEach(function(k) { self.d[k] = t[k] || ''; });
+					self.draw();
 				}
 			}) : E('p', {}, _('No ONT identity presets are included yet. Enter model details below only when you can verify them from the ISP-provided unit.')),
 			this.field(_('GPON serial number'), 'serial',

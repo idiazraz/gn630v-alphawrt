@@ -179,8 +179,9 @@ while :; do
 	w=$(ifstatus wan 2>/dev/null | jsonfilter -e @.up 2>/dev/null)
 	w=${w:-false}
 	[ "$w" != "$wan" ] && { [ "$wan" != x ] && ev "internet: $([ "$w" = true ] && echo up || echo down)"; wan=$w; }
-	# why the login fails (netifd error codes, e.g. AUTH_FAILED)
-	e=$(ifstatus wan 2>/dev/null | jsonfilter -e '@.errors[*].code' 2>/dev/null | tr '\n' ' ')
+	# why the login fails (netifd error codes, e.g. AUTH_FAILED);
+	# USER_REQUEST is our own ifdown or mode switch, not a failure
+	e=$(ifstatus wan 2>/dev/null | jsonfilter -e '@.errors[*].code' 2>/dev/null | grep -v '^USER_REQUEST$' | tr '\n' ' ')
 	[ "$e" != "$werr" ] && { [ -n "$e" ] && ev "internet login failed: $e"; werr=$e; }
 	# and what the ISP's server said while the login fails, e.g. "You are
 	# already logged in" (it also greets a successful login: not a reason)
