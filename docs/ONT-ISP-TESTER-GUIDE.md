@@ -30,6 +30,8 @@ Before changing anything, record:
 
 Record the exact UI labels and menu paths. A cropped screenshot with all identifiers and secrets fully masked is useful, but text notes are preferred.
 
+To compare speed, latency, boot time and line health between stock and AlphaWRT on the same box, follow [STOCK-VS-ALPHAWRT.md](STOCK-VS-ALPHAWRT.md) and add its results block to the report.
+
 ## AlphaWRT test sequence
 
 1. Confirm the recovery route and that the original ONT can be restored. Keep a second connection to the Internet if the test will interrupt the household connection.
