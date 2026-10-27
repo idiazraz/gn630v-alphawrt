@@ -43,5 +43,11 @@ cp "$HERE/config/feeds.conf" feeds.conf
 ./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode
 
 cp "$HERE/config/gn630v.config" .config
+# bridger's BPF program is built with the host clang/llc: on macOS that is
+# Homebrew's llvm, which isn't on PATH (on Linux, the distribution's clang
+# and llvm packages are)
+if [ "$(uname)" = Darwin ]; then
+	echo "CONFIG_BPF_TOOLCHAIN_HOST_PATH=\"$(brew --prefix llvm)\"" >> .config
+fi
 make defconfig
 make -j"$(getconf _NPROCESSORS_ONLN)"

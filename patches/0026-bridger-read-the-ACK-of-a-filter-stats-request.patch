@@ -1,0 +1,69 @@
+From afae51c0eb6d15a0a65d7b2d2bc8f3778bd4b65a Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 19:55:14 +0800
+Subject: [PATCH 26/26] bridger: read the ACK of a filter stats request
+
+After RTM_GETTFILTER, bridger read the filter but left the kernel's ACK
+queued, and the next flow add took that ACK as its own answer. Refused
+adds then looked successful, so neither the fallback nor the retry ran
+and bridge mode stayed on the CPU after a plain boot. Read the ACK too.
+---
+ ...102-read-ack-of-filter-stats-request.patch | 49 +++++++++++++++++++
+ 1 file changed, 49 insertions(+)
+ create mode 100644 package/network/services/bridger/patches/102-read-ack-of-filter-stats-request.patch
+
+diff --git a/package/network/services/bridger/patches/102-read-ack-of-filter-stats-request.patch b/package/network/services/bridger/patches/102-read-ack-of-filter-stats-request.patch
+new file mode 100644
+index 0000000000..8b505dd2c8
+--- /dev/null
++++ b/package/network/services/bridger/patches/102-read-ack-of-filter-stats-request.patch
+@@ -0,0 +1,49 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] nl: read the ACK of a filter stats request
++
++bridger_nl_flow_offload_update() sends RTM_GETTFILTER and calls
++nl_wait_for_ack() once. The kernel answers with the filter and then a
++separate ACK; nl_wait_for_ack() returns after the filter, leaving the ACK
++queued. Its sequence number matches what libnl expects next, so the next
++request (a flow add) takes it as its own "Success", and its real answer
++is read by the request after that. On a GN630V bridging PPPoE this made
++the adds on pon0.499 and lan1 (which refuse skip_sw rules) look
++successful after the first flow had been polled, so neither flow fell
++back to pon0/eth0 and none was retried; a bridger restart only worked
++because its adds came before any poll. Read the ACK as well when a
++reply came in.
++---
++--- a/nl.c
+++++ b/nl.c
++@@ -31,6 +31,8 @@
++  * nl_wait_for_ack() reports success even when the kernel refused it. */
++ static int last_error;
++ static bool recv_idle;
+++/* A GETTFILTER reply and its ACK arrive as separate messages. */
+++static bool got_filter_reply;
++ 
++ static int offload_handle_cmp(const void *k1, const void *k2, void *ptr)
++ {
++@@ -453,6 +455,7 @@
++ 
++ 	switch (nh->nlmsg_type) {
++ 	case RTM_NEWTFILTER:
+++		got_filter_reply = true;
++ 		handle_filter(nh);
++ 		break;
++ 	default:
++@@ -807,7 +810,14 @@
++ 	msg = bridger_nl_flow_offload_msg(flow, flow->offload_ifindex, RTM_GETTFILTER);
++ 	nl_send_auto_complete(cmd_sock, msg);
++ 	nlmsg_free(msg);
+++	got_filter_reply = false;
++ 	nl_wait_for_ack(cmd_sock);
+++	/*
+++	 * nl_wait_for_ack() returns after the reply; read its ACK too, or the
+++	 * next request takes it as its own and every result after is shifted.
+++	 */
+++	if (got_filter_reply)
+++		nl_wait_for_ack(cmd_sock);
++ }
++ 
++ void bridger_nl_flow_offload_del(struct bridger_flow *flow)

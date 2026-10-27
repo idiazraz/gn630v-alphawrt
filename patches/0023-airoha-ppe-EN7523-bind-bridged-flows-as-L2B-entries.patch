@@ -1,0 +1,260 @@
+From 84b4c856b6f9c92ff0f5be9be6e866d923c454eb Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 19:55:14 +0800
+Subject: [PATCH 23/26] airoha: ppe: EN7523 bind bridged flows as L2B entries
+
+Patch 9962: the PPE hashes bridged frames, including bridged PPPoE, as
+L2 bridge (L2B) frames, so bind them in that bucket as L2B entries in
+the stock firmware's 16-word EN7523 layout (DMAC, ingress VID and SMAC
+key, shaper, ib1/ib2 and VLAN words as stock writes them). With this,
+bridge mode forwards at the stock firmware's speed with the CPU idle.
+---
+ ...23-bind-bridged-flows-as-l2b-entries.patch | 239 ++++++++++++++++++
+ 1 file changed, 239 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/9962-net-airoha-ppe-en7523-bind-bridged-flows-as-l2b-entries.patch
+
+diff --git a/target/linux/airoha/patches-6.18/9962-net-airoha-ppe-en7523-bind-bridged-flows-as-l2b-entries.patch b/target/linux/airoha/patches-6.18/9962-net-airoha-ppe-en7523-bind-bridged-flows-as-l2b-entries.patch
+new file mode 100644
+index 0000000000..d56e56c2be
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9962-net-airoha-ppe-en7523-bind-bridged-flows-as-l2b-entries.patch
+@@ -0,0 +1,239 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: ppe: EN7523 bind bridged flows as L2B entries
++
++On top of "EN7523 offload bridged flows as L3 subflows" (9961), which got
++bridger's rules to the PPE but bound nothing that the hardware hit:
++bridged frames reached the CPU as FOE_UNHIT (reason 13) with a valid
++bucket, and the L3 subflow written there never matched.
++
++The PPE hashes bridged frames as L2 bridge (L2B) frames: the L2B
++ethertype black list (PPE+0xe8c enables, PPE+0xed0 values) lists no IP
++or PPPoE type here, and stock lists only the VLAN TPIDs, IPv4, IPv6 and
++PPP LCP, so a bridged PPPoE frame is L2B on both. Bind it in that bucket
++as an L2B entry of the L2 flow whose MAC pair it carries, in the 16-word
++layout the stock hw_nat writes on EN7523, taken from its bound entries
++(PPPoE between the GPON port and a LAN port):
++
++  w0 ib1 (bit 30 and the cache bit set, TTL bit clear)
++  w1 in_dmac[47:16]           w2 in_dmac[15:0] | ingress VID
++  w3 HSK_L2: 0x4c00 | ingress GDM port in both nibbles
++  w4 in_smac[47:16]           w5 in_smac[15:0] | 0xa5a5
++  w10 data (shaper 0x11, T-CONT channel/queue or DSA port)
++  w11 ib2 | accounting bit 13 w12 tag (GEM or DSA) | vlan1
++
++Writing exactly these words into our buckets made the hardware forward
++the bridge at 770/445 Mbit/s with the CPU idle (software: about 520/360
++at 90% CPU). The output fields come from the L2 flow's entry; the frame,
++PPPoE header included, is forwarded untouched apart from the output VLAN
++and tag. debugfs decodes EN7523 bridge entries in the same layout (vlan2
++shows the ingress VID).
++---
++--- a/drivers/net/ethernet/airoha/airoha_ppe.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
++@@ -1706,65 +1706,84 @@
++ }
++ 
++ /*
++- * EN7523: bind a bridged IP flow as an L3 subflow of the L2 flow (bridger)
++- * whose MAC pair it carries. The PPE hashes bridged IP traffic by its L3/L4
++- * tuple like routed traffic, and the hardware slot may still be INVALID, so
++- * the entry is built from the packet: tuple and MACs unchanged, the
++- * packet's PPPoE session (the PPE strips and re-inserts it), the output
++- * (port, queue, GEM or DSA tag, VLAN) of the L2 flow, and TTL kept.
+++ * EN7523 bridged flows: the PPE hashes bridged frames as L2 bridge (L2B)
+++ * frames (the L2B ethertype black list at PPE+0xe8c/0xed0 lists no IP or
+++ * PPPoE type), so a bridged PPPoE frame reaches the CPU as FOE_UNHIT with
+++ * an L2B bucket. Bind it there as an L2B entry of the L2 flow (bridger)
+++ * whose MAC pair it carries, in the 16-word layout the stock hw_nat writes
+++ * on EN7523 (read from its bound entries, and verified by writing those
+++ * words into our buckets: 770/445 Mbit/s with the CPU idle):
+++ *
+++ *   w0  ib1                     w1  in_dmac[47:16]
+++ *   w2  in_dmac[15:0] | in_vid  w3  HSK_L2
+++ *   w4  in_smac[47:16]          w5  in_smac[15:0] | 0xa5a5
+++ *   w10 data                    w11 ib2
+++ *   w12 tag (GEM/DSA) | vlan1   other words 0
+++ *
+++ * The output comes from the L2 flow's entry (port, T-CONT channel and
+++ * queue or DSA port, tag, VLAN); the frame, PPPoE header included, is
+++ * forwarded untouched apart from the output VLAN and tag.
++  */
+++#define AIROHA_L2B_PAD			0xa5a5
+++/* ponytail: HSK_L2[15:8] is 0x4c on every stock L2B entry seen (PPPoE,
+++ * both ways); its meaning is unknown, so it is copied as is.
+++ */
+++#define AIROHA_L2B_HSK_BASE		0x4c00
+++#define AIROHA_L2B_SHAPER		0x11	/* stock data[23:16] */
+++#define AIROHA_L2B_IB1_STOCK		(BIT(30) | AIROHA_FOE_V1_IB1_BIND_CACHE)
+++#define AIROHA_L2B_IB2_ACCOUNT		BIT(13)
+++
++ static void
++ airoha_ppe_en7523_commit_l2_subflow(struct airoha_ppe *ppe, struct sk_buff *skb,
++ 				    const struct airoha_ppe_skb_tuple *t,
++ 				    u32 sw_idx, bool rx_wlan)
++ {
++-	u32 ib1_mask = AIROHA_FOE_IB1_BIND_PACKET_TYPE |
++-		       AIROHA_FOE_IB1_BIND_UDP | AIROHA_FOE_IB1_BIND_PPPOE |
++-		       AIROHA_FOE_IB1_BIND_TTL;
+++	struct airoha_eth *eth = ppe->common.eth;
+++	struct ethhdr *eh = eth_hdr(skb);
++ 	struct airoha_flow_table_entry *e, *f;
++ 	struct airoha_foe_bridge br = {};
++-	struct airoha_foe_mac_info *l2;
+++	struct airoha_gdm_dev *dev;
++ 	struct airoha_foe_entry hwe = {};
++-	int type;
+++	struct vlan_hdr _vh, *vh;
+++	u16 vid = 0;
+++	u8 port;
++ 
++-	airoha_ppe_foe_set_bridge_addrs(&br, eth_hdr(skb));
+++	airoha_ppe_foe_set_bridge_addrs(&br, eh);
++ 	e = rhashtable_lookup_fast(&ppe->l2_flows, &br,
++ 				   airoha_l2_flow_table_params);
++-	if (!e)
+++	if (!e || !skb->dev)
++ 		return;
++ 
++-	if (t->family == AIROHA_PPE_TUPLE_IPV4) {
++-		struct airoha_foe_ipv4_tuple *ip = &hwe.ipv4.orig_tuple;
+++	/* Ingress GDM port and VLAN are part of the L2B key. */
+++	dev = netdev_priv(skb->dev);
+++	if (!eth->ppe_host_ops->is_valid_gdm_dev(eth, dev) || !dev->port)
+++		return;
+++	port = dev->port->id & 0xf;
++ 
++-		type = PPE_PKT_TYPE_IPV4_HNAPT;
++-		ip->src_ip = be32_to_cpu(t->v4.src);
++-		ip->dest_ip = be32_to_cpu(t->v4.dst);
++-		ip->src_port = t->src_port;
++-		ip->dest_port = t->dst_port;
++-		hwe.ipv4.new_tuple = *ip;
++-		hwe.ipv4.ib2 = e->data.bridge.ib2;
++-		l2 = &hwe.ipv4.l2;
++-	} else {
++-		type = PPE_PKT_TYPE_IPV6_ROUTE_5T;
++-		ipv6_addr_be32_to_cpu(hwe.ipv6.src_ip, t->v6.src.s6_addr32);
++-		ipv6_addr_be32_to_cpu(hwe.ipv6.dest_ip, t->v6.dst.s6_addr32);
++-		hwe.ipv6.src_port = t->src_port;
++-		hwe.ipv6.dest_port = t->dst_port;
++-		hwe.ipv6.ib2 = e->data.bridge.ib2;
++-		/* Full MAC block on EN7523 IPv6 too (see foe_entry_prepare). */
++-		l2 = (struct airoha_foe_mac_info *)&hwe.ipv6.l2;
+++	if (skb_vlan_tag_present(skb)) {
+++		vid = skb_vlan_tag_get_id(skb);
+++	} else if (eth_type_vlan(eh->h_proto)) {
+++		vh = skb_header_pointer(skb, 0, sizeof(_vh), &_vh);
+++		if (!vh)
+++			return;
+++		vid = ntohs(vh->h_vlan_TCI) & VLAN_VID_MASK;
++ 	}
++ 
++-	*l2 = e->data.bridge.l2;
++-	/* data is word 10 for bridge, IPv4 and IPv6 entries alike. */
++-	hwe.bridge.data = e->data.bridge.data;
++-	hwe.ib1 = (e->data.ib1 & ~ib1_mask) |
++-		  FIELD_PREP(AIROHA_FOE_IB1_BIND_PACKET_TYPE, type) |
++-		  FIELD_PREP(AIROHA_FOE_IB1_BIND_UDP, t->l4proto == IPPROTO_UDP);
++-	if (t->pppoe) {
++-		hwe.ib1 |= AIROHA_FOE_IB1_BIND_PPPOE;
++-		l2->pppoe_id = t->pppoe_sid;
++-	}
+++	/* No IP rewrite, so no TTL decrement. */
+++	hwe.ib1 = (e->data.ib1 & ~AIROHA_FOE_IB1_BIND_TTL) |
+++		  AIROHA_L2B_IB1_STOCK;
+++	hwe.words[1] = get_unaligned_be32(eh->h_dest);
+++	hwe.words[2] = get_unaligned_be16(eh->h_dest + 4) << 16 | vid;
+++	/* HSK_L2: ingress port in both nibbles (GDM1 0x11, GDM2 0x22). */
+++	hwe.words[3] = AIROHA_L2B_HSK_BASE | port << 4 | port;
+++	hwe.words[4] = get_unaligned_be32(eh->h_source);
+++	hwe.words[5] = get_unaligned_be16(eh->h_source + 4) << 16 |
+++		       AIROHA_L2B_PAD;
+++	hwe.words[10] = (e->data.bridge.data & ~AIROHA_FOE_SHAPER_ID) |
+++			FIELD_PREP(AIROHA_FOE_SHAPER_ID, AIROHA_L2B_SHAPER);
+++	hwe.words[11] = e->data.bridge.ib2 | AIROHA_L2B_IB2_ACCOUNT;
+++	hwe.words[12] = e->data.bridge.l2.common.etype << 16 |
+++			e->data.bridge.l2.common.vlan1;
++ 
++ 	/* A retry on a bucket this L2 flow already owns reuses its subflow. */
++ 	hlist_for_each_entry(f, &e->l2_flows, l2_subflow_node)
++@@ -1780,11 +1799,8 @@
++ 	hlist_add_head(&f->l2_subflow_node, &e->l2_flows);
++ commit:
++ 	airoha_ppe_foe_commit_entry(ppe, &hwe, sw_idx, rx_wlan);
++-	dev_dbg(ppe->common.eth->dev,
++-		"L2 subflow %pM -> %pM ipv%d pppoe %u/%04x bucket %u\n",
++-		eth_hdr(skb)->h_source, eth_hdr(skb)->h_dest,
++-		t->family == AIROHA_PPE_TUPLE_IPV4 ? 4 : 6, t->pppoe,
++-		t->pppoe_sid, sw_idx);
+++	dev_dbg(eth->dev, "L2B entry %pM -> %pM vid %u port %u bucket %u\n",
+++		eh->h_source, eh->h_dest, vid, port, sw_idx);
++ }
++ 
++ static void airoha_ppe_foe_insert_entry(struct airoha_ppe *ppe,
++--- a/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
++@@ -120,7 +120,7 @@
++ 		const char *state_str, *type_str = "UNKNOWN";
++ 		void *src_addr = NULL, *dest_addr = NULL;
++ 		u16 *src_port = NULL, *dest_port = NULL;
++-		struct airoha_foe_mac_info_common *l2;
+++		struct airoha_foe_mac_info_common *l2, l2b = {};
++ 		unsigned char h_source[ETH_ALEN] = {};
++ 		struct airoha_foe_stats64 stats = {};
++ 		unsigned char h_dest[ETH_ALEN];
++@@ -194,7 +194,21 @@
++ 			break;
++ 		}
++ 
++-		if (type == PPE_PKT_TYPE_BRIDGE) {
+++		if (type == PPE_PKT_TYPE_BRIDGE &&
+++		    airoha_is(ppe->common.eth, airoha_en7523)) {
+++			/* stock 16-word L2B layout, see the EN7523 L2B commit */
+++			data = hwe->words[10];
+++			ib2 = hwe->words[11];
+++			l2b.dest_mac_hi = hwe->words[1];
+++			l2b.dest_mac_lo = hwe->words[2] >> 16;
+++			l2b.src_mac_hi = hwe->words[4];
+++			l2b.etype = hwe->words[12] >> 16;
+++			l2b.vlan1 = hwe->words[12];
+++			l2b.vlan2 = hwe->words[2];	/* in_vid */
+++			l2 = &l2b;
+++			*((__be16 *)&h_source[4]) =
+++				cpu_to_be16(hwe->words[5] >> 16);
+++		} else if (type == PPE_PKT_TYPE_BRIDGE) {
++ 			data = hwe->bridge.data;
++ 			ib2 = hwe->bridge.ib2;
++ 			l2 = &hwe->bridge.l2.common;
++@@ -244,7 +258,7 @@
++ 		const char *state_str, *type_str = "UNKNOWN";
++ 		void *src_addr = NULL, *dest_addr = NULL;
++ 		u16 *src_port = NULL, *dest_port = NULL;
++-		struct airoha_foe_mac_info_common *l2;
+++		struct airoha_foe_mac_info_common *l2, l2b = {};
++ 		unsigned char h_source[ETH_ALEN] = {};
++ 		struct airoha_foe_stats64 stats = {};
++ 		unsigned char h_dest[ETH_ALEN];
++@@ -315,7 +329,21 @@
++ 			break;
++ 		}
++ 
++-		if (type == PPE_PKT_TYPE_BRIDGE) {
+++		if (type == PPE_PKT_TYPE_BRIDGE &&
+++		    airoha_is(ppe->common.eth, airoha_en7523)) {
+++			/* stock 16-word L2B layout, see the EN7523 L2B commit */
+++			data = hwe->words[10];
+++			ib2 = hwe->words[11];
+++			l2b.dest_mac_hi = hwe->words[1];
+++			l2b.dest_mac_lo = hwe->words[2] >> 16;
+++			l2b.src_mac_hi = hwe->words[4];
+++			l2b.etype = hwe->words[12] >> 16;
+++			l2b.vlan1 = hwe->words[12];
+++			l2b.vlan2 = hwe->words[2];	/* in_vid */
+++			l2 = &l2b;
+++			*((__be16 *)&h_source[4]) =
+++				cpu_to_be16(hwe->words[5] >> 16);
+++		} else if (type == PPE_PKT_TYPE_BRIDGE) {
++ 			data = hwe->bridge.data;
++ 			ib2 = hwe->bridge.ib2;
++ 			l2 = &hwe->bridge.l2.common;

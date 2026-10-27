@@ -1,0 +1,64 @@
+From 42eccb4154e7a301f1f85b7810b88238ae9790af Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 19:55:14 +0800
+Subject: [PATCH 24/26] bridger: report refused flow offload adds
+
+bridger's netlink error callback returned NL_SKIP, so a refused filter
+add read as success and bridger never tried the next lower device. Keep
+the request's error and return it, so the add falls back to the conduit
+(eth0) or pon0.
+---
+ .../100-report-refused-offload-adds.patch     | 44 +++++++++++++++++++
+ 1 file changed, 44 insertions(+)
+ create mode 100644 package/network/services/bridger/patches/100-report-refused-offload-adds.patch
+
+diff --git a/package/network/services/bridger/patches/100-report-refused-offload-adds.patch b/package/network/services/bridger/patches/100-report-refused-offload-adds.patch
+new file mode 100644
+index 0000000000..72e6c0887f
+--- /dev/null
++++ b/package/network/services/bridger/patches/100-report-refused-offload-adds.patch
+@@ -0,0 +1,44 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] nl: report refused flow offload adds
++
++bridge_nl_error_cb() returns NL_SKIP, so nl_wait_for_ack() returns 0 even
++when the kernel refuses the filter; bridger then logs "Add flow on lan1:
++Success" and never tries the offload device. On a DSA port without
++cls_flower support (mt7530) or a VLAN bridge port (pon0.499), a hardware
++add is refused without an extack message, so the flow was never offloaded
++anywhere. Keep the error of the request and return it, so the add falls
++back to the next lower device (the conduit eth0, or pon0).
++---
++--- a/nl.c
+++++ b/nl.c
++@@ -27,6 +27,9 @@
++ static struct uloop_timeout resync_timer;
++ static bool has_flow_offload;
++ static bool ignore_errors;
+++/* Error of the last request: bridge_nl_error_cb() returns NL_SKIP, so
+++ * nl_wait_for_ack() reports success even when the kernel refused it. */
+++static int last_error;
++ static bool recv_idle;
++ 
++ static int offload_handle_cmp(const void *k1, const void *k2, void *ptr)
++@@ -745,10 +748,11 @@
++ 
++ 	nla_nest_end(msg, opts);
++ 
+++	last_error = 0;
++ 	nl_send_auto_complete(cmd_sock, msg);
++ 	nlmsg_free(msg);
++ 
++-	return nl_wait_for_ack(cmd_sock);
+++	return nl_wait_for_ack(cmd_sock) ?: last_error;
++ }
++ 
++ int bridger_nl_flow_offload_add(struct bridger_flow *flow)
++@@ -900,6 +904,7 @@
++ 	if (ignore_errors)
++ 		return NL_SKIP;
++ 
+++	last_error = err->error;
++ 	if (!(nlh->nlmsg_flags & NLM_F_ACK_TLVS))
++ 		return NL_SKIP;
++ 

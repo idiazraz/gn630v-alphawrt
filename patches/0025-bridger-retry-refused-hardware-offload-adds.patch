@@ -1,0 +1,58 @@
+From b0ffb47be235199cf263277789d7f542d9fcca10 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 19:55:14 +0800
+Subject: [PATCH 25/26] bridger: retry refused hardware offload adds
+
+A flow's hardware add was tried once, at creation. If it was refused
+(the offload device or the GPON service not ready yet at boot), a busy
+flow stayed in software for good. Retry refused adds every 10 s.
+---
+ .../101-retry-refused-offload-adds.patch      | 39 +++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+ create mode 100644 package/network/services/bridger/patches/101-retry-refused-offload-adds.patch
+
+diff --git a/package/network/services/bridger/patches/101-retry-refused-offload-adds.patch b/package/network/services/bridger/patches/101-retry-refused-offload-adds.patch
+new file mode 100644
+index 0000000000..5bcd36116c
+--- /dev/null
++++ b/package/network/services/bridger/patches/101-retry-refused-offload-adds.patch
+@@ -0,0 +1,39 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] flow: retry refused hardware offload adds
++
++A flow's hardware add is tried once, when the flow is created. If every
++device refuses it (e.g. while the offload device or the GPON service is
++not ready yet at boot), the flow stays in software, and a flow with
++steady traffic never idles out to be re-created. On a GN630V bridging
++PPPoE this left the upstream flow (lan1 -> pon0.499) on the CPU after
++boot while the downstream one was offloaded. Retry the add for flows
++that are not offloaded every 10 s from the update timer.
++---
++--- a/flow.c
+++++ b/flow.c
++@@ -189,8 +189,10 @@
++ bridger_flow_update_cb(struct uloop_timeout *timeout)
++ {
++ 	struct bridger_flow *flow, *tmp;
+++	static unsigned int tick;
++ 
++ 	device_reset_offload_update();
+++	tick++;
++ 
++ 	avl_for_each_element(&flows, flow, node) {
++ 		flow->fdb_in->updated = false;
++@@ -201,6 +203,14 @@
++ 		avl_delete(&sorted_flows, &flow->sort_node);
++ 		bridger_bpf_flow_update(flow);
++ 		bridger_nl_flow_offload_update(flow);
+++		/*
+++		 * A hardware add refused once (e.g. while the offload device
+++		 * was not ready at boot) is not retried, and a busy flow never
+++		 * idles out to be re-created: retry every 10 s.
+++		 */
+++		if (!flow->offload_ifindex && !(tick % 10) &&
+++		    !flow->fdb_in->dev->br && !flow->fdb_out->dev->br)
+++			bridger_nl_flow_offload_add(flow);
++ 		avl_insert(&sorted_flows, &flow->sort_node);
++ 
++ 		flow_debug_msg(flow, "Update");

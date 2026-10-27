@@ -1,0 +1,88 @@
+From 5b5d7565f45983acbd09f6aab25c9aad1dd21617 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 19:55:13 +0800
+Subject: [PATCH 21/26] airoha: ppe: EN7523 IPv6 source MAC in L2 subflows and
+ debugfs
+
+Patch 996, a follow-up to 993: bridged IPv6 L2 subflows copy the whole
+source MAC block from the bridge entry instead of writing SMAC_ID 0xf,
+which EN7523 reads as a wrong source MAC, and debugfs prints the full
+source MAC of EN7523 IPv6 entries.
+---
+ ...23-ipv6-smac-in-subflows-and-debugfs.patch | 67 +++++++++++++++++++
+ 1 file changed, 67 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/996-net-airoha-ppe-en7523-ipv6-smac-in-subflows-and-debugfs.patch
+
+diff --git a/target/linux/airoha/patches-6.18/996-net-airoha-ppe-en7523-ipv6-smac-in-subflows-and-debugfs.patch b/target/linux/airoha/patches-6.18/996-net-airoha-ppe-en7523-ipv6-smac-in-subflows-and-debugfs.patch
+new file mode 100644
+index 0000000000..d3192f91b4
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/996-net-airoha-ppe-en7523-ipv6-smac-in-subflows-and-debugfs.patch
+@@ -0,0 +1,67 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: ppe: EN7523 IPv6 source MAC in L2 subflows and debugfs
++
++Follow-up to "EN7523 IPv6 entries and offload mask" (993), which made
++IPv6 FOE entries carry the full source MAC and the SMAC[15:0] | PPPoE ID
++word on EN7523. Two places still used the EN7581 SMAC_ID form:
++
++- L2 subflows (bridged IPv6 under en7523_offload bit 4) copied only the
++  five common MAC words and wrote SMAC_ID 0xf ("keep the source MAC"),
++  which EN7523 reads as source MAC 00:0f:00:00:xx:xx. Copy the whole
++  MAC block from the bridge entry instead.
++- debugfs printed SMAC[15:0] of IPv6 entries as 00:00, so a correct
++  entry looked broken in the dump.
++---
++--- a/drivers/net/ethernet/airoha/airoha_ppe.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
++@@ -1281,10 +1281,21 @@
++ 
++ 	type = FIELD_GET(AIROHA_FOE_IB1_BIND_PACKET_TYPE, hwe.ib1);
++ 	if (type >= PPE_PKT_TYPE_IPV6_ROUTE_3T) {
++-		memcpy(&hwe.ipv6.l2, &e->data.bridge.l2, sizeof(hwe.ipv6.l2));
++ 		hwe.ipv6.ib2 = e->data.bridge.ib2;
++-		hwe.ipv6.l2.src_mac_hi = FIELD_PREP(AIROHA_FOE_MAC_SMAC_ID,
++-						    0xf);
+++		/*
+++		 * EN7523 IPv6 entries carry the full source MAC and the
+++		 * SMAC[15:0] | PPPoE ID word (see airoha_ppe_foe_entry_prepare),
+++		 * with no SMAC_ID 0xf "keep the source MAC" encoding.
+++		 */
+++		if (airoha_is(ppe->common.eth, airoha_en7523)) {
+++			*(struct airoha_foe_mac_info *)&hwe.ipv6.l2 =
+++				e->data.bridge.l2;
+++		} else {
+++			memcpy(&hwe.ipv6.l2, &e->data.bridge.l2,
+++			       sizeof(hwe.ipv6.l2));
+++			hwe.ipv6.l2.src_mac_hi =
+++				FIELD_PREP(AIROHA_FOE_MAC_SMAC_ID, 0xf);
+++		}
++ 	} else {
++ 		memcpy(&hwe.bridge.l2, &e->data.bridge.l2,
++ 		       sizeof(hwe.bridge.l2));
++--- a/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
++@@ -203,7 +203,10 @@
++ 			data = hwe->ipv6.data;
++ 			ib2 = hwe->ipv6.ib2;
++ 			l2 = &hwe->ipv6.l2;
++-			*((__be16 *)&h_source[4]) = 0;
+++			/* EN7523 IPv6 entries carry SMAC[15:0] like IPv4 */
+++			*((__be16 *)&h_source[4]) =
+++				airoha_is(ppe->common.eth, airoha_en7523) ?
+++				cpu_to_be16(((struct airoha_foe_mac_info *)l2)->src_mac_lo) : 0;
++ 		} else {
++ 			data = hwe->ipv4.data;
++ 			ib2 = hwe->ipv4.ib2;
++@@ -321,7 +324,10 @@
++ 			data = hwe->ipv6.data;
++ 			ib2 = hwe->ipv6.ib2;
++ 			l2 = &hwe->ipv6.l2;
++-			*((__be16 *)&h_source[4]) = 0;
+++			/* EN7523 IPv6 entries carry SMAC[15:0] like IPv4 */
+++			*((__be16 *)&h_source[4]) =
+++				airoha_is(ppe->common.eth, airoha_en7523) ?
+++				cpu_to_be16(((struct airoha_foe_mac_info *)l2)->src_mac_lo) : 0;
++ 		} else {
++ 			data = hwe->ipv4.data;
++ 			ib2 = hwe->ipv4.ib2;

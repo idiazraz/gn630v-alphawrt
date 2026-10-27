@@ -1,0 +1,9 @@
+#!/bin/sh /etc/rc.common
+
+# Hardware offload mask for the EN7523 PPE, before bridger (START=19) adds its
+# flows: 1 = IPv4 TCP (routed), 16 = bridged flows (L2B entries, stock's format).
+START=18
+
+boot() {
+	echo 17 > /sys/module/airoha_eth/parameters/en7523_offload 2>/dev/null
+}

@@ -1,0 +1,306 @@
+From 96d969454cedcd865e64fb0e1913d1a40e4dab7b Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Tue, 27 Oct 2026 19:55:14 +0800
+Subject: [PATCH 22/26] airoha: ppe: EN7523 offload bridged flows as L3
+ subflows
+
+Patch 9961: the L2 flows bridger offloads (en7523_offload bit 4) never
+reached the PPE, because the insert path returned before the L2 flow
+lookup. Bridged IP traffic is now bound as an L3 subflow of the L2 flow
+whose MAC pair it carries.
+---
+ ...offload-bridged-flows-as-l3-subflows.patch | 285 ++++++++++++++++++
+ 1 file changed, 285 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/9961-net-airoha-ppe-en7523-offload-bridged-flows-as-l3-subflows.patch
+
+diff --git a/target/linux/airoha/patches-6.18/9961-net-airoha-ppe-en7523-offload-bridged-flows-as-l3-subflows.patch b/target/linux/airoha/patches-6.18/9961-net-airoha-ppe-en7523-offload-bridged-flows-as-l3-subflows.patch
+new file mode 100644
+index 0000000000..c6c6790a1c
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9961-net-airoha-ppe-en7523-offload-bridged-flows-as-l3-subflows.patch
+@@ -0,0 +1,285 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: ppe: EN7523 offload bridged flows as L3 subflows
++
++On EN7523 the L2 flows bridger offloads (en7523_offload bit 4) never
++reached the hardware: airoha_ppe_foe_insert_entry() matched only pending
++routed flows and returned before the L2 flow lookup, so a VLAN bridge
++between the GPON port and a LAN port stayed on the CPU (about 580 Mbit/s
++down at 90% CPU, with downstream frame loss).
++
++The PPE hashes bridged IP traffic by its L3/L4 tuple like routed traffic
++(as the vendor hw_nat does, and as the FoE v1 backend now does), so bind
++it as an L3 subflow of the L2 flow whose MAC pair the packet carries. The
++hardware slot may still be INVALID on EN7523, so the entry is built from
++the packet: tuple and MACs unchanged, the packet's PPPoE session, the
++output (port, queue, GEM or DSA tag, VLAN) of the L2 flow, and the TTL
++kept, since bridged traffic is not routed. Subflows go away with their L2
++flow, or once their hardware entry is no longer bound.
++
++The packet is parsed the way the PPE sees it (up to two VLAN tags, then
++an optional PPPoE session) before the existing offset scan, which never
++matched PPPoE frames at a fixed offset and fell back to probing every
++byte offset.
++
++bridger redirects to the bridge port, e.g. pon0.499; offload such a flow
++to its real device with the VLAN pushed, which also selects the GEM port.
++
++Based on the approach of "net: airoha: ppe: v1: offload L2 bridge flows
++as L3 subflows" (Cristian Papa) in the airoha kernel tree.
++---
++--- a/drivers/net/ethernet/airoha/airoha_ppe.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
++@@ -5,6 +5,7 @@
++  */
++ 
++ #include <linux/ip.h>
+++#include <linux/if_pppox.h>
++ #include <linux/if_vlan.h>
++ #include <linux/ipv6.h>
++ #include <linux/of_platform.h>
++@@ -1334,6 +1335,11 @@
++ 
++ 	u16 src_port;
++ 	u16 dst_port;
+++
+++	/* Set only when the L2 header was parsed (airoha_ppe_skb_parse_l2). */
+++	bool l2_parsed;
+++	bool pppoe;
+++	u16 pppoe_sid;
++ };
++ 
++ static bool
++@@ -1494,6 +1500,64 @@
++ 	return airoha_ppe_skb_read_ports(skb, l4_off, nexthdr, tuple);
++ }
++ 
+++/*
+++ * Walk the Ethernet header the way the PPE does: up to two VLAN tags, then
+++ * an optional PPPoE session header. Bridged PPPoE needs this both to find
+++ * the IP header and to carry the session into the FOE entry.
+++ */
+++static bool
+++airoha_ppe_skb_parse_l2(struct sk_buff *skb, struct airoha_ppe_skb_tuple *tuple)
+++{
+++	__be16 proto = eth_hdr(skb)->h_proto;
+++	unsigned int off = 0;
+++	bool ok;
+++	int i;
+++
+++	for (i = 0; i < 2 && eth_type_vlan(proto); i++) {
+++		struct vlan_hdr _vh, *vh;
+++
+++		vh = skb_header_pointer(skb, off, sizeof(_vh), &_vh);
+++		if (!vh)
+++			return false;
+++		proto = vh->h_vlan_encapsulated_proto;
+++		off += VLAN_HLEN;
+++	}
+++
+++	tuple->pppoe = false;
+++	if (proto == htons(ETH_P_PPP_SES)) {
+++		struct {
+++			struct pppoe_hdr hdr;
+++			__be16 proto;
+++		} _ph, *ph;
+++
+++		ph = skb_header_pointer(skb, off, sizeof(_ph), &_ph);
+++		if (!ph || ph->hdr.ver != 1 || ph->hdr.type != 1 ||
+++		    ph->hdr.code)
+++			return false;
+++
+++		if (ph->proto == htons(PPP_IP))
+++			proto = htons(ETH_P_IP);
+++		else if (ph->proto == htons(PPP_IPV6))
+++			proto = htons(ETH_P_IPV6);
+++		else
+++			return false;
+++
+++		tuple->pppoe = true;
+++		tuple->pppoe_sid = ntohs(ph->hdr.sid);
+++		off += sizeof(_ph);
+++	}
+++
+++	if (proto == htons(ETH_P_IP))
+++		ok = airoha_ppe_skb_read_ipv4_tuple_at(skb, off, tuple);
+++	else if (proto == htons(ETH_P_IPV6))
+++		ok = airoha_ppe_skb_read_ipv6_tuple_at(skb, off, tuple);
+++	else
+++		ok = false;
+++
+++	tuple->l2_parsed = ok;
+++	return ok;
+++}
+++
++ static bool
++ airoha_ppe_skb_find_tuple(struct sk_buff *skb,
++ 			  struct airoha_ppe_skb_tuple *tuple)
++@@ -1506,6 +1570,10 @@
++ 	};
++ 	unsigned int i, off, max_scan;
++ 
+++	tuple->l2_parsed = false;
+++	if (skb_mac_header_was_set(skb) && airoha_ppe_skb_parse_l2(skb, tuple))
+++		return true;
+++
++ 	/* skb->protocol is not reliable at this point on EN7523. */
++ 	for (i = 0; i < ARRAY_SIZE(fixed_offsets); i++) {
++ 		off = fixed_offsets[i];
++@@ -1621,26 +1689,104 @@
++ }
++ 
++ static struct airoha_flow_table_entry *
++-airoha_ppe_find_pending_flow_by_skb(struct airoha_ppe *ppe, struct sk_buff *skb)
+++airoha_ppe_find_pending_flow(struct airoha_ppe *ppe,
+++			     const struct airoha_ppe_skb_tuple *tuple)
++ {
++-	struct airoha_ppe_skb_tuple tuple;
++ 	struct airoha_flow_table_entry *e;
++ 
++-	if (!airoha_ppe_skb_find_tuple(skb, &tuple) ||
++-	    !airoha_ppe_skb_tuple_is_candidate(&tuple))
++-		return NULL;
++-
++ 	hlist_for_each_entry(e, &ppe->pending_flows, list) {
++ 		if (e->type != FLOW_TYPE_L4 || e->hash != 0xffff)
++ 			continue;
++ 
++-		if (airoha_ppe_foe_entry_match_skb_tuple(e, &tuple))
+++		if (airoha_ppe_foe_entry_match_skb_tuple(e, tuple))
++ 			return e;
++ 	}
++ 
++ 	return NULL;
++ }
++ 
+++/*
+++ * EN7523: bind a bridged IP flow as an L3 subflow of the L2 flow (bridger)
+++ * whose MAC pair it carries. The PPE hashes bridged IP traffic by its L3/L4
+++ * tuple like routed traffic, and the hardware slot may still be INVALID, so
+++ * the entry is built from the packet: tuple and MACs unchanged, the
+++ * packet's PPPoE session (the PPE strips and re-inserts it), the output
+++ * (port, queue, GEM or DSA tag, VLAN) of the L2 flow, and TTL kept.
+++ */
+++static void
+++airoha_ppe_en7523_commit_l2_subflow(struct airoha_ppe *ppe, struct sk_buff *skb,
+++				    const struct airoha_ppe_skb_tuple *t,
+++				    u32 sw_idx, bool rx_wlan)
+++{
+++	u32 ib1_mask = AIROHA_FOE_IB1_BIND_PACKET_TYPE |
+++		       AIROHA_FOE_IB1_BIND_UDP | AIROHA_FOE_IB1_BIND_PPPOE |
+++		       AIROHA_FOE_IB1_BIND_TTL;
+++	struct airoha_flow_table_entry *e, *f;
+++	struct airoha_foe_bridge br = {};
+++	struct airoha_foe_mac_info *l2;
+++	struct airoha_foe_entry hwe = {};
+++	int type;
+++
+++	airoha_ppe_foe_set_bridge_addrs(&br, eth_hdr(skb));
+++	e = rhashtable_lookup_fast(&ppe->l2_flows, &br,
+++				   airoha_l2_flow_table_params);
+++	if (!e)
+++		return;
+++
+++	if (t->family == AIROHA_PPE_TUPLE_IPV4) {
+++		struct airoha_foe_ipv4_tuple *ip = &hwe.ipv4.orig_tuple;
+++
+++		type = PPE_PKT_TYPE_IPV4_HNAPT;
+++		ip->src_ip = be32_to_cpu(t->v4.src);
+++		ip->dest_ip = be32_to_cpu(t->v4.dst);
+++		ip->src_port = t->src_port;
+++		ip->dest_port = t->dst_port;
+++		hwe.ipv4.new_tuple = *ip;
+++		hwe.ipv4.ib2 = e->data.bridge.ib2;
+++		l2 = &hwe.ipv4.l2;
+++	} else {
+++		type = PPE_PKT_TYPE_IPV6_ROUTE_5T;
+++		ipv6_addr_be32_to_cpu(hwe.ipv6.src_ip, t->v6.src.s6_addr32);
+++		ipv6_addr_be32_to_cpu(hwe.ipv6.dest_ip, t->v6.dst.s6_addr32);
+++		hwe.ipv6.src_port = t->src_port;
+++		hwe.ipv6.dest_port = t->dst_port;
+++		hwe.ipv6.ib2 = e->data.bridge.ib2;
+++		/* Full MAC block on EN7523 IPv6 too (see foe_entry_prepare). */
+++		l2 = (struct airoha_foe_mac_info *)&hwe.ipv6.l2;
+++	}
+++
+++	*l2 = e->data.bridge.l2;
+++	/* data is word 10 for bridge, IPv4 and IPv6 entries alike. */
+++	hwe.bridge.data = e->data.bridge.data;
+++	hwe.ib1 = (e->data.ib1 & ~ib1_mask) |
+++		  FIELD_PREP(AIROHA_FOE_IB1_BIND_PACKET_TYPE, type) |
+++		  FIELD_PREP(AIROHA_FOE_IB1_BIND_UDP, t->l4proto == IPPROTO_UDP);
+++	if (t->pppoe) {
+++		hwe.ib1 |= AIROHA_FOE_IB1_BIND_PPPOE;
+++		l2->pppoe_id = t->pppoe_sid;
+++	}
+++
+++	/* A retry on a bucket this L2 flow already owns reuses its subflow. */
+++	hlist_for_each_entry(f, &e->l2_flows, l2_subflow_node)
+++		if (f->hash == sw_idx)
+++			goto commit;
+++
+++	f = kzalloc(sizeof(*f), GFP_ATOMIC);
+++	if (!f)
+++		return;
+++
+++	f->type = FLOW_TYPE_L2_SUBFLOW;
+++	f->hash = sw_idx;
+++	hlist_add_head(&f->l2_subflow_node, &e->l2_flows);
+++commit:
+++	airoha_ppe_foe_commit_entry(ppe, &hwe, sw_idx, rx_wlan);
+++	dev_dbg(ppe->common.eth->dev,
+++		"L2 subflow %pM -> %pM ipv%d pppoe %u/%04x bucket %u\n",
+++		eth_hdr(skb)->h_source, eth_hdr(skb)->h_dest,
+++		t->family == AIROHA_PPE_TUPLE_IPV4 ? 4 : 6, t->pppoe,
+++		t->pppoe_sid, sw_idx);
+++}
+++
++ static void airoha_ppe_foe_insert_entry(struct airoha_ppe *ppe,
++ 					struct sk_buff *skb,
++ 					u32 sw_idx, bool rx_wlan)
++@@ -1670,8 +1816,21 @@
++ 		 * UNBIND entry (HIT_UNBIND, when SRAM auto-learn is active);
++ 		 * both must drive the same UNBIND/INVALID -> BIND commit.
++ 		 */
++-		e = airoha_ppe_find_pending_flow_by_skb(ppe, skb);
++-		if (e) {
+++		struct airoha_ppe_skb_tuple tuple;
+++
+++		if (!airoha_ppe_skb_find_tuple(skb, &tuple) ||
+++		    !airoha_ppe_skb_tuple_is_candidate(&tuple))
+++			goto unlock;
+++
+++		e = airoha_ppe_find_pending_flow(ppe, &tuple);
+++		if (!e) {
+++			/* Not a routed flow: maybe a bridged one (bridger). */
+++			if (tuple.l2_parsed)
+++				airoha_ppe_en7523_commit_l2_subflow(ppe, skb,
+++								    &tuple,
+++								    sw_idx,
+++								    rx_wlan);
+++		} else {
++ 			int err;
++ 
++ 			err = airoha_ppe_foe_commit_entry(ppe, &e->data,
++@@ -1994,6 +2153,21 @@
++ 		return -EINVAL;
++ 	}
++ 
+++	/*
+++	 * bridger redirects to the bridge port, e.g. pon0.499: offload to its
+++	 * real device with the VLAN pushed, which also picks the GEM port.
+++	 */
+++	if (odev && is_vlan_dev(odev)) {
+++		if (data.vlan.num == 2 ||
+++		    vlan_dev_vlan_proto(odev) != htons(ETH_P_8021Q))
+++			return -EOPNOTSUPP;
+++
+++		data.vlan.hdr[data.vlan.num].id = vlan_dev_vlan_id(odev);
+++		data.vlan.hdr[data.vlan.num].proto = htons(ETH_P_8021Q);
+++		data.vlan.num++;
+++		odev = vlan_dev_real_dev(odev);
+++	}
+++
++ 	err = airoha_ppe_foe_entry_prepare(eth, &hwe, odev, offload_type,
++ 					   &data, l4proto, dsfield);
++ 	if (err)
