@@ -1,0 +1,8 @@
+#!/bin/sh
+# usteer (band steering) on a single box: no AP-to-AP traffic on the LAN.
+# Its own defaults do the steering (5 GHz every 30 s, signal above -60 dBm).
+
+uci -q get usteer.@usteer[0] >/dev/null || exit 0
+uci set usteer.@usteer[0].local_mode=1
+uci commit usteer
+exit 0

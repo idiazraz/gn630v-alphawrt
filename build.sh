@@ -40,7 +40,7 @@ for p in package/alphawrt/*/; do git log -1 --format=%ct > "$p/version.date"; do
 cp "$HERE/config/feeds.conf" feeds.conf
 ./scripts/feeds update -a
 # every feed package gn630v.config selects, or defconfig silently drops it
-./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode
+./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode usteer luci-app-usteer
 
 cp "$HERE/config/gn630v.config" .config
 # bridger's BPF program is built with the host clang/llc: on macOS that is

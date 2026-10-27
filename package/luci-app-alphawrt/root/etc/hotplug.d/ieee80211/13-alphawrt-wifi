@@ -1,0 +1,28 @@
+#!/bin/sh
+# AlphaWRT 0.3.0 Wi-Fi defaults, once (also on boxes upgraded from 0.2.x):
+# 802.11k neighbour reports and 802.11v BSS transition on every AP (what
+# usteer's band steering uses), and 2.4 GHz at 40 MHz like stock (hostapd
+# drops to 20 MHz by itself when neighbours overlap). Options the user set
+# are left alone.
+
+[ "$ACTION" = add ] || exit 0
+[ "$(uci -q get wireless.alphawrt.wifi030)" = 1 ] && exit 0
+uci -q get wireless.radio1 >/dev/null || exit 0
+
+for iface in $(uci show wireless | sed -n "s/^wireless\.\([^.=]*\)=wifi-iface$/\1/p"); do
+	[ "$(uci -q get wireless.$iface.mode)" = ap ] || continue
+	for opt in ieee80211k bss_transition; do
+		[ -n "$(uci -q get wireless.$iface.$opt)" ] || uci set wireless.$iface.$opt=1
+	done
+done
+
+for radio in $(uci show wireless | sed -n "s/^wireless\.\([^.=]*\)=wifi-device$/\1/p"); do
+	# HE20 is OpenWrt's default, not a choice
+	[ "$(uci -q get wireless.$radio.band)" = 2g ] &&
+		[ "$(uci -q get wireless.$radio.htmode)" = HE20 ] &&
+		uci set wireless.$radio.htmode=HE40
+done
+
+uci -q get wireless.alphawrt >/dev/null || uci set wireless.alphawrt=alphawrt
+uci set wireless.alphawrt.wifi030=1
+uci commit wireless

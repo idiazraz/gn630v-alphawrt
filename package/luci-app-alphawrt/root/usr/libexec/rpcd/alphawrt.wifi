@@ -1,0 +1,250 @@
+#!/bin/sh
+# rpcd backend for the Simple UI Wi-Fi page.
+#   status       both bands (name, password, on/off, channel, width), band
+#                steering, the guest network and the Wi-Fi clients, in one call
+#   guest_setup  create the guest network (own subnet, firewall zone, one
+#                isolated AP per band, all off); combo/router mode only.
+#                Committed but not applied: the page's uci apply brings it up.
+# Everything else is written by the page itself with uci set + apply/rollback.
+
+. /usr/share/libubox/jshn.sh
+
+GUEST_NET=192.168.3.1/24
+
+# radio_of <band>: the wifi-device section for 2g / 5g
+radio_of() {
+	uci show wireless | sed -n "s/^wireless\.\([^.]*\)\.band='$1'$/\1/p" | head -n1
+}
+
+# ifname_of <radio> <iface section>: the netdev while it is up
+ifname_of() {
+	ubus call network.wireless status 2>/dev/null |
+		jsonfilter -e "@.$1.interfaces[@.section='$2'].ifname"
+}
+
+# width_of <htmode>: HE40 -> 40, NOHT/empty -> 20
+width_of() {
+	local w=${1##*[A-Z]}
+	echo "${w:-20}"
+}
+
+# dfs <channel> <width>: does the 5 GHz block touch channels 52-144?
+dfs() {
+	local base=36 start end
+
+	[ "$1" -ge 149 ] && base=149
+	start=$(( (($1 - base) / ($2 / 5)) * ($2 / 5) + base ))
+	end=$(( start + $2 / 5 - 4 ))
+	[ "$end" -ge 52 ] && [ "$start" -le 144 ]
+}
+
+# stations <ifname>: one assoclist entry per line
+stations() {
+	[ -n "$1" ] && ubus call iwinfo assoclist "{\"device\":\"$1\"}" 2>/dev/null |
+		jsonfilter -e '@.results[*]' | tr -d ' '
+}
+
+# add_clients <ifname> <band> <guest 0|1>: append to the open "clients" array
+add_clients() {
+	local sta mac signal connected tx rx
+
+	for sta in $(stations "$1"); do
+		eval "$(jsonfilter -s "$sta" -e 'mac=@.mac' -e 'signal=@.signal' \
+			-e 'connected=@.connected_time' -e 'tx=@.tx.rate' -e 'rx=@.rx.rate')"
+		json_add_object ""
+		json_add_string mac "$mac"
+		json_add_string band "$2"
+		json_add_boolean guest "$3"
+		json_add_int signal_dbm "$signal"
+		json_add_int tx_mbps $(( ${tx:-0} / 1000 ))
+		json_add_int rx_mbps $(( ${rx:-0} / 1000 ))
+		json_add_int connected_s "${connected:-0}"
+		json_close_object
+	done
+}
+
+status() {
+	local mode band radio iface ifn gifn ch htmode w disabled count guest_count=0 aps=
+	local ssid0 key0 ssid1 key1 interval gen=0 gssid gkey genabled=0
+
+	mode=$(uci -q get alphawrt.setup.mode)
+	interval=$(uci -q get usteer.@usteer[0].band_steering_interval)
+	ssid0=$(uci -q get wireless.default_radio0.ssid); key0=$(uci -q get wireless.default_radio0.key)
+	ssid1=$(uci -q get wireless.default_radio1.ssid); key1=$(uci -q get wireless.default_radio1.key)
+
+	json_init
+	json_add_string mode "${mode:-combo}"
+	[ -n "$ssid0" ] && [ "$ssid0" = "$ssid1" ] && [ "$key0" = "$key1" ]
+	json_add_boolean same_name $(( ! $? ))
+
+	json_add_object band_steering
+	if [ -x /etc/init.d/usteer ]; then
+		json_add_boolean installed 1
+		/etc/init.d/usteer enabled && [ "${interval:-30000}" != 0 ]
+		json_add_boolean enabled $(( ! $? ))
+	else
+		json_add_boolean installed 0
+		json_add_boolean enabled 0
+	fi
+	json_close_object
+
+	json_add_array bands
+	for band in 2g 5g; do
+		radio=$(radio_of $band)
+		[ -n "$radio" ] || continue
+		iface=default_$radio
+		ch=$(uci -q get wireless.$radio.channel)
+		htmode=$(uci -q get wireless.$radio.htmode)
+		w=$(width_of "$htmode")
+		disabled=$(uci -q get wireless.$iface.disabled)
+		ifn=$(ifname_of $radio $iface)
+
+		json_add_object ""
+		json_add_string band $band
+		json_add_string radio "$radio"
+		json_add_string iface "$iface"
+		[ "$disabled" = 1 ] || [ "$(uci -q get wireless.$radio.disabled)" = 1 ]
+		json_add_boolean enabled $?
+		json_add_boolean up $([ -n "$ifn" ] && echo 1 || echo 0)
+		json_add_string ssid "$(uci -q get wireless.$iface.ssid)"
+		json_add_string key "$(uci -q get wireless.$iface.key)"
+		json_add_string encryption "$(uci -q get wireless.$iface.encryption)"
+		if [ "$ch" = auto ] || [ -z "$ch" ]; then
+			json_add_boolean auto_channel 1
+			ch=$(ubus call iwinfo info "{\"device\":\"$ifn\"}" 2>/dev/null | jsonfilter -e @.channel)
+		else
+			json_add_boolean auto_channel 0
+		fi
+		[ -n "$ch" ] && json_add_int channel "$ch"
+		json_add_int width_mhz "$w"
+		json_add_string htmode "$htmode"
+		json_add_boolean dfs $([ $band = 5g ] && [ -n "$ch" ] && dfs "$ch" "$w" && echo 1 || echo 0)
+		[ -n "$ifn" ] && json_add_int txpower_dbm \
+			"$(ubus call iwinfo info "{\"device\":\"$ifn\"}" | jsonfilter -e @.txpower)"
+		json_add_int clients "$(stations "$ifn" | wc -l)"
+		aps="$aps $ifn:$band:0"
+		json_close_object
+
+		if uci -q get wireless.guest_$band >/dev/null; then
+			gen=1
+			gssid=${gssid:-$(uci -q get wireless.guest_$band.ssid)}
+			gkey=${gkey:-$(uci -q get wireless.guest_$band.key)}
+			[ "$(uci -q get wireless.guest_$band.disabled)" = 1 ] || genabled=1
+			gifn=$(ifname_of $radio guest_$band)
+			guest_count=$((guest_count + $(stations "$gifn" | wc -l)))
+			aps="$aps $gifn:$band:1"
+		fi
+	done
+	json_close_array
+
+	json_add_object guest
+	if [ "$mode" = bridge ]; then
+		json_add_boolean available 0
+		json_add_string reason bridge
+	else
+		json_add_boolean available 1
+	fi
+	json_add_boolean configured $gen
+	json_add_boolean enabled $genabled
+	json_add_string ssid "$gssid"
+	json_add_string key "$gkey"
+	json_add_int clients $guest_count
+	json_close_object
+
+	json_add_array clients
+	for ifn in $aps; do
+		add_clients "${ifn%%:*}" "$(echo "$ifn" | cut -d: -f2)" "${ifn##*:}"
+	done
+	json_close_array
+	json_dump
+}
+
+guest_setup() {
+	local band radio ssid
+
+	json_init
+	if [ "$(uci -q get alphawrt.setup.mode)" = bridge ]; then
+		json_add_string error bridge
+		json_dump
+		return
+	fi
+
+	uci -q get network.guest >/dev/null || {
+		uci set network.guest_dev=device
+		uci set network.guest_dev.type=bridge
+		uci set network.guest_dev.name=br-guest
+		uci set network.guest=interface
+		uci set network.guest.proto=static
+		uci set network.guest.device=br-guest
+		uci set network.guest.ipaddr=$GUEST_NET
+	}
+	uci -q get dhcp.guest >/dev/null || {
+		uci set dhcp.guest=dhcp
+		uci set dhcp.guest.interface=guest
+		uci set dhcp.guest.start=100
+		uci set dhcp.guest.limit=150
+		uci set dhcp.guest.leasetime=2h
+	}
+	uci -q get firewall.guest >/dev/null || {
+		# Internet only: no LAN, no box admin, only DHCP and DNS from the box
+		uci set firewall.guest=zone
+		uci set firewall.guest.name=guest
+		uci set firewall.guest.network=guest
+		uci set firewall.guest.input=REJECT
+		uci set firewall.guest.output=ACCEPT
+		uci set firewall.guest.forward=REJECT
+		uci set firewall.guest_wan=forwarding
+		uci set firewall.guest_wan.src=guest
+		uci set firewall.guest_wan.dest=wan
+		uci set firewall.guest_dhcp=rule
+		uci set firewall.guest_dhcp.name=Guest-DHCP
+		uci set firewall.guest_dhcp.src=guest
+		uci set firewall.guest_dhcp.proto=udp
+		uci set firewall.guest_dhcp.dest_port=67
+		uci set firewall.guest_dhcp.target=ACCEPT
+		uci set firewall.guest_dns=rule
+		uci set firewall.guest_dns.name=Guest-DNS
+		uci set firewall.guest_dns.src=guest
+		uci add_list firewall.guest_dns.proto=tcp
+		uci add_list firewall.guest_dns.proto=udp
+		uci set firewall.guest_dns.dest_port=53
+		uci set firewall.guest_dns.target=ACCEPT
+	}
+	ssid="$(uci -q get wireless.default_radio0.ssid | cut -c1-26)-Guest"
+	for band in 2g 5g; do
+		radio=$(radio_of $band)
+		[ -n "$radio" ] || continue
+		uci -q get wireless.guest_$band >/dev/null && continue
+		uci set wireless.guest_$band=wifi-iface
+		uci set wireless.guest_$band.device="$radio"
+		uci set wireless.guest_$band.mode=ap
+		uci set wireless.guest_$band.network=guest
+		uci set wireless.guest_$band.ssid="$ssid"
+		uci set wireless.guest_$band.encryption=sae-mixed
+		# never open, even if switched on before the page sets one
+		uci set wireless.guest_$band.key="$(hexdump -n 6 -e '6/1 "%02x"' /dev/urandom)"
+		uci set wireless.guest_$band.isolate=1
+		uci set wireless.guest_$band.ieee80211k=1
+		uci set wireless.guest_$band.bss_transition=1
+		uci set wireless.guest_$band.disabled=1
+	done
+	uci commit network
+	uci commit dhcp
+	uci commit firewall
+	uci commit wireless
+	json_add_boolean ok 1
+	json_dump
+}
+
+case "$1" in
+list)
+	echo '{ "status": {}, "guest_setup": {} }'
+	;;
+call)
+	case "$2" in
+	status|guest_setup)
+		$2
+		;;
+	esac
+	;;
+esac

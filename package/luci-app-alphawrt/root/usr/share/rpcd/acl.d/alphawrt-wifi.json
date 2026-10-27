@@ -1,0 +1,30 @@
+{
+	"alphawrt-wifi": {
+		"description": "Grant access to the AlphaWRT Wi-Fi page",
+		"read": {
+			"ubus": {
+				"alphawrt.wifi": [
+					"status"
+				]
+			},
+			"uci": [
+				"usteer",
+				"wireless"
+			]
+		},
+		"write": {
+			"ubus": {
+				"alphawrt.wifi": [
+					"guest_setup"
+				]
+			},
+			"uci": [
+				"dhcp",
+				"firewall",
+				"network",
+				"usteer",
+				"wireless"
+			]
+		}
+	}
+}
