@@ -130,11 +130,12 @@ set_service() {
 
 	case "$name" in
 	metrics|iperf3)
+		[ $name = iperf3 ] || [ -x $EXPORTER ] || fail "prometheus-node-exporter-lua is not installed"
+		[ $name = metrics ] || [ -x /usr/bin/iperf3 ] || fail "iperf3 is not installed"
 		uci -q get alphawrt.homelab >/dev/null || uci set alphawrt.homelab=homelab
 		uci set alphawrt.homelab.$name=$enabled
 		uci commit alphawrt
 		if [ $name = metrics ]; then
-			[ -x $EXPORTER ] || fail "prometheus-node-exporter-lua is not installed"
 			uci set prometheus-node-exporter-lua.main.listen_interface='*'
 			uci commit prometheus-node-exporter-lua
 			rc prometheus-node-exporter-lua $enabled
@@ -169,22 +170,23 @@ set_ssh() {
 	json_get_var password_auth password_auth
 	password_auth=$(bool "$password_auth")
 
+	# a missing or misread list must never wipe the keys
+	json_is_a keys array || fail "keys must be a list"
 	: > $KEYS.new
-	if json_is_a keys array; then
-		json_select keys
-		for i in $(json_keys); do
-			json_get_var k "$i"
-			case "$k" in
-			*"
+	json_select keys
+	json_get_keys i
+	for i in $i; do
+		json_get_var k "$i"
+		case "$k" in
+		*"
 "*) rm -f $KEYS.new; fail "a key must be one line" ;;
-			ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *|sk-*\ *) ;;
-			*) rm -f $KEYS.new; fail "not an SSH public key: ${k%% *}" ;;
-			esac
-			echo "$k" >> $KEYS.new
-			n=$((n + 1))
-		done
-		json_select ..
-	fi
+		ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *|sk-*\ *) ;;
+		*) rm -f $KEYS.new; fail "not an SSH public key: ${k%% *}" ;;
+		esac
+		echo "$k" >> $KEYS.new
+		n=$((n + 1))
+	done
+	json_select ..
 	[ $password_auth = 0 ] && [ $n = 0 ] && { rm -f $KEYS.new; fail "add a key before turning password login off"; }
 
 	chmod 600 $KEYS.new
