@@ -1,0 +1,31 @@
+{
+	"alphawrt-homelab": {
+		"description": "Grant access to the AlphaWRT Home lab page",
+		"read": {
+			"ubus": {
+				"alphawrt-homelab": [
+					"status"
+				]
+			},
+			"uci": [
+				"dhcp",
+				"firewall",
+				"system"
+			]
+		},
+		"write": {
+			"ubus": {
+				"alphawrt-homelab": [
+					"set_service",
+					"set_ssh",
+					"wol"
+				]
+			},
+			"uci": [
+				"dhcp",
+				"firewall",
+				"system"
+			]
+		}
+	}
+}

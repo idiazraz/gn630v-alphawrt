@@ -1,0 +1,226 @@
+#!/bin/sh
+# rpcd backend for the Simple UI "Home lab" page.
+#   status       mode, the optional services, remote syslog, SSH access,
+#                UPnP port mappings
+#   set_service  {"name": "metrics"|"iperf3"|"upnp"|"ntp", "enabled": bool}
+#   set_ssh      {"keys": [...], "password_auth": bool}: authorized keys and
+#                password login; refuses to turn passwords off with no key
+#   wol          {"mac": "aa:bb:cc:dd:ee:ff"}: Wake-on-LAN on br-lan
+# Port forwards, static leases, local names and remote syslog are plain uci
+# (firewall redirect, dhcp host/domain, system log_*).
+
+. /usr/share/libubox/jshn.sh
+
+KEYS=/etc/dropbear/authorized_keys
+EXPORTER=/etc/init.d/prometheus-node-exporter-lua
+
+# same rule as alphawrt-linemon
+box_mode() {
+	local mode=$(uci -q get alphawrt.setup.mode)
+	[ -z "$mode" ] && uci -q get network.ontbridge >/dev/null && mode=bridge
+	echo "${mode:-combo}"
+}
+
+running() {
+	[ -n "$(ubus call service list "{\"name\":\"$1\"}" 2>/dev/null | jsonfilter -q -e '@.*.instances.*.running')" ]
+}
+
+bool() { case "$1" in 1|on|true|yes) echo 1 ;; *) echo 0 ;; esac; }
+
+add_service() { # <name> <installed> <enabled> <init>
+	json_add_object "$1"
+	json_add_boolean installed "$2"
+	json_add_boolean enabled "$3"
+	running "$4" && json_add_boolean running 1 || json_add_boolean running 0
+}
+
+status() {
+	local mode=$(box_mode) ip k t c
+
+	json_init
+	json_add_string mode "$mode"
+	json_add_object services
+
+	# the exporter listens everywhere; fw4 keeps it off the wan zone
+	add_service metrics $([ -x $EXPORTER ] && echo 1 || echo 0) \
+		$(bool "$(uci -q get alphawrt.homelab.metrics)") prometheus-node-exporter-lua
+	if [ "$mode" = bridge ]; then
+		ip=$(uci -q get network.gnmgmt.ipaddr)
+	else
+		ip=$(uci -q get network.lan.ipaddr)
+	fi
+	json_add_string url "http://${ip%/*}:9100/metrics"
+	json_close_object
+
+	add_service iperf3 $([ -x /usr/bin/iperf3 ] && echo 1 || echo 0) \
+		$(bool "$(uci -q get alphawrt.homelab.iperf3)") alphawrt-iperf3
+	json_add_int port 5201
+	json_close_object
+
+	add_service upnp $([ -x /etc/init.d/miniupnpd ] && echo 1 || echo 0) \
+		$(bool "$(uci -q get upnpd.config.enabled)") miniupnpd
+	json_close_object
+
+	json_add_object ntp
+	json_add_boolean enabled $(bool "$(uci -q get system.ntp.enable_server)")
+	json_close_object
+	json_close_object
+
+	json_add_object syslog
+	json_add_string ip "$(uci -q get system.@system[0].log_ip)"
+	json_add_string port "$(uci -q get system.@system[0].log_port)"
+	json_add_string proto "$(uci -q get system.@system[0].log_proto)"
+	json_close_object
+
+	json_add_object ssh
+	json_add_boolean password_auth $(bool "$(uci -q get dropbear.@dropbear[0].PasswordAuth)")
+	json_add_array keys
+	[ -f $KEYS ] && while read -r t k c; do
+		case "$t" in ""|\#*) continue ;; esac
+		json_add_object
+		json_add_string type "$t"
+		json_add_string comment "$c"
+		json_add_string key "$t $k${c:+ $c}"
+		json_close_object
+	done < $KEYS
+	json_close_array
+	json_close_object
+
+	# PROTO:EXT_PORT:INT_IP:INT_PORT:EXPIRY:DESC
+	json_add_array upnp_maps
+	[ -f /var/run/miniupnpd.leases ] && while IFS=: read -r p e a i x d; do
+		json_add_object
+		json_add_string proto "$p"
+		json_add_int ext_port "$e"
+		json_add_string int_addr "$a"
+		json_add_int int_port "$i"
+		json_add_string desc "$d"
+		json_close_object
+	done < /var/run/miniupnpd.leases
+	json_close_array
+
+	json_dump
+}
+
+fail() {
+	json_init
+	json_add_string error "$1"
+	json_dump
+	exit 0
+}
+
+# rc <init> <0|1>: enable and (re)start, or stop and disable
+rc() {
+	[ -x /etc/init.d/$1 ] || fail "$1 is not installed"
+	if [ "$2" = 1 ]; then
+		/etc/init.d/$1 enable
+		/etc/init.d/$1 restart
+	else
+		/etc/init.d/$1 stop
+		/etc/init.d/$1 disable
+	fi
+} >/dev/null 2>&1
+
+set_service() {
+	local name enabled
+
+	json_load "$(cat)"
+	json_get_vars name enabled
+	enabled=$(bool "$enabled")
+
+	case "$name" in
+	metrics|iperf3)
+		uci -q get alphawrt.homelab >/dev/null || uci set alphawrt.homelab=homelab
+		uci set alphawrt.homelab.$name=$enabled
+		uci commit alphawrt
+		if [ $name = metrics ]; then
+			[ -x $EXPORTER ] || fail "prometheus-node-exporter-lua is not installed"
+			uci set prometheus-node-exporter-lua.main.listen_interface='*'
+			uci commit prometheus-node-exporter-lua
+			rc prometheus-node-exporter-lua $enabled
+		else
+			# always enabled; it starts the server only when asked to
+			/etc/init.d/alphawrt-iperf3 restart >/dev/null 2>&1
+		fi
+		;;
+	upnp)
+		[ -x /etc/init.d/miniupnpd ] || fail "miniupnpd is not installed"
+		uci set upnpd.config.enabled=$enabled
+		uci commit upnpd
+		# its init starts nothing while enabled=0
+		/etc/init.d/miniupnpd restart >/dev/null 2>&1
+		;;
+	ntp)
+		uci set system.ntp.enable_server=$enabled
+		uci commit system
+		/etc/init.d/sysntpd restart >/dev/null 2>&1
+		;;
+	*)
+		fail "unknown service: $name"
+		;;
+	esac
+	status
+}
+
+set_ssh() {
+	local password_auth i k n=0
+
+	json_load "$(cat)"
+	json_get_var password_auth password_auth
+	password_auth=$(bool "$password_auth")
+
+	: > $KEYS.new
+	if json_is_a keys array; then
+		json_select keys
+		for i in $(json_keys); do
+			json_get_var k "$i"
+			case "$k" in
+			*"
+"*) rm -f $KEYS.new; fail "a key must be one line" ;;
+			ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*\ *|sk-*\ *) ;;
+			*) rm -f $KEYS.new; fail "not an SSH public key: ${k%% *}" ;;
+			esac
+			echo "$k" >> $KEYS.new
+			n=$((n + 1))
+		done
+		json_select ..
+	fi
+	[ $password_auth = 0 ] && [ $n = 0 ] && { rm -f $KEYS.new; fail "add a key before turning password login off"; }
+
+	chmod 600 $KEYS.new
+	mv $KEYS.new $KEYS
+	[ $password_auth = 1 ] && password_auth=on || password_auth=off
+	uci set dropbear.@dropbear[0].PasswordAuth=$password_auth
+	uci set dropbear.@dropbear[0].RootPasswordAuth=$password_auth
+	uci commit dropbear
+	/etc/init.d/dropbear reload >/dev/null 2>&1
+	status
+}
+
+wol() {
+	local mac
+
+	json_load "$(cat)"
+	json_get_var mac mac
+	mac=$(echo "$mac" | tr A-F a-f)
+	echo "$mac" | grep -qE '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || fail "not a MAC address"
+	[ -x /usr/bin/etherwake ] || fail "etherwake is not installed"
+	etherwake -b -i br-lan "$mac" >/dev/null 2>&1 || fail "etherwake failed"
+	json_init
+	json_add_boolean ok 1
+	json_dump
+}
+
+case "$1" in
+list)
+	echo '{ "status": {}, "set_service": { "name": "", "enabled": false },
+		"set_ssh": { "keys": [], "password_auth": true }, "wol": { "mac": "" } }'
+	;;
+call)
+	case "$2" in
+	status|set_service|set_ssh|wol)
+		$2
+		;;
+	esac
+	;;
+esac

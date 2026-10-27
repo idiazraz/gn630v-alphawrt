@@ -1,0 +1,9 @@
+#!/bin/sh
+# Home lab services start off (miniupnpd and alphawrt-iperf3 check their
+# own uci flag). The exporter ships enabled, so turn it off
+# unless the Home lab page turned it on (this also runs after a sysupgrade
+# that kept settings, whose rc.d links come fresh from the image).
+
+[ "$(uci -q get alphawrt.homelab.metrics)" = 1 ] || \
+	/etc/init.d/prometheus-node-exporter-lua disable 2>/dev/null
+exit 0
