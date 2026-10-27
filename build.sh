@@ -51,3 +51,5 @@ if [ "$(uname)" = Darwin ]; then
 fi
 make defconfig
 make -j"$(getconf _NPROCESSORS_ONLN)"
+# flash budget: kernel, rootfs and package sizes against the 0.3.0 base
+python3 "$HERE/tools/budget.py" .
