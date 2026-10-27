@@ -71,9 +71,11 @@ def main(argv):
         elif line.strip():
             n, s = line.split("\t")
             base[n] = int(s)
-    rows = diff(base, now)
-    print(f"  packages vs baseline ({base_name}): {len(rows)} changed, "
-          f"{(sum(now.values()) - sum(base.values())) / 1024:+.0f} KiB .apk")
+    # .apk sizes move by a few hundred bytes between machines (signatures),
+    # so list only new, removed and noticeably changed packages
+    rows = [r for r in diff(base, now) if not r[1] or not r[2] or abs(r[2] - r[1]) >= 1024]
+    print(f"  packages vs baseline ({base_name}): {len(rows)} changed by 1 KiB or more, "
+          f"{(sum(now.values()) - sum(base.values())) / 1024:+.0f} KiB .apk in all")
     for n, a, b in rows:
         tag = "new" if not a else "gone" if not b else ""
         print(f"    {(b - a) / 1024:+8.1f} KiB  {n} {tag}")
