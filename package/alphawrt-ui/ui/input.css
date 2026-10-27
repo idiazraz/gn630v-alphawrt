@@ -1,0 +1,93 @@
+/*
+ * AlphaWRT Simple UI stylesheet source. ui/build.sh compiles it into
+ * root/www/alphawrt/ui.css, keeping only the classes the pages use, so class
+ * names in the JS must be written out whole ('badge-success', never
+ * 'badge-' + level).
+ */
+@import "tailwindcss" source(none);
+@source "../root/www/alphawrt";
+
+/* Tailwind matches any word in the sources, so prose ("step", "list",
+ * "status") would pull in whole components: leave out the ones no page uses.
+ * Remove a name here when a page starts using it. */
+@plugin "./.cache/daisyui.mjs" {
+	themes: false;
+	logs: false;
+	exclude: tab, steps, list, range, status, filter, dropdown, rootscrollgutter;
+}
+
+/* the new logo's palette: blue #1f6fe5 / #5aa2ff, red #c41e3a / #ff5a6e */
+@plugin "./.cache/daisyui-theme.mjs" {
+	name: "alphawrt";
+	default: true;
+	color-scheme: light;
+	--color-base-100: #ffffff;
+	--color-base-200: #f3f5f8;
+	--color-base-300: #e2e6ed;
+	--color-base-content: #1c1d21;
+	--color-primary: #1f6fe5;
+	--color-primary-content: #ffffff;
+	--color-secondary: #5b6472;
+	--color-secondary-content: #ffffff;
+	--color-accent: #c41e3a;
+	--color-accent-content: #ffffff;
+	--color-neutral: #1c1d21;
+	--color-neutral-content: #f3f4f6;
+	--color-info: #1f6fe5;
+	--color-info-content: #ffffff;
+	--color-success: #15803d;
+	--color-success-content: #ffffff;
+	--color-warning: #b45309;
+	--color-warning-content: #ffffff;
+	--color-error: #d92d20;
+	--color-error-content: #ffffff;
+	--radius-selector: 1rem;
+	--radius-field: 0.5rem;
+	--radius-box: 1rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+@plugin "./.cache/daisyui-theme.mjs" {
+	name: "alphawrt-dark";
+	prefersdark: true;
+	color-scheme: dark;
+	--color-base-100: #1a1b20;
+	--color-base-200: #121317;
+	--color-base-300: #2c2e36;
+	--color-base-content: #f3f4f6;
+	--color-primary: #5aa2ff;
+	--color-primary-content: #0b1220;
+	--color-secondary: #9aa3b2;
+	--color-secondary-content: #121317;
+	--color-accent: #ff5a6e;
+	--color-accent-content: #1a0a0d;
+	--color-neutral: #f3f4f6;
+	--color-neutral-content: #1c1d21;
+	--color-info: #5aa2ff;
+	--color-info-content: #0b1220;
+	--color-success: #4ade80;
+	--color-success-content: #052e12;
+	--color-warning: #fbbf24;
+	--color-warning-content: #2a1a00;
+	--color-error: #f87171;
+	--color-error-content: #2a0505;
+	--radius-selector: 1rem;
+	--radius-field: 0.5rem;
+	--radius-box: 1rem;
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1px;
+	--depth: 0;
+	--noise: 0;
+}
+
+/* logo strokes follow the theme */
+.logo-a { stroke: var(--color-accent); }
+.logo-b { fill: var(--color-primary); }
+.logo-t { stroke: var(--color-base-content); }
+
+.menu { --menu-active-bg: var(--color-primary); --menu-active-fg: var(--color-primary-content); }

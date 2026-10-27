@@ -1,0 +1,5 @@
+#!/bin/sh
+# The Simple UI answers at / : luci-base owns /www/index.html (a redirect to
+# LuCI), so put the app shell over it. Runs again after every sysupgrade.
+cp /www/alphawrt/index.html /www/index.html
+exit 0

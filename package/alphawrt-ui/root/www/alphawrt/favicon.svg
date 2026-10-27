@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 66 66" width="32" height="32">
+	<title>AlphaWRT</title>
+	<style>
+		.l { stroke: #c41e3a } .d { fill: #1f6fe5 }
+		@media (prefers-color-scheme: dark) { .l { stroke: #ff5a6e } .d { fill: #5aa2ff } }
+	</style>
+	<path class="l" d="M51 12C45 30 39 50 24 50 14 50 9 42 9 33 9 22 16 14 27 14 39 14 45 34 52 47" fill="none" stroke-width="12" stroke-linecap="round"/>
+	<circle class="d" cx="57" cy="55" r="8"/>
+</svg>

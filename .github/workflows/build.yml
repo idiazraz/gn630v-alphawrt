@@ -39,6 +39,15 @@ jobs:
           path: '*-key.pem'
           retention-days: 1
 
+  ui:
+    # the Simple UI's compiled CSS matches its sources, and its line verdict
+    # passes its self-check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: package/alphawrt-ui/ui/build.sh --check
+      - run: node package/alphawrt-ui/ui/check-line.mjs
+
   build:
     needs: key
     if: ${{ !cancelled() && needs.key.result != 'failure' }}

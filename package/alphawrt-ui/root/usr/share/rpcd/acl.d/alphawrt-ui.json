@@ -1,0 +1,24 @@
+{
+	"alphawrt-ui": {
+		"description": "Grant access to the AlphaWRT Simple UI (/)",
+		"read": {
+			"ubus": {
+				"alphawrt": [ "banks", "presets", "stock_identity", "pon_info", "line" ],
+				"iwinfo": [ "assoclist", "info" ],
+				"luci-rpc": [ "getDHCPLeases", "getHostHints" ],
+				"network.device": [ "status" ],
+				"network.interface": [ "dump", "status" ],
+				"network.wireless": [ "status" ],
+				"omci.agent": [ "status" ],
+				"system": [ "board", "info" ],
+				"uci": [ "get" ]
+			},
+			"uci": [ "alphawrt", "dhcp", "dnsproxy", "network", "wireless" ]
+		},
+		"write": {
+			"ubus": {
+				"session": [ "set", "destroy" ]
+			}
+		}
+	}
+}
