@@ -1,0 +1,13 @@
+{
+	"alphawrt-fibre": {
+		"description": "Grant read access to the AlphaWRT fibre topology",
+		"read": {
+			"ubus": {
+				"alphawrt.fibre": [
+					"topology",
+					"detail"
+				]
+			}
+		}
+	}
+}

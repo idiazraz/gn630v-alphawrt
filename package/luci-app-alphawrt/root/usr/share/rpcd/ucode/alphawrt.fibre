@@ -1,0 +1,219 @@
+'use strict';
+
+/*
+ * rpcd backend for the fibre topology view (Simple UI and LuCI).
+ *   topology  line state, optics, the ISP's limits and the services the
+ *             OLT provisioned (VLAN -> GEM ports -> Alloc-IDs -> LAN ports)
+ *   detail    the OMCI tables behind it: T-CONTs, GEM ports, bridge ports,
+ *             VLAN rules, the ME inventory and the line counters
+ *
+ * Reads the MIB through the native omci module (a ubus call to omci.agent
+ * would loop back into rpcd). Never returns the serial number, the PLOAM
+ * password, MAC addresses or raw MIB data.
+ */
+
+import * as omci from 'omci';
+import { readfile, popen } from 'fs';
+import { cursor } from 'uci';
+
+const XMAC = '/sys/bus/platform/devices/1fb60000.xmac';
+const PON = XMAC + '/xpon/pon0';
+
+/* attribute at byte offset off, len bytes, from a MIB object's hex data */
+function attr(o, off, len) {
+	return hex(substr(o.data, off * 2, len * 2) || '0');
+}
+
+function sysfs(path) {
+	return trim(readfile(path) ?? '');
+}
+
+/* key=value lines -> object of numbers */
+function kv(text, into) {
+	for (let l in split(text ?? '', /[\n ]/)) {
+		let m = match(l, /^([a-z0-9_]+)=(-?[0-9]+)$/);
+		if (m)
+			into[m[1]] = +m[2];
+	}
+	return into;
+}
+
+/* PPTP Ethernet UNI 257.. is LAN 1.., a VEIP is the box's own router */
+function port_name(tp_type, tp) {
+	return tp_type == 1 ? 'lan' + (tp - 256) : tp_type == 11 ? 'router' : null;
+}
+
+function decode() {
+	let mib = omci.mib_list(0) ?? [], by = {};
+
+	for (let o in mib)
+		push(by[o.class_id] ??= [], o);
+	let get = (c, e) => filter(by[c] ?? [], o => o.entity_id == e)[0];
+
+	let tconts = map(filter(by[262] ?? [], o => attr(o, 0, 2) != 0xff && attr(o, 0, 2) != 0xffff),
+		o => ({ me: o.entity_id, alloc: attr(o, 0, 2), policy: attr(o, 3, 1) }));
+	let alloc_of = me => filter(tconts, t => t.me == me)[0]?.alloc;
+
+	let gems = map(by[268] ?? [], o => ({
+		me: o.entity_id, port: attr(o, 0, 2), tcont_me: attr(o, 2, 2), alloc: alloc_of(attr(o, 2, 2)),
+		dir: [ null, 'up', 'down', 'both' ][attr(o, 4, 1)], pq_me: attr(o, 5, 2)
+	}));
+	/* GEM interworking TP -> its GEM port */
+	let iw_gem = me => {
+		let iw = get(266, me), g = iw && filter(gems, g => g.me == attr(iw, 0, 2))[0];
+		return g ? [ g ] : [];
+	};
+
+	let bridge_ports = map(by[47] ?? [], o => ({
+		me: o.entity_id, bridge: attr(o, 0, 2), tp_type: attr(o, 3, 1), tp_me: attr(o, 4, 2),
+		tp: { [1]: 'lan', [3]: 'mapper', [5]: 'gem', [6]: 'multicast', [11]: 'router' }[attr(o, 3, 1)] ?? 'other'
+	}));
+
+	let vlan_filters = map(by[84] ?? [], o => {
+		let n = attr(o, 25, 1), vids = [];
+		for (let i = 0; i < n && i < 12; i++)
+			push(vids, attr(o, i * 2, 2) & 0xfff);
+		return { me: o.entity_id, vids, op: attr(o, 24, 1) };
+	});
+
+	let vlan_tagging = map(by[78] ?? [], o => ({
+		me: o.entity_id, port: port_name(1, o.entity_id), up_mode: attr(o, 0, 1),
+		vid: attr(o, 1, 2) & 0xfff, down_mode: attr(o, 3, 1)
+	}));
+
+	/* Note: rule tables are not in mib_list's attribute data; decode them once a Unifi line shows where they are */
+	let ext_vlan = map(by[171] ?? [], o => ({ me: o.entity_id, assoc_type: attr(o, 0, 1), rules: null }));
+
+	/* services: each ANI-side bridge port's VLANs, its GEM ports and the LAN ports of the same bridge that carry them */
+	let vids_of = me => filter(vlan_filters, f => f.me == me)[0]?.vids;
+	let services = {};
+	for (let bp in bridge_ports) {
+		let g = [];
+		if (bp.tp == 'gem')
+			g = iw_gem(bp.tp_me);
+		else if (bp.tp == 'mapper') {
+			let m = get(130, bp.tp_me);
+			for (let i = 0; m && i < 8; i++)
+				push(g, ...iw_gem(attr(m, 2 + i * 2, 2)));
+		}
+		if (!length(g))
+			continue;
+		for (let vid in vids_of(bp.me) ?? []) {
+			let s = services[vid] ??= { vlan: vid, gem: [], alloc: [], ports: [] };
+			for (let x in g) {
+				push(s.gem, x.port);
+				if (x.alloc != null)
+					push(s.alloc, x.alloc);
+			}
+			for (let u in bridge_ports) {
+				let name = port_name(u.tp_type, u.tp_me), uv = vids_of(u.me),
+				    tag = filter(vlan_tagging, t => t.me == u.tp_me)[0];
+				if (u.bridge == bp.bridge && name && (uv ? vid in uv : tag?.vid == vid))
+					push(s.ports, name);
+			}
+		}
+	}
+	services = map(sort(keys(services), (a, b) => +a - +b), k => services[k]);
+	for (let s in services) {
+		s.gem = uniq(s.gem);
+		s.alloc = uniq(s.alloc);
+		s.ports = uniq(s.ports);
+	}
+
+	let classes = {};
+	for (let o in mib) {
+		let c = classes[o.class_id] ??= { class: o.class_id, name: o.name, count: 0, origin: [ 'default', 'local', 'olt', 'hardware' ][o.origin] ?? o.origin };
+		c.count++;
+	}
+
+	return {
+		mib, tconts, gems, bridge_ports, vlan_filters, vlan_tagging, ext_vlan, services,
+		multicast_gem: filter(gems, g => g.dir == 'down')[0]?.port,
+		classes: map(sort(keys(classes), (a, b) => +a - +b), k => classes[k])
+	};
+}
+
+/* ISP preset VLANs -> what each service is */
+function kinds(uci) {
+	let isp = uci.get('alphawrt', 'setup', 'isp'), k = {};
+	for (let p in json(readfile('/usr/share/alphawrt/isp.json') ?? '[]'))
+		if (p.id == isp) {
+			if (p.vlan) k[p.vlan] = 'internet';
+			if (p.iptv_vlan) k[p.iptv_vlan] = 'iptv';
+		}
+	/* Note: voice and management VLANs known from stock (Unifi 400/209) and the TIME line (140); add to isp.json if more appear */
+	for (let v in [ 400, 140 ]) k[v] ??= 'voice';
+	k[209] ??= 'management';
+	/* the WAN's own VLAN wins: the OLT may provision another one */
+	let m = match(uci.get('network', 'wan', 'device') ?? '', /^pon0\.([0-9]+)$/);
+	if (m) k[m[1]] = 'internet';
+	return k;
+}
+
+function eqd() {
+	let p = popen('dmesg'), last;
+	for (let l = p?.read('line'); length(l); l = p.read('line')) {
+		let m = match(l, /EqD: byte_delay=([0-9]+) bit_delay=([0-9]+)/);
+		if (m) last = { bytes: +m[1], bits: +m[2] };
+	}
+	p?.close();
+	return last;
+}
+
+function topology(d) {
+	let s = omci.status(0) ?? {}, uci = cursor(), k = kinds(uci),
+	    thr = map(split(sysfs('/tmp/alphawrt/thresholds'), ' '), x => +x),
+	    olt = sysfs(PON + '/omci/olt_vendor_id');
+
+	return {
+		pon: {
+			state: s.state ?? 0, onu_id: s.onu_id, los: sysfs(PON + '/los') == '1',
+			/* 2 = on, as the LuCI diagnostics page reads it */
+			fec_down: s.fec_downstream == 2, fec_up: s.fec_upstream == 2, eqd: eqd(),
+			omci_up: !!s.channel_up, mib_sync: s.mib_sync
+		},
+		optics: {
+			/* nW: the box's ucode has no math module, the pages turn it into dBm */
+			rx_nw: s.bosa_rx_power_nw, tx_nw: s.bosa_tx_power_nw,
+			temp_c: s.bosa_temperature_mc != null ? s.bosa_temperature_mc / 1000.0 : null,
+			voltage_v: s.bosa_voltage_uv != null ? s.bosa_voltage_uv / 1e6 : null,
+			bias_ma: s.bosa_bias_ua != null ? s.bosa_bias_ua / 1000.0 : null,
+			alarms: s.bosa_alarms, model: sysfs(PON + '/optical/model') || null
+		},
+		limits: length(thr) == 4
+			? { sf: thr[0], sd: thr[1], rx_min: thr[2] / 10, rx_max: thr[3] / 10 }
+			: { sf: null, sd: null, rx_min: -28, rx_max: -8 },
+		olt: { vendor: olt && olt != 'unknown' ? olt : null },
+		services: map(d.services, sv => {
+			let dev = 'pon0.' + sv.vlan, st = '/sys/class/net/' + dev;
+			return { ...sv, kind: k[sv.vlan] ?? 'other',
+				netdev: readfile(st + '/operstate') != null ? dev : null,
+				up: sysfs(st + '/operstate') == 'up',
+				rx_bytes: +sysfs(st + '/statistics/rx_bytes') || 0,
+				tx_bytes: +sysfs(st + '/statistics/tx_bytes') || 0 };
+		}),
+		multicast_gem: d.multicast_gem,
+		mode: uci.get('alphawrt', 'setup', 'mode'),
+		isp: uci.get('alphawrt', 'setup', 'isp')
+	};
+}
+
+return {
+	'alphawrt.fibre': {
+		topology: {
+			call: () => topology(decode())
+		},
+		detail: {
+			call: function() {
+				let d = decode(), bip = kv(sysfs(XMAC + '/gpon_bip'), {});
+				return {
+					tconts: d.tconts, gems: d.gems, bridge_ports: d.bridge_ports,
+					vlan_filters: d.vlan_filters, vlan_tagging: d.vlan_tagging, ext_vlan: d.ext_vlan,
+					classes: d.classes,
+					counters: kv(sysfs(XMAC + '/gpon_counters'), { bip_session: bip.session_total }),
+					mib: { objects: length(d.mib), sync: omci.status(0)?.mib_sync }
+				};
+			}
+		}
+	}
+};
