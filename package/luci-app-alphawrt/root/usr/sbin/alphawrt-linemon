@@ -12,6 +12,7 @@
 #             OLT disables the box (O7)
 #   LOS (red) blinking with no light / below sensitivity, or disabled by
 #             the OLT; off otherwise
+#   PON, LOS  both off in router mode (the fibre isn't used)
 #   Internet  on = IP connected, blinking = traffic, off = down, PPP
 #             failed or bridge mode (the customer's router has the Internet)
 #
@@ -204,18 +205,22 @@ while :; do
 	fi
 	ptx=$t
 
+	mode=$(uci -q get alphawrt.setup.mode)
+	[ -z "$mode" ] && uci -q get network.ontbridge >/dev/null && mode=bridge
+
 	# PON on whenever the fibre has light (stock behaviour), LOS blinking
-	# when it has none; the ISP disabling the box (O7) counts as down
-	if [ $dark = 1 ] || [ "$st" = 7 ]; then
+	# when it has none; the ISP disabling the box (O7) counts as down.
+	# Router mode doesn't use the fibre: both stay off
+	if [ "$mode" = router ]; then
+		led green:pon off
+		led red:los off
+	elif [ $dark = 1 ] || [ "$st" = 7 ]; then
 		led green:pon off
 		led red:los 500
 	else
 		led green:pon on
 		led red:los off
 	fi
-
-	mode=$(uci -q get alphawrt.setup.mode)
-	[ -z "$mode" ] && uci -q get network.ontbridge >/dev/null && mode=bridge
 	l3=$([ "$w" = true ] && [ "$mode" != bridge ] && ifstatus wan | jsonfilter -e @.l3_device)
 	[ -n "$l3" ] && led green:internet dev:$l3 || led green:internet off
 
