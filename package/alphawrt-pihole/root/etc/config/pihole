@@ -4,3 +4,5 @@ config pihole 'main'
 	option preset 'multi'
 	# also block Hagezi's threat intelligence feed (tif.mini)
 	option tif '0'
+	# bridge mode: ask the main router for device names, e.g.
+	# list revserver 'true,192.168.0.0/24,192.168.100.2#5354,am'

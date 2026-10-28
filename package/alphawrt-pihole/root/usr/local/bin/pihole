@@ -155,10 +155,14 @@ ftl_config() {
 	# bridge mode: the clients sit on the main router's network, not ours
 	listen=LOCAL
 	uci -q get network.ontbridge >/dev/null && listen=ALL
+	# device names: our LAN from our dnsmasq, plus any revserver from uci
+	# ("true,192.168.0.0/24,192.168.100.2#5354,am": the main router's leases)
+	rev="\"true,$NETWORK/$PREFIX,127.0.0.1#$DNSMASQ_PORT,lan\""
+	for r in $(uci -q get pihole.main.revserver); do rev="$rev,\"$r\""; done
 	set -- \
 		dns.listeningMode $listen \
 		dns.upstreams "[\"127.0.0.1#$DNSMASQ_PORT\"]" \
-		dns.revServers "[\"true,$NETWORK/$PREFIX,127.0.0.1#$DNSMASQ_PORT,lan\"]" \
+		dns.revServers "[$rev]" \
 		dhcp.active false \
 		ntp.ipv4.active false ntp.ipv6.active false ntp.sync.active false \
 		webserver.port '8080o,[::]:8080o' \
