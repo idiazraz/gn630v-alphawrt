@@ -16,7 +16,10 @@ export default {
 			maybe('alphawrt-pihole', 'presets', {}, { presets: [] }),
 			maybe('alphawrt-pihole', 'stats', {}, null)
 		]);
-		main.append(h('h1', { class: 'text-2xl font-bold' }, 'Pi-hole'));
+		main.append(h('div', { class: 'flex flex-wrap items-center justify-between gap-3' },
+			h('h1', { class: 'text-2xl font-bold' }, 'Pi-hole'),
+			pi?.web_installed && h('a', { href: `${location.protocol}//${location.hostname}:${pi.admin_port || 8080}${pi.admin_path || '/admin/'}`,
+				target: '_blank', rel: 'noopener', class: 'btn btn-sm btn-primary' }, 'Open Pi-hole admin', icon('external', 'size-4'))));
 		if (!pi) return main.append(h('p', { class: 'text-sm opacity-70' }, 'Pi-hole isn’t in this build.'));
 		main.append(h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
 			pi.enabled && pi.running ? this.today(stats) : null,
@@ -147,13 +150,6 @@ export default {
 			}
 		}, 'Update lists now');
 
-		const adminBtn = pi.web_installed ? h('a', {
-			href: `${location.protocol}//${location.hostname}:${pi.admin_port || 8080}${pi.admin_path || '/admin/'}`,
-			target: '_blank',
-			rel: 'noopener',
-			class: 'btn btn-sm btn-ghost text-primary'
-		}, 'Open Pi-hole admin', icon('external', 'size-4')) : null;
-
 		return card('block', 'Ad blocking', badgeEl, h('div', { class: 'space-y-3' },
 			h('div', { class: 'text-sm opacity-80' }, 'Network-wide ad and tracker blocking powered by Pi-hole and Hagezi lists.'),
 			bridge && !pi.enabled && h('div', { class: 'text-sm opacity-70' }, 'Bridge mode: your main router has to hand out this box as DNS, and this box needs a gateway to reach the internet.'),
@@ -165,7 +161,7 @@ export default {
 				tifTog,
 				pwField),
 			h('div', { class: 'flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-base-300' },
-				h('div', { class: 'flex flex-wrap gap-1' }, updateBtn, adminBtn),
+				updateBtn,
 				saveBtn)));
 	},
 
