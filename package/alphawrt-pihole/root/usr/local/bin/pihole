@@ -152,7 +152,11 @@ dnsmasq_port() {
 
 ftl_config() {
 	eval "$(ipcalc.sh "$(uci -q get network.lan.ipaddr)" $(uci -q get network.lan.netmask))"
+	# bridge mode: the clients sit on the main router's network, not ours
+	listen=LOCAL
+	uci -q get network.ontbridge >/dev/null && listen=ALL
 	set -- \
+		dns.listeningMode $listen \
 		dns.upstreams "[\"127.0.0.1#$DNSMASQ_PORT\"]" \
 		dns.revServers "[\"true,$NETWORK/$PREFIX,127.0.0.1#$DNSMASQ_PORT,lan\"]" \
 		dhcp.active false \
