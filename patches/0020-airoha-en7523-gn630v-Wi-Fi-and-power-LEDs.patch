@@ -63,7 +63,7 @@ index 0000000000..3d0d849359
 +# LED never lights. Bits 27:24 = 3 routes MT7916 GPIO14 (2.4 GHz LED), bits
 +# 31:28 = 3 GPIO15 (5 GHz LED). The mt76 LEDs then follow their default
 +# phyNtpt trigger: off with the radio down, on when up, blinking on traffic.
-+# ponytail: debugfs poke after probe, as on Kiwironic's EN7523 AX3000; a mt76
++# Note: debugfs poke after probe, as on Kiwironic's EN7523 AX3000; a mt76
 +# fix belongs in the driver once we know what clears the mux (a firmware
 +# recovery may clear it again until the next boot).
 +

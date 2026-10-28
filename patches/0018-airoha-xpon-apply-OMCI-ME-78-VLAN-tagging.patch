@@ -171,7 +171,7 @@ index 0000000000..f59c1620e4
 ++	ret = airoha_eth_xpon_lookup_service(dev, vlan_valid, vlan_id,
 + 					     pcp_valid, pcp, info);
 ++	/*
-++	 * ponytail: a PPE entry does not push the ME 78 tag, so those flows
+++	 * Note: a PPE entry does not push the ME 78 tag, so those flows
 ++	 * stay in software; add the tag to the FOE entry if they need offload.
 ++	 */
 ++	if (!ret && info->tag)

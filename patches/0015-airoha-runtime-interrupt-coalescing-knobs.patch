@@ -57,7 +57,7 @@ index 0000000000..3674da23c9
 ++MODULE_PARM_DESC(napi_gro_flush_timeout,
 ++		 "QDMA NAPI re-poll timer in ns while IRQs are deferred");
 ++
-++/* ponytail: one ethernet instance per SoC, so one global for the setter */
+++/* Note: one ethernet instance per SoC, so one global for the setter */
 ++static struct airoha_eth *airoha_coalesce_eth;
 ++static unsigned int rx_delay_int;
 ++

@@ -80,7 +80,7 @@ index 0000000000..d56e56c2be
 ++ * forwarded untouched apart from the output VLAN and tag.
 +  */
 ++#define AIROHA_L2B_PAD			0xa5a5
-++/* ponytail: HSK_L2[15:8] is 0x4c on every stock L2B entry seen (PPPoE,
+++/* Note: HSK_L2[15:8] is 0x4c on every stock L2B entry seen (PPPoE,
 ++ * both ways); its meaning is unknown, so it is copied as is.
 ++ */
 ++#define AIROHA_L2B_HSK_BASE		0x4c00
