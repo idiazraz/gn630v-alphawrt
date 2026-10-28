@@ -2,13 +2,13 @@
 
 Everything here was read from a GN630V over UART, from its own flash, and from the stock firmware. Unit-specific values (MAC, serials, passwords) are deliberately left out.
 
-> **Variant warning:** AlphaWRT images are built for the AX3000 GN630V only. Do not flash them on the 2.5G GN630V; that variant has not been tested and may be incompatible. Check the full model/variant marking on the device label.
+> **Variant warning:** AlphaWRT images are built for the AX3000 GN630V only (the white one, 4x 1 Gbps LAN). Do not flash them on the 2.5G GN630V (the black one, with a 2.5 Gbps port); that variant has not been tested and may be incompatible. Check the full model/variant marking on the device label. The full specification table is in the [README](../README.md#hardware).
 
 ## Board
 | | |
 |---|---|
 | SoC | Airoha / EcoNet **AN7529CT**, EN7523 family. U-Boot prints `EN7529CT` |
-| CPU | 2x Cortex-A53 (`410fd034`) in **AArch32**: the vendor ATF/U-Boot hands over in 32-bit mode |
+| CPU | 2x Cortex-A53 (`410fd034`) at 1.0 GHz in **AArch32**: the vendor ATF/U-Boot hands over in 32-bit mode |
 | RAM | 512 MB DDR |
 | Flash | 256 MiB SPI-NAND, FORESEE **F35SQB002G** (ID `cd 52`), 2048+128 B pages, 128 KiB blocks, vendor BMT (pool 163 blocks at the top) |
 | Wi-Fi | MediaTek MT7916 (PCIe `14c3:7906` + `14c3:790a`), DBDC 2.4/5 GHz, NPU RX offload in stock |

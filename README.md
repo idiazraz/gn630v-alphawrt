@@ -16,6 +16,36 @@ OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN752
 > **Status: early test builds.** Verified on hardware: booting from either bank, the persistent overlay, the LAN switch, Wi-Fi 6 on both bands, encrypted DNS, LuCI, installing from the stock web UI, and going back to stock. GPON: the optics (EN7571, with the unit's own calibration) and the PON MAC come up and report loss of signal without fibre.
 > **Test status:** GPON registration has reached O5 on a live line. Stable Internet service over fibre is still under test. Read [Recovery](docs/RECOVERY.md) before flashing.
 
+## Hardware
+
+### Which GN630V do you have?
+There are two GN630V models. AlphaWRT supports only the white one.
+
+| | GN630V AX3000 | GN630V 2.5G |
+|---|---|---|
+| Colour | White | Black |
+| Wired ports | 4x 1 Gbps LAN | Has a 2.5 Gbps port |
+| AlphaWRT | **Supported**, tested on a live TIME line | **Not supported.** Untested, do not flash |
+
+Go by the model marking on the label, not by the colour alone.
+
+### GN630V AX3000 specifications
+| Part | Details |
+|---|---|
+| SoC | Airoha (EcoNet) AN7529CT, EN7523 family |
+| CPU | 2x ARM Cortex-A53 at 1.0 GHz, running in 32-bit (AArch32) mode |
+| RAM | 512 MB DDR |
+| Flash | 256 MiB SPI NAND (FORESEE F35SQB002G) |
+| Fibre | GPON ONT: EN7571-class xPON MAC with an EN7570 laser driver |
+| Ethernet | 4x 1 Gbps LAN (internal MT7530 switch) |
+| Wi-Fi | Wi-Fi 6 AX3000, MediaTek MT7916 dual band: 2.4 GHz 2x2, 5 GHz 2x2 up to 160 MHz |
+| Phone | 1x TEL (FXS) port, not supported by AlphaWRT yet |
+| Buttons | Reset, WPS |
+| LEDs | Power, PON, LOS, Internet, Wi-Fi 2.4 GHz, Wi-Fi 5 GHz, LAN 1-4, TEL, VoIP, USB, WPS |
+| Console | UART, 115200 8N1, 3.3 V |
+
+The flash map, boot chain and image format are in [docs/HARDWARE.md](docs/HARDWARE.md).
+
 ## What you get
 * **OpenWrt** (procd, ubus, LuCI, apk, dropbear, firewall4) on Linux 6.18, with a persistent UBIFS overlay.
 * **Dual bank, stock kept.** AlphaWRT runs from whichever flash bank it was written to. The other bank keeps the stock firmware untouched, and nothing in AlphaWRT ever writes it. `alphawrt-bootbank stock` plus a reboot brings stock back.
