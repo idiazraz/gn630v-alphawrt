@@ -36,7 +36,7 @@ if [ -f "$LUCI_ROOT/usr/share/rpcd/acl.d/alphawrt-homelab.json" ]; then
 	set -- "$@" -C "$LUCI_ROOT" usr/share/rpcd/acl.d/alphawrt-homelab.json
 fi
 if [ -d "$PIHOLE_ROOT" ]; then
-	set -- "$@" -C "$PIHOLE_ROOT" usr/share/rpcd/ucode/alphawrt-pihole.uc usr/share/rpcd/acl.d/alphawrt-pihole.json usr/local/bin/pihole etc/config/pihole usr/share/pihole
+	set -- "$@" -C "$PIHOLE_ROOT" usr/share/rpcd/ucode/alphawrt-pihole.uc usr/share/rpcd/acl.d/alphawrt-pihole.json usr/local/bin/pihole usr/share/pihole
 fi
 
 COPYFILE_DISABLE=1 tar --no-xattrs -czf - --exclude '._*' --exclude .DS_Store "$@" |

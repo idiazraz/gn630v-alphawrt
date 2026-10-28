@@ -206,13 +206,13 @@ export default {
 	},
 
 	adblock(mode, pi, presets, tick) {
-		const link = [ 'Settings', '#/homelab' ];
+		const link = [ 'Pi-hole', '#/pihole' ];
 		if (!pi) return null;
-		if (mode == 'bridge')
-			return card('vpn', 'Ad blocking', badge('off', 'Bridge mode'),
+		if (mode == 'bridge' && !pi.enabled)
+			return card('block', 'Ad blocking', badge('off', 'Bridge mode'),
 				h('p', { class: 'text-sm opacity-70' }, 'Off in bridge mode: your own router does DNS.'), link);
 		if (!pi.enabled)
-			return card('vpn', 'Ad blocking', badge('off', 'Off'),
+			return card('block', 'Ad blocking', badge('off', 'Off'),
 				h('p', { class: 'text-sm opacity-70' }, 'Network-wide ad blocking is turned off.'), link);
 
 		const pName = presets.find(p => p.id == pi.preset)?.name || pi.preset;
@@ -252,7 +252,7 @@ export default {
 			}
 		}
 
-		return card('vpn', 'Ad blocking', b, h('div', { class: 'space-y-3' }, rowsEl, actions), link);
+		return card('block', 'Ad blocking', b, h('div', { class: 'space-y-3' }, rowsEl, actions), link);
 	},
 
 	box(mode, port, board, banks, sys) {
