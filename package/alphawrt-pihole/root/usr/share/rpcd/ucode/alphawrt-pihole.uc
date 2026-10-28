@@ -135,7 +135,7 @@ const methods = {
 				password_set: sh(`${FTL} --config webserver.api.pwhash 2>/dev/null`) != '',
 				admin_port: 8080,
 				admin_path: '/admin/',
-				web_installed: access('/usr/share/pihole/www/admin/index.html') == true
+				web_installed: access('/usr/share/pihole/www/admin/index.lp') == true
 			};
 		}
 	},
