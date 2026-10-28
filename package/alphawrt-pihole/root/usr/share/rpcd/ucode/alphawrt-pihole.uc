@@ -8,9 +8,8 @@
 //   lists       exact allow/deny domains and the devices that bypass Pi-hole
 //   set_lists   {allow, deny, bypass}: replace those lists
 //   presets     the Hagezi presets for a picker
-// FTL's API is used without a login from localhost, which FTL 6.8 allows
-// only while no admin password is set; list edits go to gravity.db directly.
-// Limit: with a password (pihole-web) pause and stats need a session.
+// FTL's API is used from localhost: without a login while no admin password
+// is set, else with FTL's CLI password; list edits go to gravity.db directly.
 
 'use strict';
 
@@ -55,7 +54,7 @@ function rows(stmt) {
 	return filter(split(sql(stmt), '\n'), l => l != '');
 }
 
-function api(path, body) {
+function fetch(path, body) {
 	const post = body ? `--post-data=${q(sprintf('%J', body))} ` : '';
 	try {
 		return json(sh(`uclient-fetch -q -T 5 -O - ${post}${q('http://127.0.0.1:8080/api/' + path)} 2>/dev/null`));
@@ -63,6 +62,24 @@ function api(path, body) {
 	catch (e) {
 		return null;
 	}
+}
+
+// with an admin password set FTL wants a session: log in with the CLI
+// password FTL writes at start, keep the sid while rpcd runs, log in again
+// when FTL restarts (new cli_pw, old sid unauthorized). Limit: one FTL
+// session per rpcd run, within FTL's max_sessions
+let sid = null;
+
+function api(path, body) {
+	const enc = s => replace(replace(replace(s, '+', '%2B'), '/', '%2F'), '=', '%3D');
+	const url = () => sid ? `${path}${index(path, '?') < 0 ? '?' : '&'}sid=${enc(sid)}` : path;
+	let r = fetch(url(), body);
+	// uclient-fetch prints nothing on a 401
+	if (r == null || r?.error?.key == 'unauthorized') {
+		sid = fetch('auth', { password: trim(readfile('/etc/pihole/cli_pw') ?? '') })?.session?.sid;
+		r = sid ? fetch(url(), body) : r;
+	}
+	return r;
 }
 
 function info(property) {
