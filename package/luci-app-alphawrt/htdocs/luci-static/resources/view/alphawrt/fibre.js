@@ -70,7 +70,7 @@ function section(title, content, help) {
  * (no data: a gap) or NaN (an outage: a red mark); limit is a dashed line.
  */
 function chart(ln, val, fmt, limit) {
-	var W = 720, H = 140, PAD = 64, now = Date.now() / 1000, COL = line.COL,
+	var W = 720, H = 140, PAD = 64, now = line.now(ln), COL = line.COL,
 	    rows = ln.history.filter(function(r) { return r[COL.ts] >= now - 86400; }),
 	    x0 = rows.length ? rows[0][COL.ts] : now, v, lo, hi, X, Y, d = '', marks = '', last = null, svg, div;
 

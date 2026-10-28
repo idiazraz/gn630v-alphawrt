@@ -4,12 +4,13 @@
  * luci-app-alphawrt's basic/home.js, laid out as ui-draft/home.html.
  */
 import { h, icon, badge, alert, rows, card, fmtTime, portName } from '../lib/ui.js';
-import { maybe, uci, list } from '../lib/rpc.js';
+import { call, maybe, uci, list } from '../lib/rpc.js';
 import line from '../lib/line.js';
+import { usage } from '../lib/stats.js';
 
 const PON_STATES = [ null, 'Initial', 'Standby', 'Serial number', 'Ranging', 'Registered', 'Signal lost', 'Stopped by the ISP' ];
 const MODES = { combo: 'Combo (fibre and router)', bridge: 'Bridge (fibre only)', router: 'Router' };
-const SETUP = '/cgi-bin/luci/basic/quicksetup';   // the Simple UI's own Quick Setup arrives in SIMPLE-UI.md step 4
+const SETUP = '#/setup';
 
 /* dnsmasq forwarding to dnsproxy means encrypted DNS: name its upstreams */
 function dnsServers(wan) {
@@ -45,16 +46,19 @@ export default {
 	title: 'Home',
 
 	async render(main) {
-		const [ presets, board, banks ] = await Promise.all([
+		const [ presets, board, banks, piPresets ] = await Promise.all([
 			maybe('alphawrt', 'presets').then(r => r.presets || []),
 			maybe('system', 'board'),
 			maybe('alphawrt', 'banks'),
+			maybe('alphawrt-pihole', 'presets', {}, { presets: [] }),
 			uci.load('alphawrt', 'network', 'wireless', 'dhcp', 'dnsproxy')
 		]);
 		const isp = presets.find(p => p.id == uci.get('alphawrt', 'setup', 'isp'));
 		let rx = null;
 
 		const banner = h('div'), cards = h('div', { class: 'grid gap-4 lg:grid-cols-2' });
+		/* uptime is already in This box */
+		const u = usage([], { uptime: false });
 		main.append(
 			h('div', { class: 'flex items-center justify-between gap-4' },
 				h('h1', { class: 'text-2xl font-bold' }, 'Home'),
@@ -64,7 +68,7 @@ export default {
 		const tick = async () => {
 			const [ mode, port ] = line.mode();
 			const wifiIfaces = uci.sections('wireless', 'wifi-iface');
-			const [ st, ln, ifaces, leases, wstatus, sys, pon, dev ] = await Promise.all([
+			const [ st, ln, ifaces, leases, wstatus, sys, pon, dev, pi ] = await Promise.all([
 				maybe('omci.agent', 'status', { device: 0 }).then(r => r.status || {}),
 				line.load(),
 				maybe('network.interface', 'dump').then(r => r.interface || []),
@@ -72,7 +76,8 @@ export default {
 				maybe('network.wireless', 'status'),
 				maybe('system', 'info'),
 				maybe('alphawrt', 'pon_info'),
-				port ? maybe('network.device', 'status', { name: port }) : {}
+				port ? maybe('network.device', 'status', { name: port }) : {},
+				maybe('alphawrt-pihole', 'status', {}, null)
 			]);
 
 			/* Wi-Fi clients per interface section, via the ifname netifd gave it */
@@ -91,13 +96,17 @@ export default {
 			const wan = ifaces.find(i => i.interface == 'wan'), wanUp = !!wan?.up, registered = st.state == 5;
 			const v = line.verdict(st, ln, mode, wanUp);
 
+			await u.tick();
 			banner.replaceChildren(this.banner(v, mode, port, dev, wan, wanUp));
-			cards.replaceChildren(
+			cards.replaceChildren(...[
 				this.internet(mode, port, dev, wan, wanUp, registered, ln, isp, pon),
 				this.fibre(mode, st, v, ln, pon),
 				this.wifi(mode, wifiIfaces, assoc),
 				this.devices(mode, port, leases, wifiMacs),
-				h('div', { class: 'lg:col-span-2' }, this.box(mode, port, board, banks, sys)));
+				this.adblock(mode, pi, piPresets?.presets || [], tick),
+				card('system', 'CPU and memory', null, u.el, [ 'System', '#/system' ]),
+				this.box(mode, port, board, banks, sys)
+			].filter(Boolean));
 		};
 		await tick();
 		return tick;
@@ -196,6 +205,56 @@ export default {
 			[ 'All devices', '#/devices' ]);
 	},
 
+	adblock(mode, pi, presets, tick) {
+		const link = [ 'Settings', '#/homelab' ];
+		if (!pi) return null;
+		if (mode == 'bridge')
+			return card('vpn', 'Ad blocking', badge('off', 'Bridge mode'),
+				h('p', { class: 'text-sm opacity-70' }, 'Off in bridge mode: your own router does DNS.'), link);
+		if (!pi.enabled)
+			return card('vpn', 'Ad blocking', badge('off', 'Off'),
+				h('p', { class: 'text-sm opacity-70' }, 'Network-wide ad blocking is turned off.'), link);
+
+		const pName = presets.find(p => p.id == pi.preset)?.name || pi.preset;
+		const b = pi.updating ? badge('warn', 'Updating lists…')
+			: pi.blocking == 'disabled' ? badge('warn', pi.timer ? `Paused (${fmtTime(pi.timer)})` : 'Paused')
+			: pi.blocking == 'enabled' ? badge('ok', 'Blocking')
+			: badge('bad', 'Not running');
+
+		const rowsEl = rows([
+			[ 'Filter preset', pName + (pi.tif ? ' + TIF' : '') ],
+			pi.domains ? [ 'Domains blocked', Number(pi.domains).toLocaleString() ] : null,
+			pi.timer > 0 ? [ 'Paused for', fmtTime(pi.timer) ] : null
+		]);
+
+		let actions = null;
+		if (pi.running) {
+			if (pi.blocking == 'enabled') {
+				actions = h('div', { class: 'flex items-center gap-2 pt-1' },
+					h('span', { class: 'text-xs opacity-60' }, 'Pause:'),
+					h('button', {
+						type: 'button',
+						class: 'btn btn-xs btn-outline',
+						onclick: async () => { await call('alphawrt-pihole', 'pause', { minutes: 5 }); tick(); }
+					}, '5m'),
+					h('button', {
+						type: 'button',
+						class: 'btn btn-xs btn-outline',
+						onclick: async () => { await call('alphawrt-pihole', 'pause', { minutes: 15 }); tick(); }
+					}, '15m'));
+			} else if (pi.blocking == 'disabled') {
+				actions = h('div', { class: 'pt-1' },
+					h('button', {
+						type: 'button',
+						class: 'btn btn-xs btn-primary',
+						onclick: async () => { await call('alphawrt-pihole', 'pause', { minutes: 0 }); tick(); }
+					}, 'Resume blocking'));
+			}
+		}
+
+		return card('vpn', 'Ad blocking', b, h('div', { class: 'space-y-3' }, rowsEl, actions), link);
+	},
+
 	box(mode, port, board, banks, sys) {
 		const lan = String(uci.get('network', 'lan', 'ipaddr') || '—').split('/')[0];
 		return card('box', 'This box', null,
@@ -210,7 +269,7 @@ export default {
 						? [ 'Manage this box at', uci.get('network', 'gnmgmt', 'ipaddr') || '192.168.100.1' ]
 						: [ 'Box address', lan ],
 					mode == 'bridge' && [ 'Other LAN ports', lan ]
-				], 'lg:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-x-8'),
+				]),
 				h('div', { class: 'flex flex-wrap justify-end gap-1' },
 					h('a', { href: '/cgi-bin/luci/', class: 'btn btn-ghost btn-sm' }, 'Advanced settings', icon('external', 'size-4')),
 					h('a', { href: '#/system', class: 'btn btn-ghost btn-sm text-primary' }, 'System', icon('chevron', 'size-4')))),

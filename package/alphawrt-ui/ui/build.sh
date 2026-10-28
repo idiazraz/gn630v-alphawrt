@@ -6,7 +6,8 @@
 # download, 2026-10-27).
 #
 #   ui/build.sh          rebuild ui.css
-#   ui/build.sh --check  fail if the committed ui.css differs from a fresh build (CI)
+#   ui/build.sh --check  fail if the committed ui.css differs from a fresh build,
+#                        or if the whole UI is over 128 KB gzipped (CI)
 
 set -eu
 cd "$(dirname "$0")"
@@ -53,6 +54,10 @@ if [ "${1:-}" = --check ]; then
 	"$BIN/$TW" --input input.css --output "$BIN/check.css" --minify 2>/dev/null
 	cmp -s "$BIN/check.css" "$OUT" || { echo "build.sh: $OUT is stale, run ui/build.sh" >&2; exit 1; }
 	echo "ui.css is up to date"
+	# SIMPLE-UI.md §2: the whole UI stays within 128 KB gzipped (no minifier)
+	GZ=$(find ../root/www/alphawrt -type f -exec cat {} + | gzip -9 | wc -c | tr -d ' ')
+	echo "UI size: $GZ bytes gzipped (limit 131072)"
+	[ "$GZ" -le 131072 ] || { echo "build.sh: the UI is over the 128 KB gzipped budget" >&2; exit 1; }
 else
 	"$BIN/$TW" --input input.css --output "$OUT" --minify
 	echo "wrote $OUT ($(wc -c < "$OUT") bytes)"

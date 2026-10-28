@@ -4,7 +4,17 @@
 
 /* Menu renderer for the AlphaWRT theme, based on menu-bootstrap.js.
  * Adds "active" classes for the current section and page, and ARIA state for
- * the dropdown groups (opened by nav.js on narrow screens). */
+ * the dropdown groups (opened by nav.js on narrow screens). The pages people
+ * open most also get their own place in the bar, ahead of the groups, when
+ * they are installed; the groups still list everything. */
+
+/* path under admin/, label in the bar */
+const SHORTCUTS = [
+	[ 'status/fibre', _('Fibre') ],
+	[ 'network/network', _('Interfaces') ],
+	[ 'network/wireless', _('Wireless') ],
+	[ 'services/pihole', _('Pi-hole') ]
+];
 
 return baseclass.extend({
 	__init__() {
@@ -65,11 +75,32 @@ return baseclass.extend({
 		if (children.length == 0 || level > 1)
 			return E([]);
 
+		let shortcut = null;
+
+		if (!level) {
+			SHORTCUTS.forEach(([ path, label ]) => {
+				const [ group, page ] = path.split('/');
+				const node = tree.children[group]?.children?.[page];
+
+				if (!node?.satisfied)
+					return;
+
+				const isActive = L.env.dispatchpath[1] == group && L.env.dispatchpath[2] == page;
+
+				if (isActive)
+					shortcut = group;
+
+				ul.appendChild(E('li', { 'class': 'shortcut topmenu-%s%s'.format(page, isActive ? ' active' : '') }, [
+					E('a', { 'href': L.url(url, group, page), 'aria-current': isActive ? 'page' : null }, [ label ])
+				]));
+			});
+		}
+
 		children.forEach(child => {
 			const submenu = this.renderMainMenu(child, url + '/' + child.name, (level || 0) + 1);
 			const hasSub = !level && submenu.firstElementChild;
-			const isActive = (L.env.dispatchpath[(level || 0) + 1] == child.name);
-			/* topmenu-<name>: lets the stylesheet place Quick Setup and Log out */
+			const isActive = (L.env.dispatchpath[(level || 0) + 1] == child.name) && (level || shortcut != child.name);
+			/* topmenu-<name>: lets the stylesheet place Log out */
 			const classes = [ hasSub ? 'dropdown' : null, isActive ? 'active' : null,
 				level ? null : 'topmenu-' + child.name ].filter(Boolean).join(' ');
 

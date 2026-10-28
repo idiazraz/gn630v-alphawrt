@@ -3,22 +3,167 @@
 		"description": "Grant access to the AlphaWRT Simple UI (/)",
 		"read": {
 			"ubus": {
-				"alphawrt": [ "banks", "presets", "stock_identity", "pon_info", "line" ],
-				"iwinfo": [ "assoclist", "info" ],
-				"luci-rpc": [ "getDHCPLeases", "getHostHints" ],
-				"network.device": [ "status" ],
-				"network.interface": [ "dump", "status" ],
-				"network.wireless": [ "status" ],
-				"omci.agent": [ "status" ],
-				"system": [ "board", "info" ],
-				"uci": [ "get" ]
+				"alphawrt": [
+					"banks",
+					"presets",
+					"stock_identity",
+					"pon_info",
+					"line",
+					"cpu"
+				],
+				"iwinfo": [
+					"assoclist",
+					"info"
+				],
+				"luci-rpc": [
+					"getDHCPLeases",
+					"getHostHints"
+				],
+				"network.device": [
+					"status"
+				],
+				"network.interface": [
+					"dump",
+					"status"
+				],
+				"network.wireless": [
+					"status"
+				],
+				"omci.agent": [
+					"status"
+				],
+				"system": [
+					"board",
+					"info"
+				],
+				"uci": [
+					"get"
+				],
+				"alphawrt.wifi": [
+					"status"
+				],
+				"alphawrt-homelab": [
+					"status"
+				],
+				"alphawrt.fibre": [
+					"topology"
+				],
+				"alphawrt-pihole": [
+					"status",
+					"presets",
+					"stats",
+					"lists"
+				],
+				"luci.wireguard": [
+					"getWgInstances"
+				]
 			},
-			"uci": [ "alphawrt", "dhcp", "dnsproxy", "network", "wireless" ]
+			"uci": [
+				"alphawrt",
+				"dhcp",
+				"dnsproxy",
+				"network",
+				"wireless",
+				"usteer",
+				"firewall",
+				"system",
+				"omci",
+				"pihole"
+			],
+			"cgi-io": [
+				"backup"
+			]
 		},
 		"write": {
+			"cgi-io": [
+				"upload"
+			],
+			"file": {
+				"/tmp/firmware.bin": [
+					"write"
+				],
+				"/tmp/backup.tar.gz": [
+					"write"
+				],
+				"/bin/tar -tzf /tmp/backup.tar.gz": [
+					"exec"
+				],
+				"/usr/libexec/alphawrt-ui/flash test": [
+					"exec"
+				],
+				"/usr/libexec/alphawrt-ui/flash keep": [
+					"exec"
+				],
+				"/usr/libexec/alphawrt-ui/flash fresh": [
+					"exec"
+				],
+				"/usr/libexec/alphawrt-ui/flash restore": [
+					"exec"
+				],
+				"/sbin/reboot": [
+					"exec"
+				]
+			},
 			"ubus": {
-				"session": [ "set", "destroy" ]
-			}
+				"session": [
+					"set",
+					"destroy"
+				],
+				"uci": [
+					"set",
+					"delete",
+					"add",
+					"apply",
+					"confirm",
+					"revert",
+					"changes"
+				],
+				"file": [
+					"exec",
+					"remove"
+				],
+				"system": [
+					"validate_firmware_image",
+					"reboot"
+				],
+				"luci": [
+					"setPassword",
+					"setLocaltime"
+				],
+				"alphawrt": [
+					"set_bank",
+					"set_identity"
+				],
+				"alphawrt.wifi": [
+					"guest_setup"
+				],
+				"alphawrt-homelab": [
+					"set_service",
+					"set_ssh",
+					"wol"
+				],
+				"alphawrt-pihole": [
+					"set",
+					"update",
+					"pause",
+					"set_lists"
+				],
+				"luci.wireguard": [
+					"generateKeyPair",
+					"getPublicAndPrivateKeyFromPrivate",
+					"generatePsk"
+				]
+			},
+			"uci": [
+				"dhcp",
+				"wireless",
+				"usteer",
+				"firewall",
+				"system",
+				"network",
+				"alphawrt",
+				"pihole"
+			]
 		}
 	}
 }

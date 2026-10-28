@@ -7,83 +7,82 @@
  * Licensed under the Apache License v2.0
  * http://www.apache.org/licenses/LICENSE-2.0
  *
- * Look: native macOS / iOS conventions (system font, grouped panels, capsule
- * buttons, segmented tabs, switches, frosted header, menus and sheets).
+ * Look: the AlphaWRT Simple UI (daisyUI 5, flat surfaces with hairline
+ * borders), drawn onto LuCI's own markup without shipping daisyUI.
  *
  * Colour roles:
- *   blue     system accent: selection, links, switches, gauges, focus
- *   crimson  brand: the logo, the wordmark, the one primary action
- *   silver   materials, separators and secondary text
+ *   blue     primary: actions, selection, links, switches, gauges, focus
+ *   red      brand: the logo and wordmark
+ *   greys    surfaces (base-100/200/300), separators and secondary text
  */
 
 /* Tokens
- * ------ */
+ * ------
+ * The Simple UI's daisyUI themes "alphawrt" and "alphawrt-dark"
+ * (alphawrt-ui/ui/input.css), mapped onto LuCI's markup. Keep the two in step. */
 
 :root {
 	/* light (default when the browser has no preference) */
-	--bg: oklch(0.965 0.003 255);
-	--surface: oklch(1 0 0);
-	--surface-2: oklch(0.955 0.004 255);
-	--surface-3: oklch(0.915 0.006 255);
-	--field: oklch(1 0 0);
-	--line: oklch(0.905 0.005 255);
-	--line-strong: oklch(0.62 0.010 255);
-	--fill: oklch(0.55 0.012 255 / 0.12);
-	--fill-strong: oklch(0.55 0.012 255 / 0.20);
+	--bg: #f3f5f8;              /* base-200 */
+	--surface: #ffffff;         /* base-100 */
+	--surface-2: #f3f5f8;       /* base-200 */
+	--surface-3: #e2e6ed;       /* base-300 */
+	--field: var(--surface);
+	--line: var(--surface-3);
+	--line-strong: color-mix(in oklab, var(--ink) 20%, transparent);
+	--fill: color-mix(in oklab, var(--ink) 6%, transparent);
+	--fill-strong: color-mix(in oklab, var(--ink) 11%, transparent);
 
-	--ink: oklch(0.21 0.005 255);
-	--ink-2: oklch(0.42 0.008 255);
-	--ink-3: oklch(0.50 0.009 255);
+	--ink: #1c1d21;             /* base-content */
+	--ink-2: color-mix(in oklab, var(--ink) 75%, var(--surface));
+	--ink-3: color-mix(in oklab, var(--ink) 62%, var(--surface));
 
-	--accent: oklch(0.55 0.200 257);
-	--accent-ink: oklch(0.49 0.185 257);
-	--on-accent: oklch(1 0 0);
-	--accent-tint: oklch(0.55 0.200 257 / 0.12);
-	--focus-ring: 0 0 0 3px oklch(0.55 0.200 257 / 0.40);
+	--accent: #1f6fe5;          /* primary */
+	--accent-ink: var(--accent);
+	--on-accent: #ffffff;
+	--accent-hover: color-mix(in oklab, var(--accent), #000 10%);
+	--accent-tint: color-mix(in oklab, var(--accent) 12%, transparent);
+	--focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent) 35%, transparent);
 
-	--crimson: oklch(0.52 0.200 22);
-	--crimson-hover: oklch(0.46 0.190 22);
-	--crimson-ink: oklch(0.50 0.190 22);
-	--on-crimson: oklch(1 0 0);
+	--crimson: #c41e3a;         /* accent: the logo and brand only */
 
-	--ok: oklch(0.50 0.130 150);
-	--warn: oklch(0.52 0.120 70);
-	--err: oklch(0.53 0.190 30);
-	--on-err: oklch(1 0 0);
-	--ok-tint: oklch(0.60 0.150 150 / 0.12);
-	--warn-tint: oklch(0.80 0.150 82 / 0.22);
-	--err-tint: oklch(0.60 0.200 30 / 0.10);
+	--ok: #15803d;
+	--warn: #b45309;
+	--err: #d92d20;
+	--on-err: #ffffff;
+	--ok-tint: color-mix(in oklab, var(--ok) 12%, transparent);
+	--warn-tint: color-mix(in oklab, var(--warn) 12%, transparent);
+	--err-tint: color-mix(in oklab, var(--err) 10%, transparent);
 
 	/* logo (logo.svg#mark and #word read these) */
-	--logo-shade: oklch(0.42 0.165 22);
-	--logo-glyph: oklch(0.53 0.200 22);
-	--logo-hi: oklch(0.62 0.200 22);
-	--logo-blade: var(--accent);
-	--logo-word: var(--ink);
-	--logo-word-accent: var(--crimson-ink);
+	--logo-a: var(--crimson);
+	--logo-b: var(--accent);
+	--logo-t: var(--ink);
 
-	/* materials */
-	--glass: oklch(0.99 0.002 255 / 0.72);
-	--glass-strong: oklch(0.99 0.002 255 / 0.86);
-	--glass-line: oklch(0.2 0.01 255 / 0.10);
-	--seg-bg: oklch(0.55 0.012 255 / 0.13);
-	--seg-on: oklch(1 0 0);
-	--shadow-sm: 0 1px 2px oklch(0.2 0.02 255 / 0.10), 0 0 0 0.5px oklch(0.2 0.02 255 / 0.06);
-	--shadow-pop: 0 10px 30px oklch(0.2 0.02 255 / 0.16), 0 1px 3px oklch(0.2 0.02 255 / 0.10), 0 0 0 0.5px oklch(0.2 0.02 255 / 0.10);
-	--overlay: oklch(0.2 0.01 255 / 0.28);
+	/* flat surfaces (daisyUI depth 0): popovers get a soft shadow only */
+	--seg-bg: var(--surface-3);
+	--seg-on: var(--surface);
+	--shadow-sm: none;
+	--shadow-pop: 0 8px 24px oklch(0.2 0.02 255 / 0.12), 0 0 0 1px var(--line);
+	--overlay: oklch(0.2 0.01 255 / 0.35);
 
-	/* geometry */
-	--r-sm: 5px;
-	--r-field: 8px;
-	--r-menu: 12px;
-	--r-panel: 14px;
-	--r-sheet: 22px;
-	--control-h: 32px;
-	--gutter: 28px;
+	/* geometry: daisyUI radius-field, radius-box, radius-selector */
+	--btn: var(--surface-2);
+	--btn-hover: var(--surface-3);
+
+	--r-sm: 4px;
+	--r-field: 0.5rem;
+	--r-menu: 0.75rem;
+	--r-panel: 1rem;
+	--r-sheet: 1rem;
+	--r-badge: 1rem;
+	--control-h: 2.5rem;
+	--gutter: 32px;
 	--ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
-	--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
-	--font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+	/* Tailwind's default stacks, as in the Simple UI */
+	--font-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+	--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
 	/* names used by other LuCI apps that were written against Bootstrap */
 	--background-color-high: var(--surface);
@@ -116,58 +115,32 @@
 }
 
 :root[data-darkmode="true"] {
-	--bg: oklch(0.135 0.004 255);
-	--surface: oklch(0.205 0.005 255);
-	--surface-2: oklch(0.255 0.006 255);
-	--surface-3: oklch(0.31 0.007 255);
-	--field: oklch(0.175 0.005 255);
-	--line: oklch(0.30 0.006 255);
-	--line-strong: oklch(0.52 0.010 255);
-	--fill: oklch(0.75 0.010 255 / 0.14);
-	--fill-strong: oklch(0.75 0.010 255 / 0.24);
+	--bg: #121317;
+	--surface: #1a1b20;
+	--surface-2: #121317;
+	--surface-3: #2c2e36;
 
-	--ink: oklch(0.96 0.003 255);
-	--ink-2: oklch(0.80 0.008 255);
-	--ink-3: oklch(0.71 0.010 255);
+	--ink: #f3f4f6;
 
-	--accent: oklch(0.56 0.190 257);
-	--accent-ink: oklch(0.75 0.140 250);
-	--accent-tint: oklch(0.68 0.180 252 / 0.22);
-	--focus-ring: 0 0 0 3px oklch(0.68 0.180 252 / 0.50);
+	--accent: #5aa2ff;
+	--on-accent: #0b1220;
+	--accent-hover: color-mix(in oklab, var(--accent), #fff 12%);
+	--accent-tint: color-mix(in oklab, var(--accent) 18%, transparent);
 
-	--crimson: oklch(0.54 0.200 22);
-	--crimson-hover: oklch(0.49 0.190 22);
-	--crimson-ink: oklch(0.72 0.165 20);
+	--crimson: #ff5a6e;
 
-	--ok: oklch(0.79 0.150 152);
-	--warn: oklch(0.84 0.140 82);
-	--err: oklch(0.72 0.170 30);
-	--on-err: oklch(0.16 0.010 30);
-	--ok-tint: oklch(0.79 0.150 152 / 0.13);
-	--warn-tint: oklch(0.84 0.140 82 / 0.13);
-	--err-tint: oklch(0.72 0.170 30 / 0.15);
+	--ok: #4ade80;
+	--warn: #fbbf24;
+	--err: #f87171;
+	--on-err: #2a0505;
+	--err-tint: color-mix(in oklab, var(--err) 14%, transparent);
 
-	--logo-blade: oklch(0.66 0.170 250);
-
-	--glass: oklch(0.21 0.005 255 / 0.70);
-	--glass-strong: oklch(0.23 0.005 255 / 0.86);
-	--glass-line: oklch(1 0 0 / 0.10);
-	--seg-bg: oklch(0.75 0.010 255 / 0.14);
-	--seg-on: oklch(0.42 0.008 255);
-	--shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
-	--shadow-pop: 0 14px 40px oklch(0 0 0 / 0.55), 0 0 0 0.5px oklch(1 0 0 / 0.12);
-	--overlay: oklch(0 0 0 / 0.5);
+	--btn: var(--surface-3);
+	--btn-hover: color-mix(in oklab, var(--surface-3), #fff 8%);
+	--shadow-pop: 0 10px 30px oklch(0 0 0 / 0.5), 0 0 0 1px var(--line);
+	--overlay: oklch(0 0 0 / 0.55);
 
 	color-scheme: dark;
-}
-
-/* glass needs blur behind it; without it (or when asked) use solid surfaces */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-	:root { --glass: var(--surface); --glass-strong: var(--surface); }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-	:root, :root[data-darkmode="true"] { --glass: var(--surface); --glass-strong: var(--surface); }
 }
 
 /* Reset
@@ -285,9 +258,8 @@ body {
 	background-color: var(--bg);
 	color: var(--ink);
 	font-family: var(--font-sans);
-	font-size: 14px;
-	line-height: 1.45;
-	letter-spacing: -0.003em;
+	font-size: 16px;
+	line-height: 1.5;
 	font-variant-numeric: tabular-nums;
 	min-height: 100%;
 	display: flex;
@@ -305,7 +277,7 @@ body {
 }
 
 #maincontent {
-	padding-top: 28px;
+	padding-top: 32px;
 	padding-bottom: 32px;
 	flex: 1 0 auto;
 }
@@ -336,7 +308,7 @@ p,
 .cbi-map-descr,
 .cbi-section-descr,
 .table .tr.cbi-section-table-descr .th {
-	font-size: 14px;
+	font-size: 15px;
 	line-height: 1.5;
 	margin-bottom: 12px;
 }
@@ -365,12 +337,12 @@ h1 small, h2 small, h3 small, h4 small, h5 small, h6 small {
 	font-weight: 400;
 }
 
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 16px; }
-h2 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
-h3, legend { font-size: 17px; letter-spacing: -0.01em; margin-bottom: 10px; }
-h4 { font-size: 15px; margin-bottom: 8px; }
-h5 { font-size: 14px; margin-bottom: 6px; }
-h6 { font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+/* text-2xl font-bold page titles, text-lg card titles */
+h1, h2 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+h3, legend { font-size: 18px; margin-bottom: 12px; }
+h4 { font-size: 16px; margin-bottom: 8px; }
+h5 { font-size: 15px; margin-bottom: 6px; }
+h6 { font-size: 14px; color: var(--ink-2); margin-bottom: 6px; }
 
 ul, ol {
 	margin: 0 0 16px 22px;
@@ -476,7 +448,7 @@ label, input, button, select {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
-	padding: 11px 0;
+	padding: 12px 0;
 }
 
 .cbi-value + .cbi-value {
@@ -490,12 +462,13 @@ label, input, button, select {
 }
 
 .cbi-value label.cbi-value-title {
-	padding-top: 6px;
+	padding-top: 9px;
 	font-size: 14px;
 	line-height: 20px;
 	flex: 0 0 220px;
 	text-align: left;
 	color: var(--ink);
+	font-weight: 500;
 }
 
 .cbi-value > .cbi-section,
@@ -521,7 +494,7 @@ select,
 	display: inline-block;
 	width: 260px;
 	max-width: 100%;
-	padding: 0 10px;
+	padding: 0 12px;
 	background: var(--field);
 	color: var(--ink);
 	font-size: 14px;
@@ -921,8 +894,7 @@ textarea[readonly] {
 	width: 100%;
 }
 
-/* Page actions: a floating glass toolbar that stays in reach at the bottom
- * of long forms. */
+/* Page actions: a sticky bar that stays in reach at the bottom of long forms. */
 .actions,
 .cbi-page-actions {
 	position: sticky;
@@ -936,11 +908,9 @@ textarea[readonly] {
 	width: fit-content;
 	max-width: 100%;
 	margin: 16px 0 0 auto;
-	padding: 7px;
-	background: var(--glass);
-	-webkit-backdrop-filter: saturate(180%) blur(20px);
-	backdrop-filter: saturate(180%) blur(20px);
-	border-radius: 999px;
+	padding: 8px;
+	background: var(--surface);
+	border-radius: var(--r-panel);
 	box-shadow: var(--shadow-pop);
 }
 
@@ -974,7 +944,7 @@ textarea[readonly] {
 .table .th, .table .td {
 	display: table-cell;
 	vertical-align: middle;
-	padding: 9px 12px;
+	padding: 10px 12px;
 	line-height: 20px;
 	text-align: left;
 	border-top: 1px solid var(--line);
@@ -989,8 +959,8 @@ textarea[readonly] {
 }
 
 .table .th {
-	font-size: 12.5px;
-	font-weight: 500;
+	font-size: 12px;
+	font-weight: 600;
 	color: var(--ink-3);
 	vertical-align: bottom;
 	padding-top: 2px;
@@ -1026,7 +996,7 @@ textarea[readonly] {
 
 /* Header and navigation
  * ---------------------
- * A frosted bar in the window's own appearance, like a macOS toolbar. */
+ * The Simple UI's top bar: base-100 with a hairline under it. */
 
 header {
 	position: sticky;
@@ -1035,11 +1005,9 @@ header {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	min-height: 52px;
-	background: var(--glass);
-	-webkit-backdrop-filter: saturate(180%) blur(20px);
-	backdrop-filter: saturate(180%) blur(20px);
-	border-bottom: 1px solid var(--glass-line);
+	min-height: 56px;
+	background: var(--surface);
+	border-bottom: 1px solid var(--line);
 	padding: 0 max(var(--gutter), calc((100% - 1200px) / 2 + var(--gutter)));
 }
 
@@ -1062,8 +1030,8 @@ header .brand {
 }
 
 header .brand-mark {
-	width: 37px;
-	height: 30px;
+	width: 32px;
+	height: 32px;
 	flex: none;
 }
 
@@ -1076,8 +1044,36 @@ header .brand-text {
 
 header .brand-word {
 	display: block;
-	width: 107px;
-	height: 13px;
+	width: 91px;
+	height: 20px;
+}
+
+/* back to the Simple UI at /, at the far right like a menu item */
+header .to-simple {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 36px;
+	padding: 0 12px;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--accent-ink);
+	border: 1px solid var(--line);
+	border-radius: var(--r-field);
+	white-space: nowrap;
+}
+
+header .to-simple::before {
+	content: "";
+	width: 14px;
+	height: 14px;
+	background: currentColor;
+	-webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'/></svg>") center/contain no-repeat;
+	mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z'/></svg>") center/contain no-repeat;
+}
+
+header .to-simple:hover {
+	background: var(--accent-tint);
 }
 
 header .brand-host {
@@ -1123,12 +1119,12 @@ header p {
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	height: 30px;
+	height: 36px;
 	padding: 0 12px;
 	font-size: 14px;
 	font-weight: 500;
 	color: var(--ink-2);
-	border-radius: 999px;
+	border-radius: var(--r-field);
 	transition: color .15s, background-color .15s;
 }
 
@@ -1139,33 +1135,34 @@ header p {
 	background: var(--fill);
 }
 
-/* Quick Setup and Log out sit at the right end of the bar, Quick Setup as
- * the one highlighted action there */
+/* Log out sits at the right end of the bar */
 header #topmenu {
 	flex: 1;
 }
 
-/* the Basic/Advanced switch, then Quick Setup, then Log out */
-.nav > li.topmenu-basic,
-.nav > li.topmenu-advanced,
-.nav > li.topmenu-quicksetup {
+.nav > li.topmenu-logout {
 	margin-left: auto;
 }
 
-.nav > li.topmenu-basic ~ li.topmenu-quicksetup,
-.nav > li.topmenu-advanced ~ li.topmenu-quicksetup {
-	margin-left: 0;
+/* Pi-hole is a highlight of the firmware: a brand-red dot before it */
+.nav > li.topmenu-pihole > a::before {
+	content: "";
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--crimson);
 }
 
-.nav > li.topmenu-quicksetup > a {
-	color: var(--accent-ink);
-	box-shadow: inset 0 0 0 1px var(--accent-tint);
+/* the groups after the shortcuts read as "more" */
+.nav > li.shortcut + li.dropdown:not(.shortcut) {
+	margin-left: 8px;
 }
 
-/* current section: a tinted capsule, like a selected toolbar item */
-.nav > li.active > a {
-	color: var(--accent-ink);
-	background: var(--accent-tint);
+/* current section: menu-active, as in the Simple UI's sidebar */
+.nav > li.active > a,
+.nav > li.active > a:hover {
+	color: var(--on-accent);
+	background: var(--accent);
 }
 
 a.menu::before {
@@ -1183,7 +1180,7 @@ li.menu, .dropdown {
 	position: relative;
 }
 
-/* menus: frosted popovers with an accent highlight, like macOS menus */
+/* menus: daisyUI dropdown menus */
 .dropdown-menu {
 	display: none;
 	position: absolute;
@@ -1192,11 +1189,9 @@ li.menu, .dropdown {
 	z-index: 900;
 	min-width: max(100%, 210px);
 	margin: 0;
-	padding: 5px;
+	padding: 6px;
 	list-style: none;
-	background: var(--glass-strong);
-	-webkit-backdrop-filter: saturate(180%) blur(24px);
-	backdrop-filter: saturate(180%) blur(24px);
+	background: var(--surface);
 	border-radius: var(--r-menu);
 	box-shadow: var(--shadow-pop);
 }
@@ -1234,29 +1229,20 @@ li.menu, .dropdown {
 	font-size: 14px;
 	line-height: 20px;
 	color: var(--ink);
-	border-radius: 7px;
+	border-radius: var(--r-field);
 	white-space: nowrap;
 }
 
 .dropdown-menu a:hover,
 .dropdown-menu a:focus-visible {
-	background: var(--accent);
-	color: var(--on-accent);
+	background: var(--fill-strong);
+	text-decoration: none;
 	outline: none;
 }
 
 .dropdown-menu li.active > a {
-	font-weight: 600;
-}
-
-.dropdown-menu li.active > a::before {
-	content: "";
-	display: inline-block;
-	width: 6px;
-	height: 6px;
-	margin: 0 8px 1px -2px;
-	border-radius: 50%;
-	background: currentColor;
+	background: var(--accent);
+	color: var(--on-accent);
 }
 
 .dropdown-menu .dropdown-menu {
@@ -1269,14 +1255,14 @@ li.menu, .dropdown {
 header [data-indicator] {
 	display: inline-flex;
 	align-items: center;
-	padding: 2px 9px;
+	padding: 2px 10px;
 	font-size: 12px;
 	font-weight: 500;
 	line-height: 18px;
 	color: var(--ink-2);
 	white-space: nowrap;
 	background-color: var(--fill);
-	border-radius: 999px;
+	border-radius: var(--r-badge);
 	text-decoration: none;
 }
 
@@ -1317,8 +1303,8 @@ a.label:hover {
 }
 
 .label.important {
-	background-color: var(--crimson);
-	color: var(--on-crimson);
+	background-color: var(--accent);
+	color: var(--on-accent);
 }
 
 .label.warning {
@@ -1345,12 +1331,12 @@ a.label:hover {
 	width: fit-content;
 	max-width: 100%;
 	margin: 0 0 20px;
-	padding: 2px;
+	padding: 4px;
 	list-style: none;
 	overflow-x: auto;
 	scrollbar-width: none;
 	background: var(--seg-bg);
-	border-radius: 9px;
+	border-radius: calc(var(--r-field) + 4px);
 }
 
 .tabs::-webkit-scrollbar, .cbi-tabmenu::-webkit-scrollbar {
@@ -1363,20 +1349,20 @@ a.label:hover {
 	align-items: center;
 	position: relative;
 	color: var(--ink-2);
-	border-radius: 7px;
+	border-radius: var(--r-field);
 	transition: background-color .15s, color .15s;
 }
 
 .tabs > li > a, .cbi-tabmenu > li > a {
 	display: block;
-	padding: 4px 14px;
-	font-size: 13.5px;
+	padding: 6px 14px;
+	font-size: 14px;
 	font-weight: 500;
 	line-height: 20px;
 	white-space: nowrap;
 	color: inherit;
 	text-decoration: none;
-	border-radius: 7px;
+	border-radius: var(--r-field);
 }
 
 .tabs > li:not(.active):hover, .cbi-tabmenu > .cbi-tab-disabled:hover {
@@ -1477,9 +1463,10 @@ footer ul.breadcrumb {
 .cbi-section,
 .cbi-section-error,
 #cbi-network-switch_vlan {
-	margin: 0 0 20px;
-	padding: 16px 20px 14px;
+	margin: 0 0 16px;
+	padding: 20px 24px;
 	background: var(--surface);
+	border: 1px solid var(--line);
 	border-radius: var(--r-panel);
 }
 
@@ -1492,6 +1479,7 @@ footer ul.breadcrumb {
 .cbi-section .cbi-section-error {
 	padding: 0;
 	background: none;
+	border: 0;
 	border-radius: 0;
 }
 
@@ -1522,8 +1510,8 @@ footer ul.breadcrumb {
 /* hover fill reaches the panel edge instead of stopping at the cell text */
 .cbi-section-table .td:first-child { padding-left: 10px; }
 .cbi-section-table .td:last-child { padding-right: 10px; }
-.cbi-section-table .td:first-child { border-radius: 9px 0 0 9px; }
-.cbi-section-table .td:last-child { border-radius: 0 9px 9px 0; }
+.cbi-section-table .td:first-child { border-radius: var(--r-field) 0 0 var(--r-field); }
+.cbi-section-table .td:last-child { border-radius: 0 var(--r-field) var(--r-field) 0; }
 
 .cbi-section-table .tr.cbi-section-table-descr .th {
 	font-weight: 400;
@@ -1616,7 +1604,7 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 .cbi-value-description {
 	margin: 6px 0 0;
 	position: relative;
-	font-size: 12.5px;
+	font-size: 13px;
 	color: var(--ink-3);
 	max-width: 70ch;
 }
@@ -1635,28 +1623,28 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 
 /* Buttons
  * -------
- * Capsules. Grey fill by default; crimson only for the primary action;
- * blue-tinted for the main action of a table row; red text for destructive. */
+ * daisyUI btn: base-200 fill by default, solid primary for the main action,
+ * soft primary for a table row's main action, red for destructive. */
 
 .btn,
 .cbi-button {
 	--on-color: var(--ink);
-	--btn-bg: var(--fill);
+	--btn-bg: var(--btn);
 
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
 	min-height: var(--control-h);
-	padding: 0 15px;
+	padding: 0 16px;
 	background: var(--btn-bg);
 	color: var(--on-color);
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
 	line-height: 1.2;
 	text-decoration: none;
 	border: 0;
-	border-radius: 999px;
+	border-radius: var(--r-field);
 	white-space: pre;
 	cursor: pointer;
 	vertical-align: middle;
@@ -1664,7 +1652,7 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 
 .btn:hover,
 .cbi-button:hover {
-	--btn-bg: var(--fill-strong);
+	--btn-bg: var(--btn-hover);
 	color: var(--on-color);
 	text-decoration: none;
 }
@@ -1711,14 +1699,14 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 	--btn-bg: var(--err-tint);
 }
 
-/* primary: solid crimson */
+/* primary: solid blue */
 .btn.primary,
 .cbi-button.important,
 .cbi-page-actions .cbi-button-apply,
 .modal .cbi-button-positive,
 .modal .cbi-button-action.important {
-	--on-color: var(--on-crimson);
-	--btn-bg: var(--crimson);
+	--on-color: var(--on-accent);
+	--btn-bg: var(--accent);
 }
 
 .btn.primary:hover,
@@ -1726,8 +1714,8 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 .cbi-page-actions .cbi-button-apply:hover,
 .modal .cbi-button-positive:hover,
 .modal .cbi-button-action.important:hover {
-	--on-color: var(--on-crimson);
-	--btn-bg: var(--crimson-hover);
+	--on-color: var(--on-accent);
+	--btn-bg: var(--accent-hover);
 }
 
 /* row actions stay tinted even when LuCI marks them important */
@@ -1758,15 +1746,15 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 }
 
 .btn.large {
-	font-size: 15px;
-	min-height: 40px;
-	padding: 0 20px;
+	font-size: 16px;
+	min-height: 48px;
+	padding: 0 24px;
 }
 
 .btn.small {
-	min-height: 26px;
-	padding: 0 11px;
-	font-size: 12.5px;
+	min-height: 32px;
+	padding: 0 12px;
+	font-size: 12px;
 }
 
 .cbi-button.drag-handle {
@@ -1913,10 +1901,8 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 .cbi-dropdown[open] > ul.dropdown {
 	display: block;
 	line-height: 1.4;
-	padding: 5px;
-	background: var(--glass-strong);
-	-webkit-backdrop-filter: saturate(180%) blur(24px);
-	backdrop-filter: saturate(180%) blur(24px);
+	padding: 6px;
+	background: var(--surface);
 	border-radius: var(--r-menu);
 	box-shadow: var(--shadow-pop);
 	position: absolute;
@@ -1953,7 +1939,7 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 
 .cbi-dropdown[open] > ul.dropdown > li {
 	padding: .35em 10px;
-	border-radius: 7px;
+	border-radius: var(--r-field);
 }
 
 .cbi-dropdown[open] > ul.dropdown > li[selected] {
@@ -2001,9 +1987,7 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 	z-index: 1000;
 	left: -10000px;
 	padding: 6px 10px;
-	background: var(--glass-strong);
-	-webkit-backdrop-filter: blur(20px);
-	backdrop-filter: blur(20px);
+	background: var(--surface);
 	color: var(--ink);
 	border-radius: var(--r-field);
 	box-shadow: var(--shadow-pop);
@@ -2029,17 +2013,17 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 .cbi-progressbar {
 	position: relative;
 	min-width: 170px;
-	height: 6px;
+	height: 8px;
 	margin: 1.6em 0 4px 0;
 	background: var(--fill-strong);
-	border-radius: 3px;
+	border-radius: var(--r-badge);
 }
 
 .cbi-progressbar > div {
 	height: 100%;
 	width: 0%;
 	background: var(--accent);
-	border-radius: 3px;
+	border-radius: var(--r-badge);
 	transition: width .4s var(--ease-out);
 }
 
@@ -2104,7 +2088,8 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 	white-space: nowrap;
 	line-height: 1.35;
 	background: var(--surface-2);
-	border-radius: 11px;
+	border: 1px solid var(--line);
+	border-radius: var(--r-field);
 }
 
 .ifacebox .ifacebox-head {
@@ -2114,7 +2099,7 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 }
 
 .ifacebox > .ifacebox-head:first-child {
-	border-radius: 11px 11px 0 0;
+	border-radius: calc(var(--r-field) - 1px) calc(var(--r-field) - 1px) 0 0;
 }
 
 .ifacebox .ifacebox-head.active {
@@ -2233,8 +2218,8 @@ th[data-sort-direction="desc"]::after { content: "\a0\25bc"; }
 
 .zonebadge {
 	display: inline-block;
-	padding: 2px 8px;
-	border-radius: 6px;
+	padding: 2px 10px;
+	border-radius: var(--r-badge);
 	white-space: nowrap;
 	color: var(--ink);
 }
@@ -2289,10 +2274,11 @@ div.cbi-value var.cbi-tooltip-container,
 .alert-message {
 	position: relative;
 	margin-bottom: 14px;
-	padding: 12px 16px;
+	padding: 16px;
 	color: var(--ink);
 	background: var(--warn-tint);
-	border-radius: 12px;
+	border: 1px solid color-mix(in oklab, var(--warn) 20%, transparent);
+	border-radius: var(--r-panel);
 	white-space: unset;
 }
 
@@ -2330,6 +2316,7 @@ div.cbi-value var.cbi-tooltip-container,
 .alert-message.danger,
 .alert-message.error {
 	background: var(--err-tint);
+	border-color: color-mix(in oklab, var(--err) 20%, transparent);
 }
 
 .alert-message.danger h4,
@@ -2339,6 +2326,7 @@ div.cbi-value var.cbi-tooltip-container,
 
 .alert-message.success {
 	background: var(--ok-tint);
+	border-color: color-mix(in oklab, var(--ok) 20%, transparent);
 }
 
 .alert-message.success h4 {
@@ -2347,6 +2335,7 @@ div.cbi-value var.cbi-tooltip-container,
 
 .alert-message.info {
 	background: var(--accent-tint);
+	border-color: color-mix(in oklab, var(--accent) 20%, transparent);
 }
 
 .alert-message.info h4 {
@@ -2354,7 +2343,8 @@ div.cbi-value var.cbi-tooltip-container,
 }
 
 .alert-message.notice {
-	background: var(--fill);
+	background: var(--surface-2);
+	border-color: var(--line);
 }
 
 .alert-message.notice h4 {
@@ -2406,11 +2396,9 @@ div.cbi-value var.cbi-tooltip-container,
 	min-width: 270px;
 	min-height: 32px;
 	margin: 8vh auto;
-	padding: 22px 24px 18px;
+	padding: 24px;
 	color: var(--ink);
-	background: var(--glass-strong);
-	-webkit-backdrop-filter: saturate(180%) blur(30px);
-	backdrop-filter: saturate(180%) blur(30px);
+	background: var(--surface);
 	border-radius: var(--r-sheet);
 	box-shadow: var(--shadow-pop);
 	transform: scale(.97);
@@ -2424,7 +2412,7 @@ div.cbi-value var.cbi-tooltip-container,
 }
 
 .modal > h4:first-child {
-	font-size: 17px;
+	font-size: 18px;
 }
 
 .modal > pre,
@@ -2765,12 +2753,13 @@ form.inline { display: inline; margin-bottom: 0; }
 
 /* realtime graphs draw their own svg */
 #view div[style] > svg {
-	background-color: var(--surface-2) !important;
-	border-radius: var(--r-field);
+	background-color: var(--surface) !important;
+	border: 1px solid var(--line);
+	border-radius: var(--r-panel);
 }
 
 #view div[style] > svg line[style] {
-	stroke: var(--line-strong) !important;
+	stroke: var(--line) !important;
 }
 
 #view div[style] > svg text {
@@ -2828,43 +2817,7 @@ body[data-page="admin-status-overview"] .cbi-title .label.notice {
 
 /* Login
  * -----
- * Always dark: a frosted card over a crimson and blue "wallpaper". */
-
-body.login-page {
-	--surface: oklch(0.24 0.006 255 / 0.55);
-	--surface-2: oklch(0.30 0.007 255);
-	--field: oklch(0.16 0.005 255 / 0.65);
-	--line: oklch(1 0 0 / 0.10);
-	--line-strong: oklch(1 0 0 / 0.30);
-	--fill: oklch(1 0 0 / 0.12);
-	--fill-strong: oklch(1 0 0 / 0.20);
-	--ink: oklch(0.97 0.003 255);
-	--ink-2: oklch(0.86 0.006 255);
-	--ink-3: oklch(0.78 0.008 255);
-	--accent: oklch(0.56 0.190 257);
-	--accent-ink: oklch(0.78 0.130 250);
-	--focus-ring: 0 0 0 3px oklch(0.68 0.180 252 / 0.55);
-	--crimson: oklch(0.54 0.200 22);
-	--crimson-hover: oklch(0.49 0.190 22);
-	--crimson-ink: oklch(0.74 0.160 20);
-	--err: oklch(0.76 0.150 30);
-	--err-tint: oklch(0.72 0.170 30 / 0.22);
-	--warn: oklch(0.86 0.130 82);
-	--warn-tint: oklch(0.84 0.140 82 / 0.18);
-	--logo-blade: oklch(0.66 0.170 250);
-	/* re-resolve against this page's ink, not the root palette's */
-	--logo-word: var(--ink);
-	--logo-word-accent: var(--crimson-ink);
-
-	background:
-		radial-gradient(60% 70% at 12% 8%, oklch(0.45 0.19 22 / 0.85), transparent 70%),
-		radial-gradient(55% 65% at 92% 95%, oklch(0.42 0.17 257 / 0.85), transparent 70%),
-		radial-gradient(40% 40% at 70% 25%, oklch(0.55 0.02 255 / 0.35), transparent 70%),
-		oklch(0.12 0.006 255);
-	background-attachment: fixed;
-	color: var(--ink);
-	color-scheme: dark;
-}
+ * The Simple UI's login: one card on base-200, the lockup on top. */
 
 .login-shell {
 	flex: 1 0 auto;
@@ -2875,50 +2828,44 @@ body.login-page {
 
 .login-card {
 	width: 100%;
-	max-width: 380px;
-	padding: 32px 30px 28px;
-	color: var(--ink);
+	max-width: 384px;
+	padding: 32px 24px 24px;
 	background: var(--surface);
-	-webkit-backdrop-filter: saturate(180%) blur(40px);
-	backdrop-filter: saturate(180%) blur(40px);
-	border-radius: 26px;
-	box-shadow: 0 30px 80px oklch(0 0 0 / 0.45), inset 0 0 0 1px oklch(1 0 0 / 0.12);
+	border: 1px solid var(--line);
+	border-radius: var(--r-panel);
 }
 
 .login-brand {
 	display: flex;
-	flex-direction: column;
-	align-items: center;
+	flex-wrap: wrap;
+	justify-content: center;
+	align-items: flex-start;
 	gap: 10px;
-	margin-bottom: 24px;
+	margin-bottom: 20px;
 	text-align: center;
 }
 
 .login-brand .login-mark {
-	width: 118px;
-	height: 96px;
-	margin-bottom: 4px;
+	width: 36px;
+	height: 36px;
 }
 
 .login-brand .login-word {
-	width: 198px;
-	height: 24px;
+	width: 135px;
+	height: 30px;
+	margin-top: 3px;
 }
 
 .login-brand .brand-host {
-	display: block;
-	margin-top: 3px;
+	flex-basis: 100%;
 	font-size: 13px;
 	color: var(--ink-3);
 }
 
 .login-card h2 {
-	font-size: 15px;
-	font-weight: 600;
-	letter-spacing: 0;
+	font-size: 20px;
 	text-align: center;
-	color: var(--ink-2);
-	margin-bottom: 18px;
+	margin-bottom: 20px;
 }
 
 .login-card .cbi-value {
@@ -2930,9 +2877,9 @@ body.login-page {
 
 .login-card .cbi-value label.cbi-value-title {
 	display: block;
-	padding: 0 0 6px 2px;
-	font-size: 13px;
-	color: var(--ink-2);
+	padding: 0 0 6px;
+	font-size: 14px;
+	font-weight: 600;
 }
 
 .login-card .cbi-value-field {
@@ -2941,19 +2888,11 @@ body.login-page {
 
 .login-card input:not([type="checkbox"]):not([type="radio"]) {
 	width: 100%;
-	height: 40px;
-	line-height: 38px;
-	font-size: 15px;
-	border-radius: 10px;
-	border-color: var(--line-strong);
 }
 
 .login-card .cbi-button {
 	width: 100%;
-	min-height: 42px;
 	margin-top: 8px;
-	font-size: 15px;
-	font-weight: 600;
 }
 
 .login-card .alert-message {
@@ -2965,7 +2904,6 @@ footer.login-foot {
 	justify-content: center;
 	padding: 0 16px 24px;
 	text-align: center;
-	color: var(--ink-3);
 }
 
 /* Motion preferences
@@ -2995,7 +2933,7 @@ footer.login-foot {
 	}
 
 	header .brand {
-		min-height: 52px;
+		min-height: 56px;
 		min-width: 0;
 		flex: 0 1 auto;
 		margin-right: 0;
@@ -3011,11 +2949,11 @@ footer.login-foot {
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		height: 34px;
+		height: 36px;
 		padding: 0 14px;
 		color: var(--ink);
-		background: var(--fill);
-		border-radius: 999px;
+		background: var(--surface-2);
+		border-radius: var(--r-field);
 		font-size: 14px;
 		font-weight: 500;
 	}
@@ -3040,26 +2978,33 @@ footer.login-foot {
 		order: 2;
 	}
 
-	.nav > li.topmenu-basic,
-	.nav > li.topmenu-advanced,
-	.nav > li.topmenu-quicksetup {
+	header .to-simple {
+		order: 2;
+	}
+
+	.nav > li.shortcut + li.dropdown:not(.shortcut) {
 		margin-left: 0;
 	}
 
+	.nav > li.topmenu-logout {
+		margin-left: 0;
+	}
+
+	header #topmenu,
 	header .nav {
 		order: 4;
-		flex-basis: 100%;
+		flex: 0 0 100%;
 		flex-direction: column;
 		gap: 0;
 		display: none !important;
 		margin: 0 calc(-1 * var(--gutter));
 		padding: 6px 8px 12px;
-		border-top: 1px solid var(--glass-line);
-		max-height: calc(100vh - 53px);
+		border-top: 1px solid var(--line);
+		max-height: calc(100vh - 57px);
 		overflow-y: auto;
 	}
 
-	header.nav-open .nav {
+	header.nav-open #topmenu {
 		display: flex !important;
 	}
 
@@ -3073,7 +3018,7 @@ footer.login-foot {
 		padding: 0 12px;
 		justify-content: space-between;
 		font-size: 16px;
-		border-radius: 10px;
+		border-radius: var(--r-field);
 	}
 
 	.dropdown:hover > .dropdown-menu,
@@ -3093,8 +3038,6 @@ footer.login-foot {
 		padding: 2px 0 6px;
 		box-shadow: none;
 		background: transparent;
-		-webkit-backdrop-filter: none;
-		backdrop-filter: none;
 	}
 
 	.dropdown-menu::before {
@@ -3108,11 +3051,11 @@ footer.login-foot {
 		padding: 0 12px 0 26px;
 		font-size: 15px;
 		color: var(--ink-2);
-		border-radius: 10px;
+		border-radius: var(--r-field);
 	}
 
 	.dropdown-menu li.active > a {
-		color: var(--accent-ink);
+		color: var(--on-accent);
 	}
 
 	.dropdown.open > a.menu::before {
@@ -3146,6 +3089,14 @@ footer.login-foot {
 		padding: 0;
 	}
 
+	/* phones: "Simple" becomes its icon so the bar keeps one row */
+	header .to-simple {
+		width: 38px;
+		padding: 0;
+		justify-content: center;
+	}
+
+	.to-simple > span,
 	.nav-toggle > span {
 		position: absolute;
 		width: 1px;
@@ -3170,12 +3121,12 @@ footer.login-foot {
 		padding-top: 18px;
 	}
 
-	h2 { font-size: 28px; }
+	h1, h2 { font-size: 22px; }
 
 	.cbi-section,
 	.cbi-section-error,
 	#cbi-network-switch_vlan {
-		padding: 14px 16px 12px;
+		padding: 16px;
 	}
 
 	.modal {

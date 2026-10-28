@@ -1,0 +1,16 @@
+{
+	"alphawrt-pihole": {
+		"description": "Pi-hole on/off, presets, stats and lists",
+		"read": {
+			"ubus": {
+				"alphawrt-pihole": [ "status", "stats", "lists", "presets" ]
+			},
+			"uci": [ "pihole" ]
+		},
+		"write": {
+			"ubus": {
+				"alphawrt-pihole": [ "set", "update", "pause", "set_lists" ]
+			}
+		}
+	}
+}

@@ -13,7 +13,7 @@
 @plugin "./.cache/daisyui.mjs" {
 	themes: false;
 	logs: false;
-	exclude: tab, steps, list, range, status, filter, dropdown, rootscrollgutter;
+	exclude: tab, steps, list, range, status, filter, dropdown, rootscrollgutter, checkbox;
 }
 
 /* the new logo's palette: blue #1f6fe5 / #5aa2ff, red #c41e3a / #ff5a6e */
@@ -91,3 +91,8 @@
 .logo-t { stroke: var(--color-base-content); }
 
 .menu { --menu-active-bg: var(--color-primary); --menu-active-fg: var(--color-primary-content); }
+
+/* fibre topology: the service lanes pulse along the path (lib/topology.js) */
+.aw-pulse { stroke-dasharray: 3 13; animation: aw-flow 1.2s linear infinite; }
+@keyframes aw-flow { to { stroke-dashoffset: -16; } }
+@media (prefers-reduced-motion: reduce) { .aw-pulse { animation: none; } }

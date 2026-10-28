@@ -1,0 +1,34 @@
+#!/bin/sh
+# The Simple UI's only way to flash or restore (issue 0005): one fixed verb,
+# fixed paths, the image checked here before anything is written, and never
+# --force (forcing stays in LuCI's Advanced > Flash).
+#   flash test     check /tmp/firmware.bin (sysupgrade --test)
+#   flash keep     install it, keeping settings
+#   flash fresh    install it with factory settings
+#   flash restore  restore /tmp/backup.tar.gz, then restart
+
+FW=/tmp/firmware.bin
+BACKUP=/tmp/backup.tar.gz
+
+[ $# -eq 1 ] || { echo "usage: flash test|keep|fresh|restore" >&2; exit 2; }
+
+check() {
+	[ -f "$FW" ] && [ ! -L "$FW" ] || { echo "No firmware file uploaded." >&2; exit 1; }
+	/sbin/sysupgrade --test "$FW"
+}
+
+case "$1" in
+test)
+	check ;;
+keep|fresh)
+	check || { echo "Image check failed: not installing." >&2; exit 1; }
+	[ "$1" = keep ] && exec /sbin/sysupgrade "$FW"
+	exec /sbin/sysupgrade -n "$FW" ;;
+restore)
+	[ -f "$BACKUP" ] && [ ! -L "$BACKUP" ] || { echo "No backup uploaded." >&2; exit 1; }
+	tar -tzf "$BACKUP" >/dev/null 2>&1 || { echo "Not a readable backup." >&2; exit 1; }
+	/sbin/sysupgrade --restore-backup "$BACKUP" || exit 1
+	exec /sbin/reboot ;;
+*)
+	echo "usage: flash test|keep|fresh|restore" >&2; exit 2 ;;
+esac

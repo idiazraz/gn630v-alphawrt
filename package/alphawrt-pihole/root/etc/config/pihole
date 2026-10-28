@@ -1,0 +1,6 @@
+config pihole 'main'
+	option enabled '0'
+	# Hagezi preset: light, multi (Normal), pro, pro.plus, ultimate
+	option preset 'multi'
+	# also block Hagezi's threat intelligence feed (tif.mini)
+	option tif '0'

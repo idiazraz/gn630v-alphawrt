@@ -1,13 +1,14 @@
 #
-# AlphaWRT Quick Setup: GPON identity, ISP presets, Internet and Wi-Fi in
-# one page, plus a PON card on Status > Overview.
+# AlphaWRT backend (rpcd, ACLs, line monitor) and the Advanced pages: Fibre
+# diagnostics, CPU and memory, PON and CPU cards on Status > Overview, and
+# redirects from the old Basic and Quick Setup pages to the Simple UI.
 #
 # This is free software, licensed under the GNU General Public License v2.
 #
 
 include $(TOPDIR)/rules.mk
 
-LUCI_TITLE:=AlphaWRT Quick Setup
+LUCI_TITLE:=AlphaWRT backend and Advanced pages
 LUCI_DEPENDS:=+luci-base +omci-agent
 LUCI_PKGARCH:=all
 

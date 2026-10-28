@@ -1,6 +1,6 @@
 {
 	"luci-app-alphawrt": {
-		"description": "Grant access to the AlphaWRT Quick Setup and Basic pages",
+		"description": "Grant access to the AlphaWRT Advanced pages (Fibre diagnostics, CPU and memory) and backend calls",
 		"read": {
 			"ubus": {
 				"alphawrt": [
@@ -8,7 +8,8 @@
 					"presets",
 					"stock_identity",
 					"pon_info",
-					"line"
+					"line",
+					"cpu"
 				],
 				"iwinfo": [
 					"assoclist",

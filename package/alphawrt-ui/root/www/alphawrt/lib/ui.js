@@ -36,7 +36,11 @@ const ICONS = {
 	cable: 'M4 8h16v8H4zM8 16v3M16 16v3M8 12h8',
 	chevron: 'M9 6l6 6-6 6',
 	eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
-	key: 'M15 7a4 4 0 1 1-3.9 4.9L4 19v2h3v-2h2v-2h2l1.1-1.1A4 4 0 0 1 15 7zM16 10h.01'
+	key: 'M15 7a4 4 0 1 1-3.9 4.9L4 19v2h3v-2h2v-2h2l1.1-1.1A4 4 0 0 1 15 7zM16 10h.01',
+	qr: 'M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM14 14h3v3h-3zM18 18h3v3h-3zM14 18h3v3h-3zM18 14h3v3h-3z',
+	trash: 'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+	plus: 'M12 5v14M5 12h14',
+	copy: 'M8 4v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7.242a2 2 0 0 0-.602-1.43L16.083 2.57A2 2 0 0 0 14.685 2H10a2 2 0 0 0-2 2zM16 18v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2'
 };
 
 export function icon(name, cls = 'size-5 shrink-0') {
@@ -105,3 +109,72 @@ export function fmtTime(s) {
 }
 
 export function portName(p) { return p ? p.replace(/^lan(\d+)$/, 'LAN $1') : '?'; }
+
+/* --- forms and dialogs --- */
+
+/* a labelled input; o: { type, value, hint, placeholder, autocomplete, password } */
+export function field(label, o = {}) {
+	const input = h('input', { type: o.password ? 'password' : o.type || 'text', value: o.value ?? '', placeholder: o.placeholder,
+		autocomplete: o.autocomplete || 'off', spellcheck: 'false', class: o.password ? 'grow min-w-0' : 'input w-full',
+		maxlength: o.maxlength, required: o.required });
+	const ctl = !o.password ? input : h('label', { class: 'input w-full' }, input,
+		h('button', { type: 'button', class: 'btn btn-ghost btn-xs btn-square -mr-2', 'aria-label': 'Show or hide password',
+			onclick: () => { input.type = input.type == 'password' ? 'text' : 'password'; } }, icon('eye', 'size-4')));
+	const el = h('fieldset', { class: 'fieldset' }, h('legend', { class: 'fieldset-legend text-sm' }, label), ctl,
+		o.hint && h('p', { class: 'label text-xs whitespace-normal leading-snug' }, o.hint));
+	el.input = input;
+	return el;
+}
+
+export function toggle(label, checked, hint) {
+	const input = h('input', { type: 'checkbox', class: 'toggle toggle-primary mt-0.5', checked });
+	const el = h('label', { class: 'flex items-start gap-3 py-1 cursor-pointer' }, input,
+		h('span', {}, h('span', { class: 'font-medium' }, label), hint && h('span', { class: 'block text-sm opacity-70' }, hint)));
+	el.input = input;
+	return el;
+}
+
+/* modal(title, body, buttons): buttons are [ label, class, value ]; resolves with the value (null on Esc) */
+export function modal(title, body, buttons = [ [ 'OK', 'btn-primary', true ] ]) {
+	return new Promise(resolve => {
+		const dlg = h('dialog', { class: 'modal modal-bottom sm:modal-middle' },
+			h('div', { class: 'modal-box' },
+				title && h('h3', { class: 'text-lg font-bold mb-3' }, title),
+				body,
+				buttons.length > 0 && h('div', { class: 'modal-action' }, buttons.map(([ label, cls, value ]) =>
+					h('button', { type: 'button', class: `btn ${cls || ''}`, onclick: () => { dlg.close(); resolve(value); } }, label)))));
+		dlg.addEventListener('close', () => { dlg.remove(); resolve(null); });
+		document.body.append(dlg);
+		dlg.showModal();
+	});
+}
+
+/* a modal with a spinner and no buttons; returns { close, text(msg) } */
+export function busy(title, text) {
+	const p = h('p', { class: 'text-sm opacity-80' }, text);
+	const dlg = h('dialog', { class: 'modal' }, h('div', { class: 'modal-box text-center' },
+		h('span', { class: 'loading loading-spinner loading-lg text-primary' }),
+		h('h3', { class: 'text-lg font-bold mt-4' }, title), p));
+	dlg.addEventListener('cancel', e => e.preventDefault());
+	document.body.append(dlg);
+	dlg.showModal();
+	return { close: () => { dlg.close(); dlg.remove(); }, text: t => { p.textContent = t; } };
+}
+
+export function toast(level, text) {
+	const cls = { ok: 'alert-success', warn: 'alert-warning', bad: 'alert-error' }[level];
+	const el = h('div', { class: 'toast toast-top toast-center z-50' }, h('div', { role: 'status', class: `alert ${cls}` }, icon({ ok: 'ok', warn: 'warn', bad: 'bad' }[level]), text));
+	document.body.append(el);
+	setTimeout(() => el.remove(), 4000);
+}
+
+/* draw the current page again (after a save) */
+export const redraw = () => dispatchEvent(new HashChangeEvent('hashchange'));
+
+/* a labelled select; options: [ [ value, label ] ] */
+export function choice(label, options, value) {
+	const sel = h('select', { class: 'select w-full' }, options.map(([ v, l ]) => h('option', { value: v, selected: v == value }, l)));
+	const el = h('fieldset', { class: 'fieldset' }, h('legend', { class: 'fieldset-legend text-sm' }, label), sel);
+	el.input = sel;
+	return el;
+}

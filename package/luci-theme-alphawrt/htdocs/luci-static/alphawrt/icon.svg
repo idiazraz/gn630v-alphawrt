@@ -1,24 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="1 1 76 62" width="76" height="62">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 66 66" width="32" height="32">
 	<title>AlphaWRT</title>
-	<defs>
-		<path id="a" fill-rule="evenodd" d="M4 60 26 4h12l20.5 26-9.5 10.5L60 60H46l-4.5-12h-19L18 60ZM26.5 38h11L32 22Z"/>
-		<path id="chevron" d="M31 4h7l20.5 26-9.5 10.5-4.5-4.5 6.5-6Z"/>
-		<path id="blade" d="M8.8 55.5 53.45 40.53 74 40 55.55 49.07 9.2 56.5Z"/>
-		<clipPath id="right"><path d="M32 0H80V64H32Z"/></clipPath>
-		<mask id="cuts" maskUnits="userSpaceOnUse" x="-5" y="-5" width="90" height="75">
-			<rect x="-5" y="-5" width="90" height="75" fill="#fff"/>
-			<use href="#chevron" fill="#000" stroke="#000" stroke-width="3.2"/>
-			<use href="#blade" fill="#000" stroke="#000" stroke-width="2.8" stroke-linejoin="round"/>
-		</mask>
-		<mask id="blade-cut" maskUnits="userSpaceOnUse" x="-5" y="-5" width="90" height="75">
-			<rect x="-5" y="-5" width="90" height="75" fill="#fff"/>
-			<use href="#blade" fill="#000" stroke="#000" stroke-width="2.8" stroke-linejoin="round"/>
-		</mask>
-	</defs>
-	<g mask="url(#cuts)">
-		<use href="#a" fill="#8e1222"/>
-		<use href="#a" fill="#c51b32" clip-path="url(#right)"/>
-	</g>
-	<use href="#chevron" fill="#e8394a" mask="url(#blade-cut)"/>
-	<use href="#blade" fill="#1f80f0"/>
+	<style>
+		.l { stroke: #c41e3a } .d { fill: #1f6fe5 }
+		@media (prefers-color-scheme: dark) { .l { stroke: #ff5a6e } .d { fill: #5aa2ff } }
+	</style>
+	<path class="l" d="M51 12C45 30 39 50 24 50 14 50 9 42 9 33 9 22 16 14 27 14 39 14 45 34 52 47" fill="none" stroke-width="12" stroke-linecap="round"/>
+	<circle class="d" cx="57" cy="55" r="8"/>
 </svg>

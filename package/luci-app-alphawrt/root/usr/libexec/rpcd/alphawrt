@@ -12,6 +12,9 @@
 #                   identity at once (before the fibre goes in)
 #   line            line counters, the OLT's SD/SF and light thresholds,
 #                   24 h history and events (alphawrt-linemon)
+#   cpu             {"cpu": [[busy, total], ...]} in jiffies from /proc/stat:
+#                   index 0 all cores, then one per core; busy = total - idle
+#                   - iowait. Callers diff two samples. Shared with the Simple UI.
 
 . /lib/functions.sh
 . /usr/share/libubox/jshn.sh
@@ -152,9 +155,15 @@ line() {
 		"$(json_lines /tmp/alphawrt/line.hist)" "$(json_lines /tmp/alphawrt/events.log)"
 }
 
+cpu() {
+	awk '/^cpu/ { t = 0; for (i = 2; i <= NF; i++) t += $i
+		printf "%s[%d,%d]", (n++ ? "," : "{ \"cpu\": ["), t - $5 - $6, t }
+		END { print "] }" }' /proc/stat
+}
+
 case "$1" in
 list)
-	echo '{ "presets": {}, "stock_identity": {}, "banks": {}, "set_bank": { "bank": "a" }, "pon_info": {}, "line": {},
+	echo '{ "presets": {}, "stock_identity": {}, "banks": {}, "set_bank": { "bank": "a" }, "pon_info": {}, "line": {}, "cpu": {},
 		"set_identity": { "serial": "", "password": "", "equipment_id": "", "hardware_version": "",
 			"software_version_0": "", "software_version_1": "", "omcc_version": "",
 			"traffic_management_option": "", "olt_profile": "" } }'
@@ -174,7 +183,7 @@ call)
 	set_bank)
 		set_bank
 		;;
-	pon_info|set_identity|line)
+	pon_info|set_identity|line|cpu)
 		$2
 		;;
 	esac

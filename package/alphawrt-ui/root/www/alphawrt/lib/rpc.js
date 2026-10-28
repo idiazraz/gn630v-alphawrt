@@ -97,3 +97,18 @@ export const uci = {
 };
 
 export const list = v => v == null ? [] : Array.isArray(v) ? v : String(v).split(/\s+/).filter(Boolean);
+
+export const sessionId = () => sid;
+
+/* upload a file to the box through cgi-io (the same way LuCI's ui.uploadFile does) */
+export async function upload(path, file) {
+	const body = new FormData();
+	body.append('sessionid', sid);
+	body.append('filename', path);
+	body.append('filemode', '0600');
+	body.append('filedata', file);
+	const r = await fetch('/cgi-bin/cgi-upload', { method: 'POST', body });
+	if (r.status == 403) throw new AuthError('upload: access denied');
+	if (!r.ok) throw new Error(`Upload failed (${r.status})`);
+	return r.json();
+}

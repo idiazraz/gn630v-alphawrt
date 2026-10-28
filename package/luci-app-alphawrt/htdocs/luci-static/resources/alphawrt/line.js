@@ -99,8 +99,15 @@ return baseclass.extend({
 	},
 
 	/* error counts over the last <seconds>, from the history plus now */
+	/* "now" on the box's clock (the newest history row): a bridge-mode box
+	 * has no NTP, so its clock can be far from the browser's */
+	now: function(line) {
+		var h = line.history;
+		return h.length ? h[h.length - 1][COL.ts] : Date.now() / 1000;
+	},
+
 	errors: function(line, seconds) {
-		var h = line.history, c = line.counters, now = Date.now() / 1000,
+		var h = line.history, c = line.counters, now = this.now(line),
 		    first = null, i, out = {};
 
 		for (i = 0; i < h.length; i++)
@@ -131,7 +138,7 @@ return baseclass.extend({
 
 	/* events of the last <seconds> matching re */
 	recent: function(line, re, seconds) {
-		var since = Date.now() - seconds * 1000;
+		var since = (this.now(line) - seconds) * 1000;
 		return line.events.filter(function(e) {
 			return re.test(e) && new Date(e.substr(0, 19).replace(' ', 'T')) >= since;
 		});

@@ -1,0 +1,3 @@
+# Gravity is in RAM: rebuild it once the WAN is up after a boot.
+[ "$ACTION" = ifup ] && [ "$INTERFACE" = wan ] || exit 0
+(/usr/local/bin/pihole ensure >/dev/null 2>&1 &)

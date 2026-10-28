@@ -1,58 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="1 1 76 62" width="76" height="62">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
 	<title>AlphaWRT</title>
 	<!--
-		AlphaWRT logo. Two symbols, referenced from the theme as logo.svg#mark and
-		logo.svg#word so their colours follow the page through the CSS custom
-		properties logo-shade, logo-glyph, logo-hi, logo-blade, logo-word and
-		logo-word-accent. The fallbacks are the light-theme colours.
+		AlphaWRT logo (brand/alphawrt-mark.svg and alphawrt-wordmark.svg). Two
+		symbols, referenced from the theme as logo.svg#mark and logo.svg#word, so
+		their colours follow the page through the CSS custom properties logo-a
+		(red), logo-b (blue) and logo-t (text). The fallbacks are the light theme.
 	-->
 	<defs>
-		<!-- A on a 64-unit grid with a chevron arrowhead on its right leg -->
-		<path id="a-shape" fill-rule="evenodd" d="M4 60 26 4h12l20.5 26-9.5 10.5L60 60H46l-4.5-12h-19L18 60ZM26.5 38h11L32 22Z"/>
-		<path id="a-chevron" d="M31 4h7l20.5 26-9.5 10.5-4.5-4.5 6.5-6Z"/>
-		<!-- slash: rises from inside the left leg and leaves under the chevron as a blade -->
-		<path id="a-blade" d="M8.8 55.5 53.45 40.53 74 40 55.55 49.07 9.2 56.5Z"/>
-		<clipPath id="a-right"><path d="M32 0H80V64H32Z"/></clipPath>
-		<mask id="a-cuts" maskUnits="userSpaceOnUse" x="-5" y="-5" width="90" height="75">
-			<rect x="-5" y="-5" width="90" height="75" fill="#fff"/>
-			<use href="#a-chevron" fill="#000" stroke="#000" stroke-width="3.2"/>
-			<use href="#a-blade" fill="#000" stroke="#000" stroke-width="2.8" stroke-linejoin="round"/>
-		</mask>
-		<mask id="a-blade-cut" maskUnits="userSpaceOnUse" x="-5" y="-5" width="90" height="75">
-			<rect x="-5" y="-5" width="90" height="75" fill="#fff"/>
-			<use href="#a-blade" fill="#000" stroke="#000" stroke-width="2.8" stroke-linejoin="round"/>
-		</mask>
-
-		<symbol id="mark" viewBox="1 1 76 62">
-			<g mask="url(#a-cuts)">
-				<use href="#a-shape" style="fill:var(--logo-shade, #8e1222)"/>
-				<use href="#a-shape" clip-path="url(#a-right)" style="fill:var(--logo-glyph, #c51b32)"/>
-			</g>
-			<use href="#a-chevron" mask="url(#a-blade-cut)" style="fill:var(--logo-hi, #e8394a)"/>
-			<use href="#a-blade" style="fill:var(--logo-blade, #006be2)"/>
+		<symbol id="mark" viewBox="0 0 64 64">
+			<path d="M51 12C45 30 39 50 24 50 14 50 9 42 9 33 9 22 16 14 27 14 39 14 45 34 52 47" fill="none" style="stroke:var(--logo-a, #c41e3a)" stroke-width="10.5" stroke-linecap="round"/>
+			<circle cx="57" cy="55" r="6.5" style="fill:var(--logo-b, #1f6fe5)"/>
 		</symbol>
-
-		<!-- wordmark: chamfered capitals, 40-unit cap height, one speed slit -->
-		<mask id="word-slit" maskUnits="userSpaceOnUse" x="-10" y="-5" width="350" height="50">
-			<rect x="-10" y="-5" width="350" height="50" fill="#fff"/>
-			<path d="M-10 18.6H340V21.4H-10Z" fill="#000"/>
-		</mask>
-		<symbol id="word" viewBox="0 0 330 40">
-			<g transform="translate(10 0) skewX(-14)" mask="url(#word-slit)">
-				<g style="fill:var(--logo-word, #1d1d1f)" fill-rule="evenodd">
-					<path d="M0 40 14 0H26L40 40H31L28 31H12L9 40ZM15 23H25L20 9Z"/>
-					<path transform="translate(45 0)" d="M0 0H9V31H29L26 40H0Z"/>
-					<path transform="translate(79 0)" d="M0 0H26L32 6V20L26 26H9V40H0ZM9 8H22L23.5 9.5V16.5L22 18H9Z"/>
-					<path transform="translate(116 0)" d="M0 0H9V16H23V0H32V40H23V24H9V40H0Z"/>
-					<path transform="translate(153 0)" d="M0 40 14 0H26L40 40H31L28 31H12L9 40ZM15 23H25L20 9Z"/>
-				</g>
-				<g style="fill:var(--logo-word-accent, #c51b32)" fill-rule="evenodd">
-					<path transform="translate(198 0)" d="M0 0H9L12.5 26L18 6H26L31.5 26L35 0H44L37 40H27L22 21L17 40H7Z"/>
-					<path transform="translate(247 0)" d="M0 0H26L32 6V18L26.5 23L33 40H23L18 25H9V40H0ZM9 8H22L23.5 9.5V15.5L22 17H9Z"/>
-					<path transform="translate(285 0)" d="M0 0H34L31.5 8H21.5V40H12.5V8H0Z"/>
-				</g>
+		<symbol id="word" viewBox="0 0 237 52">
+			<g fill="none" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+				<g style="stroke:var(--logo-t, #1c1d21)"><path d="M3.5 36.75 12.5 3.25 21.5 36.75M7 26H18M31 3.25V36.75M42 13.25V48.75M76 3.25V36.75M76 23C76 16.5 80 13.25 85 13.25 90 13.25 94 16.5 94 22V36.75M128.5 13.25V36.75"/><circle cx="53.75" cy="25" r="11.75"/><circle cx="116.75" cy="25" r="11.75"/></g>
+				<path style="stroke:var(--logo-a, #c41e3a)" d="M141 3.25 147.5 36.75 155 12 162.5 36.75 169 3.25M180 36.75V3.25H190C196.5 3.25 200 7 200 12.5 200 18 196.5 21.75 190 21.75H180M191 21.75 201 36.75M209 3.25H233M221 3.25V36.75"/>
 			</g>
 		</symbol>
 	</defs>
-	<use href="#mark" x="1" y="1" width="76" height="62"/>
+	<use href="#mark" width="64" height="64"/>
 </svg>

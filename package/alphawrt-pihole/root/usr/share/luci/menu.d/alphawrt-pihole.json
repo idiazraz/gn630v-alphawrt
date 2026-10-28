@@ -1,0 +1,13 @@
+{
+	"admin/services/pihole": {
+		"title": "Pi-hole",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/pihole"
+		},
+		"depends": {
+			"acl": [ "alphawrt-pihole" ]
+		}
+	}
+}

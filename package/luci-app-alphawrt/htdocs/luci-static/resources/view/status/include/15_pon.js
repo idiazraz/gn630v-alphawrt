@@ -41,19 +41,11 @@ return baseclass.extend({
 				o[k] = st[k];
 		});
 
+		/* Quick Setup lives in the Simple UI, which offers it at login */
 		if (uci.get('alphawrt', 'setup', 'done') == '0') {
-			/* first login, as on the stock firmware: start in Quick Setup,
-			 * once per session */
-			try {
-				if (!sessionStorage.getItem('alphawrt-quicksetup')) {
-					sessionStorage.setItem('alphawrt-quicksetup', '1');
-					location.href = L.url('admin/quicksetup');
-				}
-			} catch (e) {}
-
 			nodes.push(E('div', { 'class': 'alert-message notice' }, [
 				_('This box is not set up for your ISP yet.'), ' ',
-				E('a', { 'href': L.url('admin/quicksetup') }, _('Open Quick Setup'))
+				E('a', { 'href': '/#/setup' }, _('Open Quick Setup'))
 			]));
 		}
 

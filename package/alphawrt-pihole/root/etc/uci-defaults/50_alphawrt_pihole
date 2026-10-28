@@ -1,0 +1,10 @@
+#!/bin/sh
+# daily Hagezi update at a random minute past 4, plus housekeeping; both
+# do nothing while Pi-hole is off
+grep -q '/usr/local/bin/pihole' /etc/crontabs/root 2>/dev/null && exit 0
+mkdir -p /etc/crontabs
+cat >> /etc/crontabs/root <<CRON
+$(awk 'BEGIN { srand(); print int(rand() * 60) }') 4 * * * /usr/local/bin/pihole daily >/dev/null 2>&1
+*/15 * * * * /usr/local/bin/pihole housekeep >/dev/null 2>&1
+CRON
+exit 0

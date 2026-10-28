@@ -50,7 +50,7 @@
 	<body class="lang_{{ dispatcher.lang }}{{ body_class ? ` ${body_class}` : '' }}" data-page="{{ entityencode(join('-', length(ctx.request_path) ? ctx.request_path : ctx.path), true) }}">
 		{% if (!blank_page): %}
 		<header>
-			<a class="brand" href="/">
+			<a class="brand" href="{{ dispatcher.build_url('admin/status/overview') }}">
 				<svg class="brand-mark" aria-hidden="true"><use href="{{ media }}/logo.svg?v={{ version.distrevision }}#mark"/></svg>
 				<span class="brand-text">
 					<svg class="brand-word" role="img" aria-label="AlphaWRT"><use href="{{ media }}/logo.svg?v={{ version.distrevision }}#word"/></svg>
@@ -59,6 +59,7 @@
 			</a>
 			<ul class="nav" id="topmenu" style="display:none"></ul>
 			<div id="indicators" class="pull-right"></div>
+			<a class="to-simple" href="/"><span>{{ _('Simple') }}</span></a>
 			<button class="nav-toggle" type="button" aria-expanded="false" aria-controls="topmenu"><span>{{ _('Menu') }}</span></button>
 		</header>
 

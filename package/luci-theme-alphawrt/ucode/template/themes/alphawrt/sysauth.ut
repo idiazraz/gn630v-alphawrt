@@ -17,7 +17,7 @@
 			<span class="brand-host">{{ striptags(boardinfo.hostname ?? '?') }}</span>
 		</div>
 
-		<h2>{{ _('Authorization Required') }}</h2>
+		<h2>{{ _('Log in to Advanced settings') }}</h2>
 
 		{% if (auth_message): %}
 		<div class="alert-message{% if (auth_plugin): %} warning{% endif %}">

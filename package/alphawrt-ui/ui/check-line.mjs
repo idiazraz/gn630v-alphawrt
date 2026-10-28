@@ -20,3 +20,11 @@ assert.match(v.text, /at 2026-10-27 21:14:07, saying: "Authentication failed"/);
 assert.equal(line.verdict({ state: 5, bosa_rx_power_nw: nw(-19.4), bosa_temperature_mc: 90000 }, ln, 'combo', true).text,
 	'The optics are at 90 °C. Give the box more air.');
 console.log('line.js port: ok');
+
+/* "now" is the box's latest sample, not the browser clock (a bridge-mode box is often a day behind) */
+const t0 = Date.now() / 1000 - 30 * 3600;
+const hist = { ...ln, history: [ [ t0, 5, nw(-19), null, null, null, 0, 0, 0, 0, 0, 0 ], [ t0 + 600, 5, nw(-19), null, null, null, 0, 0, 3, 0, 0, 0 ] ],
+	counters: { hec_uncorrectable: 5, hec_corrected_1bit: 0, hec_corrected_2bit: 0, rx_crc_errors: 0, bip_errors: 0, lof: 0 } };
+assert.equal(line.now(hist), t0 + 600);
+assert.equal(line.errors(hist, 900).hecu, 5, 'counts errors on the box clock even when the browser is 30 h ahead');
+console.log('line.js box clock: ok');

@@ -1,0 +1,201 @@
+#!/bin/sh
+# `pihole` for AlphaWRT, in place of upstream's bash script (which needs
+# bash, curl and GNU grep). FTL runs `pihole -g` for "Update gravity"; the
+# rest is what the box needs:
+#   -g             rebuild gravity from the enabled adlists
+#   ensure         rebuild gravity if it is empty (boot, WAN up)
+#   daily          rebuild gravity if Pi-hole is on (cron)
+#   reloadlists    make FTL re-read lists and domains after an edit
+#   apply          uci pihole.main -> dnsmasq port, FTL settings, presets, service
+#   prepare        create the gravity database in RAM (init script)
+#   save           keep groups/lists/domains/clients on flash if they changed
+#   housekeep      save + cap the log files (cron)
+#
+# gravity.db lives in RAM (11 MB with Hagezi Pro, too big for the overlay).
+# Groups, adlists, allow/deny domains and clients are kept on flash in
+# /etc/pihole/lists.db (gravity rows stripped) and copied back at boot.
+
+DIR=/tmp/pihole
+DB=$DIR/gravity.db
+SAVED=/etc/pihole/lists.db
+SHARE=/usr/share/pihole
+FTL=/usr/bin/pihole-FTL
+DNSMASQ_PORT=5335
+HAGEZI=https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock
+MARK='AlphaWRT preset'
+
+sql() { $FTL sqlite3 -ni "$@"; }
+own() { [ "$(id -u)" = 0 ] && chown pihole:pihole "$@"; return 0; }
+enabled() { [ "$(uci -q get pihole.main.enabled)" = 1 ]; }
+count() { sql "$DB" "SELECT value FROM info WHERE property = 'gravity_count';" 2>/dev/null; }
+
+# new_db <file> <old db>: empty schema plus the old db's groups, lists,
+# domains and clients
+new_db() {
+	rm -f "$1"
+	sql "$1" < $SHARE/gravity.db.sql >/dev/null || return 1
+	[ -s "$2" ] || return 0
+	sed "s#/etc/pihole/gravity.db#$2#" $SHARE/gravity_copy.sql | sql "$1" >/dev/null
+}
+
+prepare() {
+	mkdir -p $DIR /etc/pihole
+	touch $DIR/gravity.lock && chmod 666 $DIR/gravity.lock 2>/dev/null
+	own $DIR /etc/pihole
+	[ -s $DB ] && return 0
+	new_db $DB $SAVED && own $DB
+	sum > $DIR/saved.md5
+}
+
+sum() {
+	sql $DB ".dump group domainlist adlist client domainlist_by_group adlist_by_group client_by_group" | md5sum
+}
+
+save() {
+	[ -s $DB ] || return 0
+	s=$(sum)
+	[ "$s" = "$(cat $DIR/saved.md5 2>/dev/null)" ] && return 0
+	rm -f $DIR/lists.tmp
+	sql $DB "VACUUM INTO '$DIR/lists.tmp';" &&
+	sql $DIR/lists.tmp "DELETE FROM gravity; DELETE FROM antigravity; VACUUM;" &&
+	mv $DIR/lists.tmp $SAVED && own $SAVED && echo "$s" > $DIR/saved.md5
+}
+
+reloadlists() {
+	pid=$(pidof pihole-FTL) && kill -"$($FTL sigrtmin)" $pid
+}
+
+gravity() {
+	prepare
+	exec 9>>$DIR/gravity.lock
+	flock -n 9 || { echo "gravity is already being updated"; return 1; }
+	old=$DB; [ -s $old ] || old=$SAVED
+	new=$DB.new
+	new_db $new $old || { echo "cannot create $new"; return 1; }
+	att=; [ -s "$old" ] && att="ATTACH '$old' AS old;"
+	sql $new "SELECT id, type, address FROM adlist WHERE enabled = 1 AND type IN (0, 1);" |
+	while IFS='|' read -r id type url; do
+		kind=gravity; [ "$type" = 1 ] && kind=antigravity
+		echo "  $url"
+		if uclient-fetch -q -T 60 -O $DIR/list.tmp "$url"; then
+			sql $new "UPDATE adlist SET status = 1 WHERE id = $id;"
+			$FTL $kind parseList $DIR/list.tmp $new $id "$url" | tail -n 1
+		elif [ -n "$att" ]; then
+			# DNS keeps blocking with what it had
+			echo "    download failed, keeping the old entries"
+			sql $new "$att INSERT INTO $kind SELECT * FROM old.$kind WHERE adlist_id = $id;
+				UPDATE adlist SET status = 3 WHERE id = $id;"
+		else
+			echo "    download failed"
+			sql $new "UPDATE adlist SET status = 4 WHERE id = $id;"
+		fi
+		rm -f $DIR/list.tmp
+	done
+	sql $new "CREATE INDEX idx_gravity ON gravity (domain, adlist_id);
+		CREATE INDEX idx_antigravity ON antigravity (domain, adlist_id);
+		INSERT OR REPLACE INTO info (property, value) VALUES
+		('updated', cast(strftime('%s', 'now') as int)),
+		('gravity_count', (SELECT count(DISTINCT domain) FROM gravity)),
+		('antigravity_count', (SELECT count(DISTINCT domain) FROM antigravity)),
+		('abp_domains', (SELECT EXISTS (SELECT 1 FROM gravity WHERE domain LIKE '||%')));" || return 1
+	own $new
+	mv $new $DB	# FTL reloads when the file is replaced
+	save
+	echo "  $(count) domains on the lists"
+}
+
+daily() { enabled && gravity; }
+
+ensure() {
+	enabled && [ "$(count)" -gt 0 ] 2>/dev/null && return 0
+	enabled && gravity
+}
+
+housekeep() {
+	enabled || return 0
+	save
+	for f in $DIR/pihole.log $DIR/FTL.log $DIR/webserver.log; do
+		[ "$(wc -c < $f 2>/dev/null)" -gt 1048576 ] 2>/dev/null && : > $f
+	done
+	return 0
+}
+
+# preset (light|multi|pro|pro.plus|ultimate) and TIF as Hagezi adlists;
+# lists added in the Pi-hole admin are left alone. True if they changed.
+sync_lists() {
+	want="$(uci -q get pihole.main.preset)"
+	[ "$(uci -q get pihole.main.tif)" = 1 ] && want="$want tif.mini"
+	urls=; for p in $want; do urls="$urls,'$HAGEZI/$p.txt'"; done
+	urls=${urls#,}
+	before=$(sql $DB "SELECT group_concat(address) FROM adlist WHERE comment = '$MARK';")
+	sql $DB "DELETE FROM gravity WHERE adlist_id IN (SELECT id FROM adlist WHERE comment = '$MARK' AND address NOT IN ($urls));
+		DELETE FROM adlist WHERE comment = '$MARK' AND address NOT IN ($urls);"
+	for p in $want; do
+		sql $DB "INSERT OR IGNORE INTO adlist (address, comment) VALUES ('$HAGEZI/$p.txt', '$MARK');"
+	done
+	[ "$before" != "$(sql $DB "SELECT group_concat(address) FROM adlist WHERE comment = '$MARK';")" ]
+}
+
+# dnsmasq keeps DHCP and the .lan names on $DNSMASQ_PORT while FTL has :53
+dnsmasq_port() {
+	[ "$(uci -q get dhcp.@dnsmasq[0].port)" = "$1" ] && return 0
+	if [ -n "$1" ]; then
+		uci set dhcp.@dnsmasq[0].port="$1"
+		uci add_list dhcp.lan.dhcp_option='6,0.0.0.0'	# 0.0.0.0 = this box
+	else
+		uci -q delete dhcp.@dnsmasq[0].port
+		uci -q del_list dhcp.lan.dhcp_option='6,0.0.0.0'
+	fi
+	uci commit dhcp
+	/etc/init.d/dnsmasq restart
+}
+
+ftl_config() {
+	eval "$(ipcalc.sh "$(uci -q get network.lan.ipaddr)" $(uci -q get network.lan.netmask))"
+	set -- \
+		dns.upstreams "[\"127.0.0.1#$DNSMASQ_PORT\"]" \
+		dns.revServers "[\"true,$NETWORK/$PREFIX,127.0.0.1#$DNSMASQ_PORT,lan\"]" \
+		dhcp.active false \
+		ntp.ipv4.active false ntp.ipv6.active false ntp.sync.active false \
+		webserver.port '8080o,[::]:8080o' \
+		webserver.paths.webroot /usr/share/pihole/www \
+		webserver.api.localAPIauth false \
+		files.gravity $DB \
+		files.database $DIR/pihole-FTL.db \
+		files.pid $DIR/pihole-FTL.pid \
+		files.macvendor $DIR/macvendor.db \
+		files.log.ftl $DIR/FTL.log \
+		files.log.webserver $DIR/webserver.log \
+		files.log.dnsmasq $DIR/pihole.log \
+		database.maxDBdays 2
+	while [ $# -gt 1 ]; do
+		$FTL --config "$1" "$2" >/dev/null || echo "FTL refused $1 = $2"
+		shift 2
+	done
+	own /etc/pihole/pihole.toml
+}
+
+apply() {
+	/etc/init.d/pihole-FTL stop
+	if enabled; then
+		dnsmasq_port $DNSMASQ_PORT
+		prepare
+		ftl_config
+		changed=0; sync_lists && changed=1
+		/etc/init.d/pihole-FTL enable
+		/etc/init.d/pihole-FTL start
+		save
+		if [ $changed = 1 ]; then (gravity >/dev/null 2>&1 &); else (ensure >/dev/null 2>&1 &); fi
+	else
+		/etc/init.d/pihole-FTL disable
+		dnsmasq_port ''
+	fi
+}
+
+case "$1" in
+	-g|updateGravity) gravity ;;
+	ensure|daily|reloadlists|apply|prepare|save|housekeep) "$1" ;;
+	restartdns|reloaddns) /etc/init.d/pihole-FTL restart ;;
+	-v|version) $FTL --version ;;
+	*) echo "usage: pihole -g|ensure|daily|reloadlists|restartdns|apply|save|housekeep|version"; exit 1 ;;
+esac

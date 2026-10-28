@@ -14,10 +14,11 @@ const NAV = [
 	[ 'wifi', 'Wi-Fi', 'wifi' ],
 	[ 'devices', 'Devices', 'devices' ],
 	[ 'vpn', 'VPN', 'vpn' ],
-	[ 'system', 'System', 'system' ]
+	[ 'system', 'System', 'system' ],
+	[ 'homelab', 'Home lab', 'box' ]
 ];
 const DOCK = [ 'home', 'wifi', 'devices', 'more' ];
-const PAGES = [ 'home', 'more' ];   // the rest arrive in SIMPLE-UI.md steps 2-5
+const PAGES = [ 'home', 'fibre', 'wifi', 'devices', 'system', 'homelab', 'vpn', 'setup' ];
 
 const app = document.getElementById('app');
 let timer = null;
@@ -36,7 +37,7 @@ function shell(page, main) {
 		h('div', { class: 'flex-1 min-w-0' },
 			h('header', { class: 'lg:hidden sticky top-0 z-10 flex items-center h-14 px-4 bg-base-100 border-b border-base-300' },
 				h('a', { href: '#/home' }, logo('h-7 w-auto')),
-				h('a', { href: `${LUCI}basic/quicksetup`, class: 'btn btn-ghost btn-sm ml-auto -mr-2 text-primary' }, icon('wand'), 'Quick Setup')),
+				h('a', { href: '#/setup', class: 'btn btn-ghost btn-sm ml-auto -mr-2 text-primary' }, icon('wand'), 'Quick Setup')),
 			main),
 		h('nav', { class: 'dock lg:hidden bg-base-100 border-t border-base-300', 'aria-label': 'Main' }, DOCK.map(id => {
 			const [ , label, ic ] = NAV.find(n => n[0] == id) || [ 'more', 'More', 'more' ];
@@ -93,13 +94,7 @@ const later = (title, path) => ({
 				h('div', { class: 'card-actions' }, h('a', { href: LUCI + path, class: 'btn btn-primary btn-sm' }, `Open ${title} in Advanced`, icon('external', 'size-4'))))));
 	}
 });
-const LATER = {
-	fibre: later('Fibre', 'basic/fibre'),
-	wifi: later('Wi-Fi', 'basic/wifi'),
-	devices: later('Devices', 'basic/devices'),
-	vpn: later('VPN', 'basic/vpn'),
-	system: later('System', 'basic/system')
-};
+const LATER = {};
 
 async function show() {
 	clearInterval(timer);
@@ -115,7 +110,7 @@ async function show() {
 	main.append(spinner);
 	app.replaceChildren(shell(page, main));
 	try {
-		const mod = page == 'more' ? more : LATER[page] || (await import(`./pages/${PAGES.includes(page) ? page : 'home'}.js`)).default;
+		const mod = page == 'more' ? more : LATER[page] || (await import(`./pages/${PAGES.includes(page) ? page : 'home'}.js?v=0.3.0`)).default;
 		document.title = `${mod.title} · AlphaWRT`;
 		const tick = await mod.render(main, { uci, call });
 		spinner.remove();
@@ -135,12 +130,28 @@ function fail(e) {
 	document.getElementById('main')?.append(h('div', { role: 'alert', class: 'alert alert-error alert-soft' }, icon('bad'), `Something went wrong: ${e.message}`));
 }
 
+/*
+ * A bridge-mode box has no Internet, so no NTP: its clock drifts or restarts
+ * from the last saved time (often a day off), and event times go wrong. Set it
+ * from this browser when it's more than 5 minutes off, as LuCI's "Sync with
+ * browser" button does. system.info's localtime is the box's local time in
+ * epoch seconds, so compare it with the browser's local time; setLocaltime
+ * takes UTC epoch seconds.
+ */
+async function syncClock() {
+	if (uci.get('alphawrt', 'setup', 'mode') != 'bridge') return;
+	const box = (await call('system', 'info').catch(() => ({}))).localtime, now = Math.floor(Date.now() / 1000);
+	if (box && Math.abs(box - (now - new Date().getTimezoneOffset() * 60)) > 300)
+		await call('luci', 'setLocaltime', { localtime: now }).catch(() => {});
+}
+
 async function start() {
-	/* first run: Quick Setup, as the stock firmware does (LuCI's until SIMPLE-UI.md step 4) */
+	/* first run: Quick Setup, as the stock firmware does (once per tab, so Home stays reachable) */
 	await uci.load('alphawrt');
+	syncClock();
 	if (uci.get('alphawrt', 'setup', 'done') == '0' && !sessionStorage.getItem('alphawrt-setup-offered')) {
 		sessionStorage.setItem('alphawrt-setup-offered', '1');
-		return location.assign(`${LUCI}basic/quicksetup`);
+		if (location.hash != '#/setup') return location.hash = '#/setup';   // the hashchange draws it
 	}
 	show();
 }
