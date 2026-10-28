@@ -119,7 +119,7 @@ export default {
 					saveBtn.disabled = false;
 					return toast('warn', 'The admin password needs at least 8 characters.');
 				}
-				const r = await call('alphawrt-pihole', 'set', { enabled, preset, tif, password: pw }).catch(e => ({ error: e.message }));
+				const r = await call('alphawrt-pihole', 'set', pw ? { enabled, preset, tif, password: pw } : { enabled, preset, tif }).catch(e => ({ error: e.message }));
 				saveBtn.disabled = false;
 				if (r.error) {
 					const msgs = {
