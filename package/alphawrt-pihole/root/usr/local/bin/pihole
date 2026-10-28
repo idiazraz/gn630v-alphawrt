@@ -159,10 +159,8 @@ ftl_config() {
 		ntp.ipv4.active false ntp.ipv6.active false ntp.sync.active false \
 		webserver.port '8080o,[::]:8080o' \
 		webserver.paths.webroot /usr/share/pihole/www \
-		webserver.api.localAPIauth false \
 		files.gravity $DB \
 		files.database $DIR/pihole-FTL.db \
-		files.pid $DIR/pihole-FTL.pid \
 		files.macvendor $DIR/macvendor.db \
 		files.log.ftl $DIR/FTL.log \
 		files.log.webserver $DIR/webserver.log \

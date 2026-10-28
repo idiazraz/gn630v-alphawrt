@@ -8,8 +8,9 @@
 //   lists       exact allow/deny domains and the devices that bypass Pi-hole
 //   set_lists   {allow, deny, bypass}: replace those lists
 //   presets     the Hagezi presets for a picker
-// FTL's API is used without a login from localhost
-// (webserver.api.localAPIauth=false); list edits go to gravity.db directly.
+// FTL's API is used without a login from localhost, which FTL 6.8 allows
+// only while no admin password is set; list edits go to gravity.db directly.
+// Limit: with a password (pihole-web) pause and stats need a session.
 
 'use strict';
 

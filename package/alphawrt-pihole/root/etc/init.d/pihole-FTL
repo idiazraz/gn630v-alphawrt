@@ -13,6 +13,9 @@ start_service() {
 	procd_set_param user pihole
 	procd_set_param group pihole
 	procd_set_param capabilities /etc/capabilities/pihole-FTL.json
+	# procd hands capabilities only to ujail; with no mounts it makes no
+	# filesystem jail, just drops to the pihole user keeping them (port 53)
+	procd_add_jail pihole-FTL
 	procd_set_param respawn
 	procd_close_instance
 }
