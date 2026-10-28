@@ -6,7 +6,7 @@ Everything here is off until you turn it on. It's on the Home lab page, or in Ad
 
 | Feature | Bridge mode | Router (combo) mode | Needs a public IPv4 |
 |---|---|---|---|
-| Prometheus metrics (fibre + box) | yes, `http://192.168.100.1:9100/metrics` | yes, `http://192.168.1.1:9100/metrics` | no |
+| Prometheus metrics (fibre, CPU per core, memory, load, uptime, traffic) | yes, `http://192.168.100.1:9100/metrics` | yes, `http://192.168.1.1:9100/metrics` | no |
 | iperf3 server (port 5201) | yes | yes | no |
 | Remote syslog | yes (to a host on the box's network) | yes | no |
 | SSH keys, password login off | yes | yes | no |
@@ -41,6 +41,24 @@ The fibre values update once a minute. Example scrape config:
   static_configs:
     - targets: ['192.168.1.1:9100']
 ```
+
+### Grafana dashboard
+
+Grafana and Prometheus run on your own server; they're too big for the box. The firmware only serves the metrics.
+
+1. Turn on **Metrics** on the Home lab page.
+2. Add the box to Prometheus with the scrape config above.
+3. In Grafana, import [`grafana/alphawrt.json`](grafana/alphawrt.json) (Dashboards → New → Import) and pick your Prometheus data source.
+
+The dashboard shows:
+- **Stats:** fibre Rx, line state, PPPoE uptime, box uptime, memory used, optics temperature.
+- **Graphs:** CPU per core, load, memory, fibre light against the OLT's lower limit, line errors, and traffic per port.
+
+If you have more than one box, the **Box** menu at the top switches between them.
+
+## htop
+
+`htop` is installed for SSH sessions: run `htop` after `ssh root@<box>`. btop isn't included: with the C++ runtime it needs, it would take about 1 MB of firmware space, against about 0.3 MB for htop.
 
 ## WireGuard site-to-site behind CGNAT
 

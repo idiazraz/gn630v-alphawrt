@@ -42,7 +42,7 @@ cp "$HERE/config/feeds.conf" feeds.conf
 # every feed package gn630v.config selects, or defconfig silently drops it
 ./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode usteer luci-app-usteer \
 	prometheus-node-exporter-lua iperf3 etherwake miniupnpd luci-app-upnp \
-	ddns-scripts luci-app-ddns
+	ddns-scripts luci-app-ddns htop
 
 cp "$HERE/config/gn630v.config" .config
 # bridger's BPF program is built with the host clang/llc: on macOS that is
