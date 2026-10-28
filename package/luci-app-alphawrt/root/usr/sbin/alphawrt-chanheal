@@ -1,0 +1,140 @@
+#!/bin/sh
+# Self-healing Wi-Fi channel for radios set to channel "auto". hostapd's ACS
+# picks the channel at boot; then every 5 min this checks how much of the
+# channel other networks use (survey: busy time minus our own transmit time).
+# If that stays at 50% or more for 15 min, no client is moving data, and the
+# band hasn't been looked at for an hour, it scans the alternatives and moves
+# (CSA: clients follow the beacon countdown) to the quietest non-DFS channel
+# when it is clearly better. Every move is logged with its reason.
+# Limit: the score is busy% during a short scan dwell; weigh in BSS counts
+# and signal levels from the scan if it picks badly.
+#   alphawrt-chanheal        loop (procd)
+#   alphawrt-chanheal once   one pass, for testing
+
+: "${INTERVAL:=300}" "${BUSY:=50}" "${STRIKES:=3}" "${HOLD:=3600}"
+: "${IDLE_BYTES:=2000000}" "${BETTER:=20}" "${STATE:=/tmp/alphawrt}"
+
+# survey_all <ifname>: "freq active busy tx" (ms) per channel; "in use" last
+survey_all() {
+	iw dev "$1" survey dump | awk '
+		/frequency:/ { if (f) print f, a + 0, b + 0, t + 0; f = $2; u = /in use/; a = b = t = 0 }
+		/^[ \t]*channel active time/ { a = $4 }
+		/^[ \t]*channel busy time/ { b = $4 }
+		/^[ \t]*channel transmit time/ { t = $4 }
+		END { if (f) print f, a + 0, b + 0, t + 0 }'
+}
+
+# traffic <ifname>...: bytes moved by all stations so far
+traffic() {
+	for i; do iw dev "$i" station dump; done |
+		awk '/rx bytes:|tx bytes:/ { s += $3 } END { printf "%.0f\n", s }'
+}
+
+# candidates <band> <width>: "channel freq center1 sec_offset" per line,
+# non-DFS only (a move onto a DFS channel would need a 60 s radar check)
+candidates() {
+	case "$1/$2" in
+	2g/20) printf '%s\n' "1 2412 2412 0" "6 2437 2437 0" "11 2462 2462 0" ;;
+	2g/40) printf '%s\n' "1 2412 2422 1" "6 2437 2447 1" "11 2462 2452 -1" ;;
+	5g/20) printf '%s\n' "36 5180 5180 0" "44 5220 5220 0" "149 5745 5745 0" "157 5785 5785 0" ;;
+	5g/40) printf '%s\n' "36 5180 5190 1" "44 5220 5230 1" "149 5745 5755 1" "157 5785 5795 1" ;;
+	5g/80) printf '%s\n' "36 5180 5210 1" "149 5745 5775 1" ;;
+	esac
+}
+
+log() {
+	logger -t alphawrt-chanheal "$*"
+}
+
+# pick <band> <ifname> <channel> <freq> <width> <others%>
+pick() {
+	local band=$1 ifn=$2 cur=$3 freq=$4 w=$5 others=$6 half best= score
+
+	echo "$(date +%s)" > "$STATE/chan-$band.tried"
+	if [ -z "$(candidates "$band" "$w")" ]; then
+		log "$band: channel $cur is busy (${others}% other networks), but there is no channel at $w MHz to move to without a radar check"
+		return
+	fi
+	half=$(( w / 2 - 10 ))
+	survey_all "$ifn" > "$STATE/chan-$band.before"
+	iw dev "$ifn" scan freq $(candidates "$band" "$w" | awk -v h=$half '
+		{ for (f = $3 - h; f <= $3 + h; f += 20) printf "%d ", f }') ap-force >/dev/null 2>&1
+	survey_all "$ifn" > "$STATE/chan-$band.after"
+
+	# score = the busiest 20 MHz part of the block during the scan
+	best=$(candidates "$band" "$w" | awk -v h=$half -v cur=$freq \
+		-v B="$STATE/chan-$band.before" -v A="$STATE/chan-$band.after" '
+		BEGIN {
+			while ((getline l < B) > 0) { split(l, x, " "); a0[x[1]] = x[2]; b0[x[1]] = x[3] }
+			while ((getline l < A) > 0) { split(l, x, " "); a1[x[1]] = x[2]; b1[x[1]] = x[3] }
+		}
+		{
+			if (cur >= $3 - h && cur <= $3 + h) next
+			s = -1
+			for (f = $3 - h; f <= $3 + h; f += 20) {
+				da = a1[f] - a0[f]
+				if (da <= 0) { s = 101; break }
+				p = int((b1[f] - b0[f]) * 100 / da)
+				if (p > s) s = p
+			}
+			if (best == "" || s < bs) { best = $0; bs = s }
+		}
+		END { if (best != "") print best, bs }')
+	[ -n "$best" ] || return
+	set -- $best
+	score=$5
+	if [ "$score" -gt 100 ] || [ $(( score + BETTER )) -gt "$others" ]; then
+		log "$band: channel $cur is busy (${others}% other networks); best alternative $1 is at ${score}%, staying"
+		return
+	fi
+	if ubus call "hostapd.$ifn" switch_chan "{\"freq\":$2,\"center_freq1\":$3,\"sec_channel_offset\":$4,\"bandwidth\":$w,\"bcn_count\":10}" >/dev/null; then
+		log "$band: channel $cur -> $1: other networks used ${others}% of $cur for $(( STRIKES * INTERVAL / 60 )) min, $1 was at ${score}%"
+		echo "$(date +%s) $cur $1 other networks used ${others}% of channel $cur, channel $1 was at ${score}%" > "$STATE/chan-$band.last"
+	else
+		log "$band: switch to channel $1 failed"
+	fi
+}
+
+# check <band>
+check() {
+	local band=$1 radio ifn ifaces info cur freq w a b t bytes others strikes=0 tried=0
+	local pa pb pt pbytes pstrikes pcur
+
+	radio=$(uci show wireless | sed -n "s/^wireless\.\([^.]*\)\.band='$band'$/\1/p" | head -n1)
+	[ -n "$radio" ] && [ "$(uci -q get wireless.$radio.channel)" = auto ] || return
+	info=$(ubus call network.wireless status)
+	ifn=$(echo "$info" | jsonfilter -e "@.$radio.interfaces[@.section='default_$radio'].ifname")
+	ifaces=$(echo "$info" | jsonfilter -e "@.$radio.interfaces[*].ifname")
+	[ -n "$ifn" ] || return
+
+	set -- $(iw dev "$ifn" info | sed -n 's/.*channel \([0-9]*\) (\([0-9]*\) MHz), width: \([0-9]*\) MHz.*/\1 \2 \3/p')
+	cur=$1 freq=$2 w=$3
+	[ -n "$w" ] || return
+	set -- $(survey_all "$ifn" | awk -v f="$freq" '$1 == f')
+	a=$2 b=$3 t=$4
+	bytes=$(traffic $ifaces)
+
+	read -r pa pb pt pbytes pstrikes pcur 2>/dev/null < "$STATE/chan-$band.prev"
+	if [ "$pcur" = "$cur" ] && [ $(( a - pa )) -gt 0 ]; then
+		others=$(( ( (b - pb) - (t - pt) ) * 100 / (a - pa) ))
+		[ "$others" -lt 0 ] && others=0
+		echo "$others" > "$STATE/chan-$band.busy"
+		[ "$others" -ge "$BUSY" ] && strikes=$(( pstrikes + 1 ))
+	fi
+	echo "$a $b $t $bytes $strikes $cur" > "$STATE/chan-$band.prev"
+
+	[ "$strikes" -ge "$STRIKES" ] || return
+	read -r tried 2>/dev/null < "$STATE/chan-$band.tried"
+	[ $(( $(date +%s) - ${tried:-0} )) -ge "$HOLD" ] || return
+	# clients moving data: wait for a quiet moment
+	[ $(( bytes - pbytes )) -ge 0 ] && [ $(( bytes - pbytes )) -lt "$IDLE_BYTES" ] || return
+	pick "$band" "$ifn" "$cur" "$freq" "$w" "$others"
+}
+
+mkdir -p "$STATE"
+while :; do
+	check 2g
+	check 5g
+	[ "$1" = once ] && exit 0
+	sleep "$INTERVAL"
+done
