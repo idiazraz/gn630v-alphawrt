@@ -50,6 +50,9 @@ cp "$HERE/config/gn630v.config" .config
 # and llvm packages are)
 if [ "$(uname)" = Darwin ]; then
 	echo "CONFIG_BPF_TOOLCHAIN_HOST_PATH=\"$(brew --prefix llvm)\"" >> .config
+	# the host golang-bootstrap doesn't build on macOS: use Homebrew's Go
+	echo "CONFIG_GOLANG_EXTERNAL_BOOTSTRAP_ROOT=\"$(brew --prefix go)/libexec\"" >> .config
+	echo "# CONFIG_GOLANG_BUILD_BOOTSTRAP is not set" >> .config
 fi
 make defconfig
 make -j"$(getconf _NPROCESSORS_ONLN)"
