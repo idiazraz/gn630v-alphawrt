@@ -4,7 +4,12 @@
  * and the main router hands it out as DNS (issues/0008).
  */
 import { h, icon, badge, rows, card, field, toggle, choice, toast, redraw, fmtTime } from '../lib/ui.js';
-import { call, maybe } from '../lib/rpc.js';
+import { call, maybe, uci } from '../lib/rpc.js';
+import { save } from '../lib/apply.js';
+
+/* same check as Quick Setup's: the main router's address next to 192.168.100.1 */
+const gwError = v => /^192\.168\.100\.(\d{1,3})$/.test(v) && +v.split('.')[3] > 1 && +v.split('.')[3] < 255 ? null
+	: 'Enter your router’s address on the 192.168.100.x network (2 to 254), for example 192.168.100.2.';
 
 export default {
 	title: 'Pi-hole',
@@ -14,7 +19,8 @@ export default {
 			maybe('alphawrt-homelab', 'status', {}, { mode: 'bridge' }),
 			maybe('alphawrt-pihole', 'status', {}, null),
 			maybe('alphawrt-pihole', 'presets', {}, { presets: [] }),
-			maybe('alphawrt-pihole', 'stats', {}, null)
+			maybe('alphawrt-pihole', 'stats', {}, null),
+			uci.load('network')
 		]);
 		main.append(h('div', { class: 'flex flex-wrap items-center justify-between gap-3' },
 			h('h1', { class: 'text-2xl font-bold' }, 'Pi-hole'),
@@ -56,6 +62,10 @@ export default {
 		const presetSel = choice('Block list preset', presetOptions, pi.preset || 'multi');
 		const tifTog = toggle('Threat intelligence', pi.tif, 'Block known malware and phishing domains (Hagezi TIF)');
 		const enTog = toggle('Enable ad blocking', pi.enabled, 'Filter ads and trackers for all devices on your network');
+
+		const gw = uci.get('network', 'gnmgmt', 'gateway') || '';
+		const gwField = bridge && field('Your router’s address', { value: gw, placeholder: '192.168.100.2',
+			hint: 'In bridge mode this box reaches the internet (block lists, time) through your router’s 192.168.100.x address.' });
 
 		const pwField = !pi.password_set
 			? field('Pi-hole admin password', { password: true, placeholder: 'at least 8 characters', hint: 'Required before enabling Pi-hole for the first time.' })
@@ -111,6 +121,11 @@ export default {
 				const preset = presetSel.input.value;
 				const tif = tifTog.input.checked;
 				const pw = pwField?.input?.value?.trim() || null;
+				const newGw = gwField?.input?.value?.trim() || '';
+				if (gwField && enabled && gwError(newGw)) {
+					saveBtn.disabled = false;
+					return toast('warn', gwError(newGw));
+				}
 				if (enabled && !pi.password_set && !pw) {
 					saveBtn.disabled = false;
 					return toast('warn', 'Set a Pi-hole admin password (at least 8 characters) first.');
@@ -118,6 +133,10 @@ export default {
 				if (pw && pw.length < 8) {
 					saveBtn.disabled = false;
 					return toast('warn', 'The admin password needs at least 8 characters.');
+				}
+				if (gwField && newGw && newGw != gw && !await save([ [ 'set', 'network', 'gnmgmt', { gateway: newGw } ] ], { what: 'Saving the gateway' })) {
+					saveBtn.disabled = false;
+					return;
 				}
 				const r = await call('alphawrt-pihole', 'set', pw ? { enabled, preset, tif, password: pw } : { enabled, preset, tif }).catch(e => ({ error: e.message }));
 				saveBtn.disabled = false;
@@ -152,13 +171,14 @@ export default {
 
 		return card('block', 'Ad blocking', badgeEl, h('div', { class: 'space-y-3' },
 			h('div', { class: 'text-sm opacity-80' }, 'Network-wide ad and tracker blocking powered by Pi-hole and Hagezi lists.'),
-			bridge && !pi.enabled && h('div', { class: 'text-sm opacity-70' }, 'Bridge mode: your main router has to hand out this box as DNS, and this box needs a gateway to reach the internet.'),
+			bridge && !gw && h('div', { class: 'text-sm opacity-70' }, 'Bridge mode: set your router’s DNS server to this box (192.168.100.1) and give this box your router’s address below.'),
 			statsRows,
 			pauseCtl,
 			h('div', { class: 'space-y-2 pt-2 border-t border-base-300' },
 				enTog,
 				presetSel,
 				tifTog,
+				gwField,
 				pwField),
 			h('div', { class: 'flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-base-300' },
 				updateBtn,

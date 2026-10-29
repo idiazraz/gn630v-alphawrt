@@ -36,6 +36,9 @@ function normalizeSerial(v) {
 let d, presets, onts, phStatus, phPresets, first, cur, err, fibre, root;
 
 const preset = () => presets.find(p => p.id == d.isp);
+/* bridge mode: the main router's address next to the box's 192.168.100.1 (issues/0008) */
+const gwError = v => /^192\.168\.100\.(\d{1,3})$/.test(v) && +v.split('.')[3] > 1 && +v.split('.')[3] < 255 ? null
+	: 'Enter your router’s address on the 192.168.100.x network (2 to 254), for example 192.168.100.2.';
 
 /* --- form pieces bound to d --- */
 function bound(el, key, redraw) {
@@ -125,13 +128,15 @@ const STEPS = {
 						'Blocks ads and malicious domains automatically across all your devices using Hagezi blocklists.',
 						h('span', { class: 'badge badge-soft badge-primary badge-sm' }, 'Recommended')),
 					card('pihole', '0', 'No, use standard DNS',
-						'No ad blocking. You can turn on Pi-hole anytime later in Home lab.')),
+						'No ad blocking. You can turn it on later on the Pi-hole page.')),
 				d.mode == 'bridge' && d.pihole == '1' && note('alert-info', 'warn', [
-					h('b', {}, 'Bridge mode DNS: '),
-					'In bridge mode, set your router’s DNS server to ',
+					h('b', {}, 'Bridge mode: '),
+					'Pi-hole reaches the internet through your router. Give your router’s Internet (WAN) port a second address on 192.168.100.x and let it forward this box’s traffic, then set its DNS server to ',
 					h('b', {}, '192.168.100.1'),
-					' so all your devices use Pi-hole ad blocking.'
+					'.'
 				]),
+				d.mode == 'bridge' && d.pihole == '1' && h('div', { class: 'mt-4' },
+					text('Your router’s address', 'pihole_gw', { placeholder: '192.168.100.2', hint: 'This box sends its own internet traffic (block lists, time) here.' })),
 				d.pihole == '1' && h('div', { class: 'mt-6 space-y-4 p-4 rounded-box bg-base-100 border border-base-300' },
 					h('h3', { class: 'font-semibold text-sm' }, 'Pi-hole settings'),
 					pick('Blocklist preset', 'pihole_preset', presetOptions),
@@ -146,6 +151,7 @@ const STEPS = {
 		},
 		check() {
 			if (d.pihole != '1') return;
+			if (d.mode == 'bridge' && gwError(d.pihole_gw)) return gwError(d.pihole_gw);
 			const pw = d.pihole_pw || d.root_password;
 			if (!phStatus?.password_set && (!pw || pw.length < 8))
 				return 'Set a password for the Pi-hole admin (at least 8 characters).';
@@ -405,7 +411,8 @@ function networkOps() {
 		ops.push(br ? [ 'set', 'network', br['.name'], bv ] : [ 'add', 'network', 'device', bv, 'br_wan' ]);
 		setOrAdd('network', 'ontbridge', 'interface', { proto: 'none', device: 'br-wan' });
 		/* reachable from the router's side, like an ISP ONT: 192.168.100.1 */
-		setOrAdd('network', 'gnmgmt', 'interface', { proto: 'static', device: 'br-wan', ipaddr: '192.168.100.1', netmask: '255.255.255.0' });
+		setOrAdd('network', 'gnmgmt', 'interface', { proto: 'static', device: 'br-wan', ipaddr: '192.168.100.1', netmask: '255.255.255.0',
+			...(d.pihole == '1' && d.pihole_gw ? { gateway: d.pihole_gw } : {}) });
 		const zone = uci.sections('firewall', 'zone').find(z => z.name == 'gnmgmt'), zv = { name: 'gnmgmt', network: [ 'gnmgmt' ], input: 'ACCEPT', output: 'ACCEPT', forward: 'REJECT' };
 		ops.push(zone ? [ 'set', 'firewall', zone['.name'], zv ] : [ 'add', 'firewall', 'zone', zv ]);
 		setOrAdd('network', 'wan', 'interface', { device: 'pon0', disabled: '1' });
@@ -561,7 +568,8 @@ export default {
 			pihole: first ? '1' : (piholeOn ? '1' : '0'),
 			pihole_preset: uci.get('pihole', 'main', 'preset') || 'multi',
 			pihole_tif: uci.get('pihole', 'main', 'tif') == '1',
-			pihole_pw: ''
+			pihole_pw: '',
+			pihole_gw: uci.get('network', 'gnmgmt', 'gateway') || ''
 		});
 		/* the VLAN is on the WAN device (combo/router) or on the bridge's pon0 port (bridge) */
 		for (const s of uci.sections('network', 'device'))
