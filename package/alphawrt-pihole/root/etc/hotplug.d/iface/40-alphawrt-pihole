@@ -1,3 +1,5 @@
-# Gravity is in RAM: rebuild it once the WAN is up after a boot.
-[ "$ACTION" = ifup ] && [ "$INTERFACE" = wan ] || exit 0
+# Gravity is in RAM: rebuild it once the box can reach the internet after a
+# boot: wan in combo/router mode, gnmgmt (via its gateway) in bridge mode.
+[ "$ACTION" = ifup ] || exit 0
+[ "$INTERFACE" = wan ] || [ "$INTERFACE" = gnmgmt ] || exit 0
 (/usr/local/bin/pihole ensure >/dev/null 2>&1 &)

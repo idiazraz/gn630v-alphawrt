@@ -9,7 +9,7 @@
 #   apply          uci pihole.main -> dnsmasq port, FTL settings, presets, service
 #   prepare        create the gravity database in RAM (init script)
 #   save           keep groups/lists/domains/clients on flash if they changed
-#   housekeep      save + cap the log files (cron)
+#   housekeep      save, cap the log files, retry an empty gravity (cron)
 #
 # gravity.db lives in RAM (11 MB with Hagezi Pro, too big for the overlay).
 # Groups, adlists, allow/deny domains and clients are kept on flash in
@@ -114,6 +114,8 @@ ensure() {
 housekeep() {
 	enabled || return 0
 	save
+	# retry an empty gravity (the boot rebuild can fail before the clock syncs)
+	[ "$(count)" -gt 0 ] 2>/dev/null || (ensure >/dev/null 2>&1 &)
 	for f in $DIR/pihole.log $DIR/FTL.log $DIR/webserver.log; do
 		[ "$(wc -c < $f 2>/dev/null)" -gt 1048576 ] 2>/dev/null && : > $f
 	done
