@@ -97,8 +97,8 @@ The output lands in `openwrt/bin/targets/airoha/en7523/`.
 | `config/gn630v.config` | build config seed |
 | `config/feeds.conf` | the feed commits the build uses |
 | `.github/workflows/build.yml` | Linux CI build with `build.sh`; run by hand with "repro" to build twice and compare |
-| `tools/` | UART/U-Boot helpers: chunked TFTP RAM boot, TFTP server, flash dump, image checker; `budget.py` (flash budget report, run by `build.sh`); `compare-test.sh` (stock vs AlphaWRT capture) |
-| `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [ONT/ISP tester guide](docs/ONT-ISP-TESTER-GUIDE.md), [stock vs AlphaWRT testing](docs/STOCK-VS-ALPHAWRT.md), [hardware acceptance](docs/ACCEPTANCE.md), [roadmap](docs/ROADMAP.md) |
+| `tools/` | UART/U-Boot helpers: chunked TFTP RAM boot, TFTP server, flash dump, image checker; `budget.py` (flash budget report, run by `build.sh`); `compare-test.sh` (stock vs AlphaWRT capture); `txbf_ab.sh` (Wi-Fi TX beamforming A/B test) |
+| `docs/` | [hardware and boot chain](docs/HARDWARE.md), [install](docs/INSTALL.md), [recovery](docs/RECOVERY.md), [ONT/ISP tester guide](docs/ONT-ISP-TESTER-GUIDE.md), [stock vs AlphaWRT testing](docs/STOCK-VS-ALPHAWRT.md), [hardware acceptance](docs/ACCEPTANCE.md), [roadmap](docs/ROADMAP.md), [TX beamforming](docs/TXBF.md) |
 
 ## Credits
 * **Sirherobrine23**: the EN7523 OpenWrt tree AlphaWRT builds on ([Sirherobrine23/openwrt](https://github.com/Sirherobrine23/openwrt), [openwrt/openwrt#20104](https://github.com/openwrt/openwrt/pull/20104)) and the trees it collects, with the open xPON PHY/MAC, EN7571 optics and OMCI stack. AlphaWRT's fibre support is this stack plus our fixes.
