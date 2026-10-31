@@ -1,0 +1,429 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 20:17:11 +0800
+Subject: [PATCH] airoha: xpon: Nokia OMCI fixes, OLT-G seed and GPON identity
+ hold
+
+Patch 9993: answer the Nokia ALCL audits and seed the MEs it expects.
+Patch 9994: seed OLT-G on every profile, so the OLT can name itself and
+auto detection can pick a profile. Keep its identity across MIB resets.
+Patch 9995: hold the GPON MAC until the identity has been applied.
+---
+ ...mci-nokia-alcl-audits-and-seeded-mes.patch | 131 +++++++++++++++++
+ ...eed-OLT-G-so-the-OLT-can-name-itself.patch | 139 ++++++++++++++++++
+ ...ON-MAC-until-the-identity-is-applied.patch | 122 +++++++++++++++
+ 3 files changed, 392 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/9993-net-xpon-omci-nokia-alcl-audits-and-seeded-mes.patch
+ create mode 100644 target/linux/airoha/patches-6.18/9994-net-xpon-omci-seed-OLT-G-so-the-OLT-can-name-itself.patch
+ create mode 100644 target/linux/airoha/patches-6.18/9995-net-airoha-xpon-hold-GPON-MAC-until-the-identity-is-applied.patch
+
+diff --git a/target/linux/airoha/patches-6.18/9993-net-xpon-omci-nokia-alcl-audits-and-seeded-mes.patch b/target/linux/airoha/patches-6.18/9993-net-xpon-omci-nokia-alcl-audits-and-seeded-mes.patch
+new file mode 100644
+index 0000000..9bc9e08
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9993-net-xpon-omci-nokia-alcl-audits-and-seeded-mes.patch
+@@ -0,0 +1,131 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: xpon: omci: fix Nokia/ALCL audits and pre-seeded data MEs
++
++Port of airoha/kernel dc8e1469bb ("net: xpon: omci: fix Nokia/ALCL
++audits and pre-seeded data MEs", AK Sharma <maskachoska@yahoo.com>,
++sirherobrine23.com.br) onto AlphaWRT's 997-999:
++
++- Space-pad the configured EquipmentIdentifier to 20 bytes and keep
++  leading spaces: the Nokia/ALCL OLT audits it byte for byte.
++- On the Nokia/ALCL profile, report image 1 as committed/active/valid
++  and image 0 as 0/0/0, like the stock ONU. Other profiles keep image 0
++  as the running image (upstream changes it for every OLT).
++- Merge an OLT Create into a pre-seeded ME instead of answering
++  INSTANCE_EXISTS, which aborts the OLT's provisioning sequence. The
++  parsed VLAN filter and extended VLAN state are merged too.
++- Treat unsupported classes as faked in permissive mode.
++
++Based-on-patch-by: AK Sharma <maskachoska@yahoo.com>
++Signed-off-by: idiazraz <100824525+idiazraz@users.noreply.github.com>
++---
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -941,7 +941,7 @@
++ static bool
++ omci_agent_fakes_unsupported(const struct omci_agent *agent)
++ {
++-	return agent->fake_omci ||
+++	return agent->fake_omci || agent->permissive ||
++ 	       omci_agent_profile_has_quirk(agent,
++ 					    OMCI_OLT_QUIRK_FAKE_UNSUPPORTED_SUCCESS);
++ }
++@@ -1717,6 +1717,7 @@
++ 	struct omci_ani_topology topology;
++ 	u8 data[OMCI_MAX_ATTR_DATA] = {};
++ 	unsigned int i, queue;
+++	bool alcl;
++ 	int ret;
++ 
++ 	ret = omci_agent_get_ani_topology(odev, &topology);
++@@ -1728,13 +1729,22 @@
++ 	if (ret)
++ 		return ret;
++ 
+++	/* The Nokia/ALCL OLT audits the software images and stops
+++	 * provisioning data GEMs unless they match the stock ONU: image 0
+++	 * 0/0/0, image 1 committed/active/valid. Other OLTs keep image 0.
+++	 * Note: only applies once the profile is known (forced, or detected
+++	 * before this MIB reset).
+++	 */
+++	alcl = agent->profile_effective == OMCI_OLT_PROFILE_NOKIA_ALCL;
++ 	for (i = 0; i < ARRAY_SIZE(agent->config.software_version); i++) {
+++		bool running = i == (alcl ? 1 : 0);
+++
++ 		memset(data, 0, sizeof(data));
++ 		memcpy(data, agent->config.software_version[i],
++ 		       OMCI_SOFTWARE_VERSION_LEN);
++-		data[14] = i == 0; /* Committed image. */
++-		data[15] = i == 0; /* Active image. */
++-		data[16] = 1;      /* Valid image. */
+++		data[14] = running; /* Committed image. */
+++		data[15] = running; /* Active image. */
+++		data[16] = alcl ? running : 1; /* Valid image. */
++ 		ret = omci_mib_add_default_mask(agent, OMCI_CLASS_SOFTWARE_IMAGE,
++ 						i, GENMASK(15, 12), data,
++ 						sizeof(data));
++@@ -3419,6 +3429,7 @@
++ 	struct omci_agent *agent = &odev->agent;
++ 	const struct omci_me_desc *desc;
++ 	struct omci_mib_object *stored = NULL;
+++	struct omci_mib_object *seeded;
++ 	struct omci_mib_object *object;
++ 	u8 result = OMCI_RESULT_SUCCESS;
++ 	bool hardware_applied = false;
++@@ -3428,7 +3439,8 @@
++ 		return OMCI_RESULT_UNKNOWN_ME;
++ 	if (!omci_me_action_allowed(agent, class_id, OMCI_MSG_TYPE_CREATE))
++ 		return OMCI_RESULT_NOT_SUPPORTED;
++-	if (omci_mib_lookup(agent, class_id, entity_id))
+++	seeded = omci_mib_lookup(agent, class_id, entity_id);
+++	if (seeded && seeded->origin == OMCI_MIB_ORIGIN_OLT)
++ 		return OMCI_RESULT_INSTANCE_EXISTS;
++ 
++ 	desc = omci_me_lookup(agent, class_id);
++@@ -3467,6 +3479,27 @@
++ 		goto out;
++ 	}
++ 	hardware_applied = true;
+++	if (seeded) {
+++		/*
+++		 * The Nokia/ALCL profile seeds MEs (bridge profiles and ports,
+++		 * mappers) that the OLT then creates again. Merge the OLT's
+++		 * attributes into the seeded instance: INSTANCE_EXISTS aborts
+++		 * the OLT's provisioning sequence.
+++		 */
+++		memcpy(seeded->data, object->data, sizeof(seeded->data));
+++		seeded->data_len = object->data_len;
+++		seeded->attr_mask = object->attr_mask;
+++		seeded->vlan_filter = object->vlan_filter;
+++		seeded->extended_vlan = object->extended_vlan;
+++		seeded->origin = OMCI_MIB_ORIGIN_OLT;
+++		if (omci_agent_datapath_class(agent, class_id) &&
+++		    omci_agent_reconcile_services_locked(odev)) {
+++			result = OMCI_RESULT_PROCESSING_ERROR;
+++			goto out;
+++		}
+++		omci_agent_increment_mib_sync_locked(agent);
+++		goto out;
+++	}
++ 	ret = omci_mib_store_locked(agent, object);
++ 	if (ret) {
++ 		result = OMCI_RESULT_DEVICE_BUSY;
++--- a/net/xpon/omci/identity.c
+++++ b/net/xpon/omci/identity.c
++@@ -306,7 +306,16 @@
++ 		required = OMCI_OLT_EQUIPMENT_ID_LEN;
++ 		if (*output_len < required)
++ 			return -ENOSPC;
++-		ret = omci_normalize_string(value, len, output, required);
+++		/*
+++		 * The EquipmentIdentifier attribute is space padded and the
+++		 * Nokia/ALCL OLT audits it byte for byte, so keep leading
+++		 * spaces and pad with spaces, not NULs.
+++		 */
+++		if (!len || len > required)
+++			return -EINVAL;
+++		memset(output, ' ', required);
+++		memcpy(output, value, len);
+++		ret = 0;
++ 		break;
++ 	default:
++ 		return -EOPNOTSUPP;
+diff --git a/target/linux/airoha/patches-6.18/9994-net-xpon-omci-seed-OLT-G-so-the-OLT-can-name-itself.patch b/target/linux/airoha/patches-6.18/9994-net-xpon-omci-seed-OLT-G-so-the-OLT-can-name-itself.patch
+new file mode 100644
+index 0000000..f3cd2a9
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9994-net-xpon-omci-seed-OLT-G-so-the-OLT-can-name-itself.patch
+@@ -0,0 +1,139 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: xpon: omci: seed OLT-G so the OLT can name itself
++
++Profile detection reads the vendor from OLT-G (ME 131), but the ME was
++only seeded on the Nokia profile. On the "auto" default it was missing
++from the MIB upload, and a Set on it was refused with UNKNOWN_INSTANCE.
++The vendor stayed "unknown" and the profile stayed generic.
++
++Seed an empty OLT-G on every profile, and make what follows safe:
++
++- The Nokia seed replaced the object, so a detected Nokia OLT would have
++  freed the object its own Set was still using. Skip the seed once the
++  OLT has named itself.
++- Keep the OLT's identity across its own MIB resets. It sets OLT-G after
++  the upload, so a reset would otherwise drop a detected profile back to
++  generic each time. A local reset (all) still forgets it.
++- Parse OLT-G Sets without the raw copy to the object data. Version and
++  time of day arrive in a second Set: the copy overwrote the vendor
++  bytes, and the grown attr_mask no longer matched the upload record.
++
++Signed-off-by: idiazraz <100824525+idiazraz@users.noreply.github.com>
++---
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -272,6 +272,7 @@
++ 			return -EINVAL;
++ 		omci_olt_g_copy_string(olt->vendor_id, sizeof(olt->vendor_id),
++ 				       value, OMCI_OLT_VENDOR_ID_LEN);
+++		memcpy(object->data, value, OMCI_OLT_VENDOR_ID_LEN);
++ 		olt->vendor_id_valid = true;
++ 	}
++ 	if (mask & OMCI_OLT_G_EQUIPMENT_ID_MASK) {
++@@ -282,6 +283,8 @@
++ 		omci_olt_g_copy_string(olt->equipment_id,
++ 				       sizeof(olt->equipment_id), value,
++ 				       OMCI_OLT_EQUIPMENT_ID_LEN);
+++		memcpy(object->data + OMCI_OLT_VENDOR_ID_LEN, value,
+++		       OMCI_OLT_EQUIPMENT_ID_LEN);
++ 		olt->equipment_id_valid = true;
++ 	}
++ 	if (mask & OMCI_OLT_G_VERSION_MASK) {
++@@ -1324,7 +1327,13 @@
++ 		if (ret)
++ 			return ret;
++ 
++-		/* Class 131 (OLT-G): pre-seed the Nokia/ALCL OLT identity. */
+++		/*
+++		 * Class 131 (OLT-G): pre-seed the Nokia/ALCL OLT identity. An
+++		 * OLT that named itself is why we are here: its Set is still
+++		 * using the object, and its identity is the real one.
+++		 */
+++		if (omci_agent_olt_g_locked(agent))
+++			return 0;
++ 		memset(data, 0, sizeof(data));
++ 		memcpy(data, "ALCL", 4);
++ 		memcpy(data + 4, "ISAM                ", 20);
++@@ -1848,6 +1857,20 @@
++ 		}
++ 	}
++ 
+++	/*
+++	 * The OLT names itself by setting OLT-G, an ONU-created ME. Without
+++	 * it in the MIB upload the OLT has nothing to set, and profile
+++	 * detection never sees a vendor. Baseline upload records fit the
+++	 * first two attributes only.
+++	 */
+++	memset(data, 0, sizeof(data));
+++	ret = omci_mib_add_default_mask(agent, OMCI_CLASS_OLT_G, 0,
+++					GENMASK(15, 14), data,
+++					OMCI_OLT_VENDOR_ID_LEN +
+++					OMCI_OLT_EQUIPMENT_ID_LEN);
+++	if (ret)
+++		return ret;
+++
++ 	omci_agent_refresh_identity_locked(agent);
++ 	return 0;
++ }
++@@ -2598,10 +2621,21 @@
++ {
++ 	struct omci_agent *agent = &odev->agent;
++ 	struct omci_mib_object *object;
+++	struct omci_olt_g *stored;
+++	struct omci_olt_g olt = {};
++ 	unsigned long index;
++ 	int reset_ret;
++ 	int ret;
++ 
+++	/*
+++	 * Only the OLT's attributes reset. Its name is what the profile hangs
+++	 * on, and an OLT sets it after the upload, so forgetting it here would
+++	 * flip a detected profile back to generic on every reset.
+++	 */
+++	stored = all ? NULL : omci_agent_olt_g_locked(agent);
+++	if (stored)
+++		olt = *stored;
+++
++ 	omci_agent_reset_table_snapshot_locked(agent);
++ 	reset_ret = omci_agent_clear_services_locked(odev);
++ 
++@@ -2620,11 +2654,18 @@
++ 	 * expose the same MIB and capability table as a fresh agent.
++ 	 */
++ 	ret = omci_agent_populate_defaults(odev);
+++	if (!ret && olt.valid) {
+++		object = omci_mib_lookup(agent, OMCI_CLASS_OLT_G, 0);
+++		if (object)
+++			object->olt_g = olt;
+++	}
++ 	if (!ret)
++ 		ret = omci_agent_seed_profile_locked(odev,
++ 						     agent->profile_effective);
++ 	if (!ret)
++-		ret = omci_agent_profile_refresh_locked(odev, NULL, profile_changed);
+++		ret = omci_agent_profile_refresh_locked(odev,
+++					omci_agent_olt_g_locked(agent),
+++					profile_changed);
++ 
++ 	omci_agent_set_mib_sync_locked(agent, 0);
++ 	agent->upload_index = 0;
++@@ -3546,7 +3587,8 @@
++ 		ret = omci_me_decode_set(desc, object, mask, content + 2,
++ 					 content_len - 2);
++ 	} else if (class_id == OMCI_CLASS_PRIORITY_QUEUE ||
++-		   class_id == OMCI_CLASS_TRAFFIC_SCHEDULER) {
+++		   class_id == OMCI_CLASS_TRAFFIC_SCHEDULER ||
+++		   class_id == OMCI_CLASS_OLT_G) {
++ 		ret = omci_mib_parse_set(object, mask, content + 2,
++ 					 content_len - 2);
++ 	} else {
++@@ -3560,9 +3602,6 @@
++ 				     class_id == OMCI_CLASS_EXTENDED_VLAN))
++ 		ret = omci_mib_parse_set(object, mask, content + 2,
++ 					 content_len - 2);
++-	if (!ret && !desc && class_id == OMCI_CLASS_OLT_G)
++-		ret = omci_mib_parse_set(object, mask, content + 2,
++-					 content_len - 2);
++ 	if (ret)
++ 		goto rollback_parameter;
++ 
+diff --git a/target/linux/airoha/patches-6.18/9995-net-airoha-xpon-hold-GPON-MAC-until-the-identity-is-applied.patch b/target/linux/airoha/patches-6.18/9995-net-airoha-xpon-hold-GPON-MAC-until-the-identity-is-applied.patch
+new file mode 100644
+index 0000000..5867886
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9995-net-airoha-xpon-hold-GPON-MAC-until-the-identity-is-applied.patch
+@@ -0,0 +1,122 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: xpon: hold the GPON MAC until the identity is applied
++
++A box with no serial in the device tree or NVMEM keeps its identity in
++userspace. Probe still started the MAC at about 7 s, with a random serial,
++and rpcd only applies the identity at about 33 s. Every boot showed the OLT
++2 to 4 unknown ONUs, each ended with Deactivate_ONU-ID, and repeated alarms
++can get a serial or PLOAM banned.
++
++Hold gpon_enable() while the serial is the generated one. restart_work ends
++the hold, so nothing new has to be cancelled and the MAC starts down the
++path every restart already takes:
++
++- The first apply that changes an identity key schedules it as before.
++  The MAC is off, so there is nothing to stop and no restart delay.
++- A box with no identity changes no such key, but rpcd's apply still
++  changes "permissive" from the kernel default, so that schedules it too.
++- Otherwise the hold timeout fires it and the MAC starts on the random
++  serial, as it did before.
++
++TX_DISABLE is asserted from PHY probe until gpon_enable() releases it, so a
++held box is dark. A serial from the device tree, NVMEM or the MAC is not
++held. An SFP link-up must not end the hold early.
++
++Signed-off-by: idiazraz <100824525+idiazraz@users.noreply.github.com>
++---
++--- a/drivers/net/ethernet/airoha/airoha_xpon.c
+++++ b/drivers/net/ethernet/airoha/airoha_xpon.c
++@@ -753,6 +753,7 @@
++ 
++ 	if (!(identity->valid & OMCI_IDENTITY_F_SERIAL_NUMBER)) {
++ 		gpon_random_serial_number(airoha_default_vendor_id, identity);
+++		priv->identity_hold = true;
++ 		dev_warn(priv->dev,
++ 			 "GPON serial number missing; generated random development serial %8phN\n",
++ 			 identity->serial_number);
++@@ -1948,6 +1949,15 @@
++ 		dev_dbg(priv->dev,
++ 			"OMCI configuration changed (key %u), GPON restart not required\n",
++ 			key);
+++		/*
+++		 * A box with no identity changes nothing that needs a restart,
+++		 * but rpcd's first apply still lands here: the default
+++		 * permissive option differs from the kernel's. If it didn't,
+++		 * the hold would just run to its timeout.
+++		 */
+++		if (READ_ONCE(priv->identity_hold))
+++			mod_delayed_work(priv->fsm_wq, &priv->restart_work,
+++					 msecs_to_jiffies(GPON_CONFIG_RESTART_DEBOUNCE_MS));
++ 		return;
++ 	}
++ 
++@@ -2450,6 +2460,23 @@
++ 	if (!READ_ONCE(priv->started) || !READ_ONCE(priv->optical_active))
++ 		return -ENETDOWN;
++ 
+++	/*
+++	 * The real identity is in userspace, which can't apply it for another
+++	 * 26 s. Ranging before then shows the OLT a random serial, it answers
+++	 * with Deactivate_ONU-ID, and repeated alarms can get a line banned.
+++	 * TX_DISABLE stays asserted from PHY probe, so a held box is dark.
+++	 * restart_work ends the hold on the first apply, or on this timeout so
+++	 * that a box with no identity still comes up.
+++	 */
+++	if (READ_ONCE(priv->identity_hold)) {
+++		dev_info(priv->dev,
+++			 "GPON MAC held for the identity, up to %u ms\n",
+++			 GPON_IDENTITY_HOLD_MS);
+++		queue_delayed_work(priv->fsm_wq, &priv->restart_work,
+++				   msecs_to_jiffies(GPON_IDENTITY_HOLD_MS));
+++		return 0;
+++	}
+++
++ 	dev_info(priv->dev, "starting GPON MAC from state %s\n",
++ 		 gpon_state_name(ploam_get_state(priv->ploam)));
++ 
++@@ -2993,6 +3020,11 @@
++ 	int ret;
++ 
++ 	config_restart = gpon_take_pending_identity(priv, &identity, &key);
+++	if (READ_ONCE(priv->identity_hold)) {
+++		WRITE_ONCE(priv->identity_hold, false);
+++		dev_info(priv->dev, "GPON MAC hold released (%s)\n",
+++			 config_restart ? "new identity" : "no new identity");
+++	}
++ 	if (!READ_ONCE(priv->started) || !READ_ONCE(priv->optical_active)) {
++ 		if (config_restart)
++ 			gpon_apply_runtime_identity(priv, &identity);
++@@ -3310,7 +3342,8 @@
++ 	dev_info(priv->dev, "GPON optical link up\n");
++ 	if (READ_ONCE(priv->started) &&
++ 	    READ_ONCE(priv->optical_active) &&
++-	    !READ_ONCE(priv->mac_enabled))
+++	    !READ_ONCE(priv->mac_enabled) &&
+++	    !READ_ONCE(priv->identity_hold))
++ 		mod_delayed_work(priv->fsm_wq, &priv->restart_work, 0);
++ }
++ 
++--- a/drivers/net/ethernet/airoha/airoha_xpon.h
+++++ b/drivers/net/ethernet/airoha/airoha_xpon.h
++@@ -324,6 +324,12 @@
++ #define GPON_DEACTIVATE_RESTART_MS	500
++ /* Coalesce a net/omci apply batch into one complete MAC/PHY restart. */
++ #define GPON_CONFIG_RESTART_DEBOUNCE_MS	250
+++/*
+++ * Longest the MAC waits for userspace to apply an identity. rpcd does so
+++ * 26-29 s after the hold starts. Past this the MAC starts on the random
+++ * serial, which is what it always did before the hold.
+++ */
+++#define GPON_IDENTITY_HOLD_MS		60000
++ #define XPON_LINK_POLL_MS		250
++ #define GPON_REARM_RETRY_MS		1000
++ 
++@@ -386,6 +392,8 @@
++ 	bool			started;
++ 	bool			optical_active;
++ 	bool			mac_enabled;
+++	/* No stored serial: stay off the fibre until userspace applies one */
+++	bool			identity_hold;
++ 	/* O7 gated a transmitter that O2 does not gate again */
++ 	bool			gpon_o7_tx_off;
++ 	bool			phy_link_known;
