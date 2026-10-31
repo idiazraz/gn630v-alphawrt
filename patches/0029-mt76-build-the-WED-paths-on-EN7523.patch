@@ -1,0 +1,35 @@
+From 58ecb32385b3990afd842dba96b656f8aba8fb2f Mon Sep 17 00:00:00 2001
+From: Lutfil Hadi <lutfilhadi1999@gmail.com>
+Date: Wed, 28 Oct 2026 16:32:55 +0000
+Subject: [PATCH 27/28] mt76: build the WED paths on EN7523
+
+airoha_wed registers mtk_soc_wed_ops for the EN7523 WED v1 blocks (WED0
+and WED1 at boot), but mt76 wraps its WED code in
+CONFIG_NET_MEDIATEK_SOC_WED, which this target never sets. So mt7915e
+built without WED and wed_enable did nothing. Define it for the mt76
+build on airoha_en7523, as the AN7581 NPU flags already are.
+
+wed_enable stays off by default, so nothing changes until it is set.
+---
+ package/kernel/mt76/Makefile | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/package/kernel/mt76/Makefile b/package/kernel/mt76/Makefile
+index f0011bd632..f822872bc1 100644
+--- a/package/kernel/mt76/Makefile
++++ b/package/kernel/mt76/Makefile
+@@ -480,6 +480,11 @@ ifdef CONFIG_PACKAGE_kmod-mt7915e
+     PKG_MAKE_FLAGS += CONFIG_MT798X_WMAC=y
+     NOSTDINC_FLAGS += -DCONFIG_MT798X_WMAC
+   endif
++  # airoha_wed provides mtk_soc_wed_ops (WED v1), but mt76 gates its WED
++  # paths on the MediaTek SoC option, which this target never sets
++  ifdef CONFIG_TARGET_airoha_en7523
++    NOSTDINC_FLAGS += -DCONFIG_NET_MEDIATEK_SOC_WED
++  endif
+ endif
+ ifdef CONFIG_PACKAGE_kmod-mt792x-common
+   PKG_MAKE_FLAGS += CONFIG_MT792x_LIB=m
+-- 
+2.47.3
+
