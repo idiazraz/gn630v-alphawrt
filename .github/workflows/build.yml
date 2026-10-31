@@ -74,6 +74,16 @@ jobs:
       - name: Clone the EN7523 tree
         run: git clone -q --filter=blob:none "$(sed -n 's/^TREE=//p' alphawrt/build.sh)" openwrt
 
+      # ccache's output is byte-identical to a plain build. Repro runs start
+      # empty, so the comparison doesn't depend on an earlier run.
+      - name: Compiler cache
+        if: ${{ !inputs.repro }}
+        uses: actions/cache@v4
+        with:
+          path: openwrt/.ccache
+          key: ccache-${{ github.sha }}
+          restore-keys: ccache-
+
       - if: inputs.repro
         uses: actions/download-artifact@v4
         with:
