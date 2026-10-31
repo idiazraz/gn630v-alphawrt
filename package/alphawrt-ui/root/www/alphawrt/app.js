@@ -49,7 +49,7 @@ function shell(page, main) {
 }
 
 function loginView(error) {
-	const pw = h('input', { type: 'password', name: 'password', class: 'grow min-w-0', autocomplete: 'current-password', required: true, autofocus: true });
+	const pw = h('input', { type: 'password', name: 'password', class: 'grow min-w-0', autocomplete: 'current-password', autofocus: true });
 	const form = h('form', { class: 'card bg-base-100 border border-base-300 w-full max-w-sm' },
 		h('div', { class: 'card-body gap-4' },
 			logo('h-9 w-auto self-center mb-2'),

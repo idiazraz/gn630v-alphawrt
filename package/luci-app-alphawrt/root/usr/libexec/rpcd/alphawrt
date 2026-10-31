@@ -6,8 +6,9 @@
 #   banks           what each flash bank holds, which one runs and which one
 #                   U-Boot boots next (alphawrt-bootbank)
 #   set_bank        {"bank": "a"|"b"}: boot that bank from the next boot
-#   pon_info        registration state and the Internet VLAN the OLT
-#                   provisioned, if it can be read from the MIB
+#   pon_info        registration state, the Internet VLAN the OLT provisioned,
+#                   if it can be read from the MIB, and where the GPON serial
+#                   came from (never the serial itself: pages poll this)
 #   set_identity    {serial, password, ...}: write and apply the GPON
 #                   identity at once (before the fibre goes in)
 #   line            line counters, the OLT's SD/SF and light thresholds,
@@ -105,10 +106,14 @@ set_bank() {
 }
 
 pon_info() {
-	local data vid
+	local data vid source
 
 	json_init
 	json_add_int state "$(ubus call omci.agent status '{"device":0}' 2>/dev/null | jsonfilter -e @.status.state)"
+	# enum omci_config_source: below 5 (netlink) nobody set the serial
+	source=$(ubus call omci.agent config_get '{"device":0,"key":"serial"}' 2>/dev/null |
+		jsonfilter -e @.config.source)
+	[ -n "$source" ] && json_add_int serial_source "$source"
 	# ME 78 (VLAN tagging operation) on Ethernet UNI 1 (entity 0x0101): the
 	# tag the OLT adds upstream on the first LAN port is the ISP's Internet
 	# VLAN (TIME's Huawei OLTs provision it this way). Bytes 1-2 are the TCI.
@@ -123,20 +128,22 @@ pon_info() {
 }
 
 set_identity() {
-	local k v serial
+	local k v serial conf=omci
 
+	# each agent reads its own file: omci-agent omci, xpon-agent xpon
+	[ -f /etc/config/xpon ] && conf=xpon
 	read -r input
 	json_load "$input"
 	for k in serial password equipment_id hardware_version software_version_0 \
 		software_version_1 omcc_version traffic_management_option olt_profile; do
 		json_get_var v "$k"
-		uci -q set "omci.main.$k=$v"
+		uci -q set "$conf.main.$k=$v"
 	done
 	json_get_var serial serial
 	# the vendor ID is the serial's own first four characters
-	uci -q set "omci.main.vendor_id=$(echo "$serial" | cut -c1-4)"
-	uci -q set omci.main.enabled=1
-	uci commit omci
+	uci -q set "$conf.main.vendor_id=$(echo "$serial" | cut -c1-4)"
+	uci -q set "$conf.main.enabled=1"
+	uci commit "$conf"
 	ubus call omci.agent apply '{"device":0}' >/dev/null 2>&1
 	json_init
 	json_add_boolean ok 1

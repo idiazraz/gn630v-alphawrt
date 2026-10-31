@@ -68,6 +68,7 @@
 				"firewall",
 				"system",
 				"omci",
+				"xpon",
 				"pihole"
 			],
 			"cgi-io": [

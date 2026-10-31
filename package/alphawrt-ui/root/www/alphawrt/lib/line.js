@@ -177,6 +177,16 @@ export default {
 	},
 
 	/*
+	 * The box runs on the serial the kernel generated (issues/0013). pon:
+	 * alphawrt pon_info, whose serial_source is missing if it can't be read.
+	 * Returns { title, text } or null.
+	 */
+	serialWarning: function(pon, mode) {
+		return mode != 'router' && pon.serial_source < 5 ? { title: 'No serial number saved',
+			text: 'The box generated its own GPON serial number and gets a new one at every restart. The ISP can flag or block a box it does not recognise. Enter the serial number from the ISP\'s fibre box in Quick Setup.' } : null;
+	},
+
+	/*
 	 * st: omci.agent status, mode: combo|router|bridge, wanUp: bool.
 	 * Returns { level: 'ok'|'warn'|'bad', title, text }.
 	 */

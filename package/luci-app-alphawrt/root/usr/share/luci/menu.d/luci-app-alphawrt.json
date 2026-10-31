@@ -60,9 +60,22 @@
 			]
 		}
 	},
+	"admin/status/fibre-provisioning": {
+		"title": "Fibre provisioning",
+		"order": 17,
+		"action": {
+			"type": "view",
+			"path": "alphawrt/provisioning"
+		},
+		"depends": {
+			"acl": [
+				"alphawrt-fibre"
+			]
+		}
+	},
 	"admin/status/cpu": {
 		"title": "CPU and memory",
-		"order": 17,
+		"order": 18,
 		"action": {
 			"type": "view",
 			"path": "alphawrt/cpu"

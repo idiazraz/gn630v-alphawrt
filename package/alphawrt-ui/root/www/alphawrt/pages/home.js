@@ -11,6 +11,7 @@ import { usage } from '../lib/stats.js';
 const PON_STATES = [ null, 'Initial', 'Standby', 'Serial number', 'Ranging', 'Registered', 'Signal lost', 'Stopped by the ISP' ];
 const MODES = { combo: 'Combo (fibre and router)', bridge: 'Bridge (fibre only)', router: 'Router' };
 const SETUP = '#/setup';
+const setupLink = () => h('a', { href: SETUP, class: 'btn btn-sm btn-warning mt-2' }, 'Open Quick Setup');
 
 /* dnsmasq forwarding to dnsproxy means encrypted DNS: name its upstreams */
 function dnsServers(wan) {
@@ -56,7 +57,7 @@ export default {
 		const isp = presets.find(p => p.id == uci.get('alphawrt', 'setup', 'isp'));
 		let rx = null;
 
-		const banner = h('div'), cards = h('div', { class: 'grid gap-4 lg:grid-cols-2' });
+		const banner = h('div', { class: 'space-y-4' }), cards = h('div', { class: 'grid gap-4 lg:grid-cols-2' });
 		/* uptime is already in This box */
 		const u = usage([], { uptime: false });
 		main.append(
@@ -97,7 +98,8 @@ export default {
 			const v = line.verdict(st, ln, mode, wanUp);
 
 			await u.tick();
-			banner.replaceChildren(this.banner(v, mode, port, dev, wan, wanUp));
+			const sn = line.serialWarning(pon, mode);
+			banner.replaceChildren(this.banner(v, mode, port, dev, wan, wanUp), sn ? alert('warn', sn.title, sn.text, setupLink()) : '');
 			cards.replaceChildren(...[
 				this.internet(mode, port, dev, wan, wanUp, registered, ln, isp, pon),
 				this.fibre(mode, st, v, ln, pon),
@@ -113,7 +115,7 @@ export default {
 	},
 
 	banner(v, mode, port, dev, wan, wanUp) {
-		const fix = h('a', { href: SETUP, class: 'btn btn-sm btn-warning mt-2' }, 'Open Quick Setup');
+		const fix = setupLink();
 		if (v.level != 'ok')
 			return alert(v.level, v.title, v.text, /login|serial|ISP has not accepted/i.test(v.title + v.text) ? fix : null);
 		if (mode == 'bridge')

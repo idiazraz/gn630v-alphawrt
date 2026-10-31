@@ -106,8 +106,10 @@ anig() {
 # PLOAM state changes (also the short ones between two polls),
 # Deactivate_ONU-ID, ranging (EqD), OMCI MIB resets and dying gasp;
 # the OMCI agent logs as "xpon pon0:", the rest as "airoha-xpon ..."
+# OFMT: awk's default rounds the kernel time, and a time rounded down lets
+# the same line through again on every poll
 kernel() {
-	logread -t -e 'airoha-xpon\|OMCI MIB reset' 2>/dev/null | awk -v last=$kt '
+	logread -t -e 'airoha-xpon\|OMCI MIB reset' 2>/dev/null | awk -v last=$kt -v OFMT=%.6f '
 		{ u = substr($0, index($0, "kernel: [") + 9) + 0 }
 		u <= last { next }
 		{ t = int(substr($6, 2)) }

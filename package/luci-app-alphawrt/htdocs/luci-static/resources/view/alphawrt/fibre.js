@@ -149,12 +149,13 @@ return view.extend({
 		    logins = line.recent(ln, / (internet: |internet login failed|ISP says)/, 86400),
 		    c = ln.counters, last = ln.history[ln.history.length - 1] || [],
 		    mw = function(nw) { return line.fmtDbm(nw); },
-		    fec = st.fec_downstream == 2;
+		    fec = st.fec_downstream == 2, sn = line.serialWarning(pon, mode[0]);
 
 		this.last = { st: st, ln: ln, pon: pon, mode: mode, wanUp: wanUp, v: v };
 
 		node.replaceChildren(
 			E('div', { 'class': ALERT[v.level] }, [ E('h4', {}, v.title), E('p', {}, v.text) ]),
+			sn ? E('div', { 'class': ALERT.warn }, [ E('h4', {}, sn.title), E('p', {}, sn.text) ]) : '',
 
 			section(_('Light and laser'), table([
 				[ _('Received light'), E('span', {}, [ mw(st.bosa_rx_power_nw), ' ',

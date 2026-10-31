@@ -3,8 +3,9 @@
  *   welcome -> password -> how you'll use it -> provider -> fibre identity
  *   -> Internet login / your router -> Wi-Fi -> plug in the fibre -> review.
  * Port of luci-app-alphawrt's alphawrt/quicksetup.js: the same uci writes,
- * the password and fibre identity applied at their own steps, the rest
- * staged and applied at the end with rollback. If the computer's connection
+ * the password and fibre identity applied at their own steps (Finish saves
+ * the identity if that step's button wasn't used), the rest staged and
+ * applied at the end with rollback. If the computer's connection
  * moves with the new mode, the box undoes the change and the page offers to
  * apply without the check and names the address to open, as LuCI did.
  */
@@ -293,13 +294,14 @@ const STEPS = {
 			const stages = [ 'No light', 'Light from the fibre', 'Talking to your provider', 'Registered' ], st = fibre.stage;
 			return [
 				h('p', { class: 'opacity-80' }, 'First the box saves the fibre identity, then you plug in the fibre and watch it register. Saving it before the fibre goes in avoids alarms at your provider, which can get the serial number blocked.'),
-				!fibre.saved ? h('button', { type: 'button', class: 'btn btn-primary w-full mt-4', onclick: saveIdentity }, 'Save the identity')
+				!saved() ? h('button', { type: 'button', class: 'btn btn-primary w-full mt-4', onclick: saveIdentity }, 'Save the identity')
 					: h('p', { class: 'mt-3' }, h('b', {}, 'Identity saved. Now plug the fibre into the PON port'), ' until it clicks.'),
-				fibre.saved && h('ol', { class: 'mt-4 space-y-2' }, stages.map((s, i) => h('li', { class: `flex items-center gap-3${i > st ? ' opacity-50' : ''}` },
+				saved() && h('ol', { class: 'mt-4 space-y-2' }, stages.map((s, i) => h('li', { class: `flex items-center gap-3${i > st ? ' opacity-50' : ''}` },
 					h('span', { class: `grid place-items-center size-7 rounded-full ${i <= st ? 'bg-primary text-primary-content' : 'bg-base-300'}` }, i <= st ? icon('ok', 'size-4') : String(i + 1)),
 					h('span', { class: i == st ? 'font-semibold' : '' }, s, i == 1 && fibre.light && h('span', { class: 'text-xs opacity-70 ml-2' }, fibre.light))))),
 				fibre.extra,
-				h('p', { class: 'text-xs opacity-70 mt-4' }, 'You can also finish now and plug the fibre in later; Home shows the fibre state.')
+				h('p', { class: 'text-xs opacity-70 mt-4' }, saved() ? 'You can also finish now and plug the fibre in later; Home shows the fibre state.'
+					: 'You can also finish now and plug the fibre in later: Finish saves the identity, so keep the fibre out until then. Home shows the fibre state.')
 			];
 		}
 	},
@@ -323,6 +325,8 @@ const STEPS = {
 					phStatus && [ 'Ad blocking', d.pihole == '1' ? `On · Pi-hole (${phPresets.find(p => p.id == d.pihole_preset)?.name || 'Normal'})` : 'Off' ]
 				]))),
 				h('div', { class: 'mt-4' }, sw('Malaysian time zone (UTC+8)', 'tz')),
+				d.mode != 'router' && !saved() && note('alert-warning', 'warn', [ h('b', {}, 'Have the fibre unplugged until this finishes. '),
+					'Finish saves the fibre identity first, so your provider never sees an unknown box. The identity stays saved even if the other settings are undone.' ]),
 				note('alert-info', 'warn', `Finish applies everything with a safety net: if this page can’t reach the box afterwards, the old settings come back by themselves within ${SETUP_TIMEOUT} seconds.`),
 				h('p', { class: 'text-xs opacity-70 mt-4' }, 'The stock firmware stays in the other flash bank. System → Firmware banks switches back to it.')
 			];
@@ -334,14 +338,21 @@ const visible = () => ORDER.filter(id => !STEPS[id].skip?.());
 const val = x => typeof x == 'function' ? x() : x;
 
 /* --- the fibre step: save the identity, then watch it register --- */
+const identityArgs = () => ({ ...Object.fromEntries(IDENTITY.map(k => [ k, d[k] || '' ])), olt_profile: d.olt_profile || preset()?.olt_profile || '' });
+/* fibre.saved: the identity the box has, so an edit after saving counts as unsaved */
+const saved = () => fibre.saved == JSON.stringify(identityArgs());
+
+async function writeIdentity() {
+	const args = identityArgs();
+	await call('alphawrt', 'set_identity', args);
+	fibre.saved = JSON.stringify(args);
+}
+
 async function saveIdentity(ev) {
 	const btn = ev.currentTarget;
 	btn.disabled = true;
-	const args = Object.fromEntries(IDENTITY.map(k => [ k, d[k] || '' ]));
-	args.olt_profile = d.olt_profile || preset()?.olt_profile || '';
-	try { await call('alphawrt', 'set_identity', args); }
+	try { await writeIdentity(); }
 	catch (e) { btn.disabled = false; return toast('bad', e.message); }
-	fibre.saved = true;
 	draw();
 	pollFibre();
 }
@@ -466,6 +477,11 @@ async function finish() {
 	if (d.mode != 'router') {
 		const pon = await maybe('alphawrt', 'pon_info');
 		if (pon.state == 5 && pon.vlan) d.vlan = String(pon.vlan);
+		/* the fibre step's button is optional (issues/0014) */
+		if (!saved()) {
+			try { await writeIdentity(); }
+			catch (e) { return toast('bad', e.message); }
+		}
 	}
 	const ops = allOps();
 	let ok = await save(ops, { timeout: SETUP_TIMEOUT, what: 'Applying your settings' }).catch(e => { toast('bad', e.message); return null; });
@@ -531,7 +547,7 @@ async function go(delta, ev) {
 	cur = steps[Math.max(0, Math.min(steps.length - 1, i + delta))];
 	draw();
 	scrollTo(0, 0);
-	if (cur == 'fibre' && fibre.saved) pollFibre();
+	if (cur == 'fibre' && saved()) pollFibre();
 }
 
 /* first run only: mark setup done without changing anything else */
@@ -549,7 +565,7 @@ export default {
 			maybe('alphawrt', 'presets'),
 			maybe('alphawrt-pihole', 'status', {}, null),
 			maybe('alphawrt-pihole', 'presets', {}, { presets: [] }),
-			uci.load('alphawrt', 'firewall', 'network', 'omci', 'system', 'wireless', 'pihole')
+			uci.load('alphawrt', 'firewall', 'network', 'omci', 'xpon', 'system', 'wireless', 'pihole')
 		]);
 		presets = pr.presets || [];
 		onts = pr.onts || [];
@@ -558,7 +574,9 @@ export default {
 		first = uci.get('alphawrt', 'setup', 'done') != '1';
 		const [ mode, port ] = line.mode(), wan = uci.get('network', 'wan', 'device') || '', m = /^(pon0|lan\d)(?:\.(\d+))?$/.exec(wan);
 
-		d = Object.fromEntries(IDENTITY.map(k => [ k, uci.get('omci', 'main', k) || '' ]));
+		/* each agent reads its own file: omci-agent omci, xpon-agent xpon */
+		const conf = uci.get('xpon', 'main') ? 'xpon' : 'omci';
+		d = Object.fromEntries(IDENTITY.map(k => [ k, uci.get(conf, 'main', k) || '' ]));
 		const piholeOn = uci.get('pihole', 'main', 'enabled') == '1';
 		Object.assign(d, {
 			isp: uci.get('alphawrt', 'setup', 'isp') || '', mode, port: port || 'lan1',
@@ -590,7 +608,7 @@ export default {
 
 		cur = 'welcome';
 		err = null;
-		fibre = { stage: -1, saved: false };
+		fibre = { stage: -1, saved: d.serial ? JSON.stringify(identityArgs()) : null };
 		root = h('div', { class: 'mx-auto max-w-xl' });
 		main.append(root);
 		draw();
