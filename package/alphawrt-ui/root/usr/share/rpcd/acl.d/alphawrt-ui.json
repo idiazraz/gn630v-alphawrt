@@ -5,6 +5,7 @@
 			"ubus": {
 				"alphawrt": [
 					"banks",
+					"wan_mode",
 					"presets",
 					"stock_identity",
 					"pon_info",
@@ -133,6 +134,7 @@
 				],
 				"alphawrt": [
 					"set_bank",
+					"set_wan_mode",
 					"set_identity"
 				],
 				"alphawrt.wifi": [

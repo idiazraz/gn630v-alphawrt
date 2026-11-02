@@ -11,7 +11,7 @@
  */
 import { h, icon, rows, field, toggle, choice, modal, busy, toast } from '../lib/ui.js';
 import { call, maybe, uci, list } from '../lib/rpc.js';
-import { save } from '../lib/apply.js';
+import { save, awaitReconnect } from '../lib/apply.js';
 import line from '../lib/line.js';
 
 const IDENTITY = [ 'serial', 'password', 'equipment_id', 'hardware_version', 'software_version_0', 'software_version_1', 'omcc_version', 'traffic_management_option' ];
@@ -22,6 +22,8 @@ const PORTS = LAN_PORTS.map(p => [ p, p.replace(/^lan/, 'LAN ') ]);
 /* combo mode can give this port to the ISP's IPTV box (br-iptv), as stock does for Unifi */
 const IPTV_PORT = 'lan4';
 const MODES = { combo: 'Fibre and router (combo)', bridge: 'Fibre only (bridge)', router: 'Router only' };
+/* boards with a WAN port on the fibre's SerDes: Router only uses that port, after a restart */
+const wanPort = () => d.mode == 'router' && wanSwitch.supported;
 const SETUP_TIMEOUT = 90;   // seconds the box waits for this page to confirm a new mode
 
 /* "48575443xxxxxxxx" (vendor as hex, as some ISPs print it) -> "HWTCxxxxxxxx" */
@@ -34,6 +36,7 @@ function normalizeSerial(v) {
 	return /^[A-Za-z0-9]{4}[0-9A-Fa-f]{8}$/.test(v) ? v.toUpperCase() : v;
 }
 
+let wanSwitch = {};
 let d, presets, onts, phStatus, phPresets, first, cur, err, fibre, root;
 
 const preset = () => presets.find(p => p.id == d.isp);
@@ -63,6 +66,9 @@ function card(key, value, title, textLine, tag, onpick) {
 }
 
 const note = (cls, ic, kids) => h('div', { role: 'status', class: `alert alert-soft ${cls} items-start text-sm mt-4` }, icon(ic, 'size-5 shrink-0'), h('div', {}, kids));
+
+/* the provider's box handles the VLAN in Router only; the preset's VLAN is for the fibre */
+const modeVlan = m => { d.vlan = m == 'router' ? '' : String(preset()?.vlan || ''); };
 
 /* --- the steps --- */
 const STEPS = {
@@ -108,9 +114,11 @@ const STEPS = {
 		title: 'How will you use this box?',
 		body: () => h('div', { class: 'space-y-3' },
 			card('mode', 'combo', MODES.combo, 'The fibre goes into this box and it does everything: Internet login, Wi-Fi and your home network. It replaces your provider’s box.',
-				h('span', { class: 'badge badge-soft badge-primary badge-sm' }, 'Most people')),
-			card('mode', 'bridge', MODES.bridge, 'This box only converts the fibre. Your own router (ASUS, TP-Link, Deco…) plugs into a LAN port and does the Internet login and Wi-Fi.'),
-			card('mode', 'router', MODES.router, 'Keep your provider’s fibre box. Plug it into a LAN port of this box, which then works as your router.'))
+				h('span', { class: 'badge badge-soft badge-primary badge-sm' }, 'Most people'), modeVlan),
+			card('mode', 'bridge', MODES.bridge, 'This box only converts the fibre. Your own router (ASUS, TP-Link, Deco…) plugs into a LAN port and does the Internet login and Wi-Fi.', null, modeVlan),
+			card('mode', 'router', MODES.router, wanSwitch.supported
+				? 'Keep your provider’s fibre box. Plug it into the 2.5G WAN port, and this box works as your router. It restarts when setup finishes, and the fibre port is off in this mode.'
+				: 'Keep your provider’s fibre box. Plug it into a LAN port of this box, which then works as your router.', null, modeVlan))
 	},
 
 	pihole: {
@@ -170,7 +178,7 @@ const STEPS = {
 				: [ p.proto == 'pppoe' ? 'PPPoE' : 'Automatic IP', p.vlan ? `VLAN ${p.vlan}` : '' ].filter(Boolean).join(' · '),
 			null, id => {
 				const q = presets.find(x => x.id == id);
-				Object.assign(d, { proto: q.proto, vlan: q.vlan ? String(q.vlan) : '', omcc_version: q.omcc_version || d.omcc_version,
+				Object.assign(d, { proto: q.proto, vlan: q.vlan && d.mode != 'router' ? String(q.vlan) : '', omcc_version: q.omcc_version || d.omcc_version,
 					olt_profile: q.olt_profile || '', trunk: !!q.bridge_trunk, iptv_vlan: q.iptv_vlan ? String(q.iptv_vlan) : '' });
 				if (!q.iptv_vlan) d.iptv = false;
 			}))),
@@ -237,7 +245,7 @@ const STEPS = {
 					note('alert-info', 'warn', 'Your router does the Internet login (PPPoE) with the username and password from your provider.')
 				];
 			return [
-				d.mode == 'router' && [ pick('Plug your provider’s fibre box into', 'port', PORTS),
+				d.mode == 'router' && !wanPort() && [ pick('Plug your provider’s fibre box into', 'port', PORTS),
 					h('p', { class: 'text-xs opacity-70 mt-1 mb-3' }, 'Not the port your computer is on.') ],
 				h('div', { class: 'grid grid-cols-2 gap-2 mb-2' }, card('proto', 'pppoe', 'PPPoE', 'Username and password'), card('proto', 'dhcp', 'Automatic', 'No login (DHCP)')),
 				d.proto == 'pppoe' && [
@@ -317,7 +325,7 @@ const STEPS = {
 					[ 'Use', MODES[d.mode] ],
 					[ 'Provider', p?.name || '—' ],
 					d.mode != 'router' && [ 'Serial number', d.serial || '—' ],
-					d.mode != 'combo' && [ d.mode == 'bridge' ? 'Your router on' : 'Provider’s box on', d.port.replace(/^lan/, 'LAN ') ],
+					wanPort() ? [ 'Provider’s box on', '2.5G WAN port (restarts when you finish)' ] : d.mode != 'combo' && [ d.mode == 'bridge' ? 'Your router on' : 'Provider’s box on', d.port.replace(/^lan/, 'LAN ') ],
 					d.mode == 'combo' && d.iptv && [ 'IPTV', `LAN 4 · VLAN ${d.iptv_vlan}` ],
 					d.mode != 'bridge' && [ 'Internet', d.proto == 'pppoe' ? `PPPoE as ${d.username}` : 'Automatic' ],
 					[ 'VLAN', d.mode == 'bridge' && d.trunk ? 'All, passed to your router' : d.vlan || 'none' ],
@@ -414,7 +422,7 @@ function networkOps() {
 
 	/* LAN bridge: every port except the one this mode takes */
 	const lanBr = devices.find(s => s.name == 'br-lan');
-	if (lanBr) ops.push([ 'set', 'network', lanBr['.name'], { ports: LAN_PORTS.filter(p => d.mode == 'combo' ? !(iptv && p == IPTV_PORT) : p != d.port) } ]);
+	if (lanBr) ops.push([ 'set', 'network', lanBr['.name'], { ports: LAN_PORTS.filter(p => d.mode == 'combo' ? !(iptv && p == IPTV_PORT) : wanPort() || p != d.port) } ]);
 
 	if (d.mode == 'bridge') {
 		/* trunk: pon0 itself passes every ISP VLAN tagged; else only the Internet VLAN, untagged */
@@ -431,7 +439,7 @@ function networkOps() {
 		return ops;
 	}
 
-	const wv = { device: (d.mode == 'router' ? d.port : 'pon0') + (vlan ? `.${vlan}` : ''), proto: d.proto || 'dhcp' };
+	const wv = { device: (wanPort() ? 'wan' : d.mode == 'router' ? d.port : 'pon0') + (vlan ? `.${vlan}` : ''), proto: d.proto || 'dhcp' };
 	if (d.proto == 'pppoe') Object.assign(wv, { username: d.username, password: d.ppp_password, ipv6: 'auto' });
 	setOrAdd('network', 'wan', 'interface', wv);
 	ops.push([ 'unset', 'network', 'wan', 'disabled' ]);
@@ -464,7 +472,7 @@ function allOps() {
 			tif: d.pihole_tif ? '1' : '0'
 		} ]);
 	}
-	ops.push([ 'set', 'alphawrt', 'setup', { isp: d.isp || '', mode: d.mode, port: d.port || '', done: '1' } ]);
+	ops.push([ 'set', 'alphawrt', 'setup', { isp: d.isp || '', mode: d.mode, port: wanPort() ? '' : d.port || '', done: '1' } ]);
 	return ops;
 }
 
@@ -503,6 +511,14 @@ async function finish() {
 			tif: !!d.pihole_tif,
 			password: pw
 		}).catch(e => console.warn('Pi-hole setup error:', e));
+	}
+	/* the driver picks fibre or the WAN port at boot; Router only always restarts */
+	const want = d.mode == 'router' ? 'ethernet' : 'fibre';
+	if (wanPort() || (wanSwitch.supported && wanSwitch.mode != want)) {
+		const r = await call('alphawrt', 'set_wan_mode', { mode: want }).catch(e => ({ ok: false, message: e.message }));
+		if (!r.ok) return toast('bad', r.message || 'Switching the internet port failed.');
+		await call('system', 'reboot').catch(() => {});
+		return awaitReconnect(busy('Restarting the router', 'Setup is done. Internet and Wi-Fi go away for about two minutes. This page comes back by itself.'));
 	}
 	cur = 'done';
 	draw();
@@ -561,25 +577,27 @@ export default {
 	title: 'Quick Setup',
 
 	async render(main) {
-		const [ pr, phSt, phPr ] = await Promise.all([
+		const [ pr, phSt, phPr, ws ] = await Promise.all([
 			maybe('alphawrt', 'presets'),
 			maybe('alphawrt-pihole', 'status', {}, null),
 			maybe('alphawrt-pihole', 'presets', {}, { presets: [] }),
+			maybe('alphawrt', 'wan_mode'),
 			uci.load('alphawrt', 'firewall', 'network', 'omci', 'xpon', 'system', 'wireless', 'pihole')
 		]);
+		wanSwitch = ws;
 		presets = pr.presets || [];
 		onts = pr.onts || [];
 		phStatus = phSt || null;
 		phPresets = phPr.presets || [];
 		first = uci.get('alphawrt', 'setup', 'done') != '1';
-		const [ mode, port ] = line.mode(), wan = uci.get('network', 'wan', 'device') || '', m = /^(pon0|lan\d)(?:\.(\d+))?$/.exec(wan);
+		const [ mode, port ] = line.mode(), wan = uci.get('network', 'wan', 'device') || '', m = /^(pon0|wan|lan\d)(?:\.(\d+))?$/.exec(wan);
 
 		/* each agent reads its own file: omci-agent omci, xpon-agent xpon */
 		const conf = uci.get('xpon', 'main') ? 'xpon' : 'omci';
 		d = Object.fromEntries(IDENTITY.map(k => [ k, uci.get(conf, 'main', k) || '' ]));
 		const piholeOn = uci.get('pihole', 'main', 'enabled') == '1';
 		Object.assign(d, {
-			isp: uci.get('alphawrt', 'setup', 'isp') || '', mode, port: port || 'lan1',
+			isp: uci.get('alphawrt', 'setup', 'isp') || '', mode, port: /^lan/.test(port) ? port : 'lan1',
 			proto: uci.get('network', 'wan', 'proto') || 'pppoe', vlan: m?.[2] || '',
 			username: uci.get('network', 'wan', 'username') || '', ppp_password: uci.get('network', 'wan', 'password') || '',
 			wifi_keep: false, tz: true, pw1: '', pw2: '', root_password: '',
@@ -594,10 +612,10 @@ export default {
 			for (const p of list(s.ports)) {
 				const v = /^pon0\.(\d+)$/.exec(p);
 				if (v && s.name == 'br-iptv') Object.assign(d, { iptv: true, iptv_vlan: v[1] });
-				else if (v && !d.vlan) d.vlan = v[1];
+				else if (v && !d.vlan && mode != 'router') d.vlan = v[1];
 			}
 		const p = preset();
-		if (!d.vlan && p?.vlan) d.vlan = String(p.vlan);
+		if (!d.vlan && p?.vlan && mode != 'router') d.vlan = String(p.vlan);
 		if (!d.iptv_vlan && p?.iptv_vlan) d.iptv_vlan = String(p.iptv_vlan);
 		d.trunk = uci.sections('network', 'device').some(s => s.type == 'bridge' && list(s.ports).includes('pon0')) || !!p?.bridge_trunk;
 		for (const r of [ '0', '1' ]) {

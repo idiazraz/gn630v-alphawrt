@@ -6,6 +6,8 @@
 #   banks           what each flash bank holds, which one runs and which one
 #                   U-Boot boots next (alphawrt-bootbank)
 #   set_bank        {"bank": "a"|"b"}: boot that bank from the next boot
+#   wan_mode        what the PON SerDes carries, on boards that can switch it
+#   set_wan_mode    {"mode": "fibre"|"ethernet"}: from the next boot
 #   pon_info        registration state, the Internet VLAN the OLT provisioned,
 #                   if it can be read from the MIB, and where the GPON serial
 #                   came from (never the serial itself: pages poll this)
@@ -105,6 +107,33 @@ set_bank() {
 	json_dump
 }
 
+wan_mode() {
+	json_init
+	if [ -x /sbin/alphawrt-wan-mode ]; then
+		json_add_boolean supported 1
+		json_add_string mode "$(alphawrt-wan-mode)"
+	else
+		json_add_boolean supported 0
+	fi
+	json_dump
+}
+
+set_wan_mode() {
+	local mode out
+
+	read -r input
+	json_load "$input"
+	json_get_var mode mode
+	json_init
+	if [ -x /sbin/alphawrt-wan-mode ] && out=$(alphawrt-wan-mode "$mode" 2>&1); then
+		json_add_boolean ok 1
+	else
+		json_add_boolean ok 0
+	fi
+	json_add_string message "$out"
+	json_dump
+}
+
 pon_info() {
 	local data vid source
 
@@ -170,7 +199,7 @@ cpu() {
 
 case "$1" in
 list)
-	echo '{ "presets": {}, "stock_identity": {}, "banks": {}, "set_bank": { "bank": "a" }, "pon_info": {}, "line": {}, "cpu": {},
+	echo '{ "presets": {}, "stock_identity": {}, "banks": {}, "set_bank": { "bank": "a" }, "wan_mode": {}, "set_wan_mode": { "mode": "fibre" }, "pon_info": {}, "line": {}, "cpu": {},
 		"set_identity": { "serial": "", "password": "", "equipment_id": "", "hardware_version": "",
 			"software_version_0": "", "software_version_1": "", "omcc_version": "",
 			"traffic_management_option": "", "olt_profile": "" } }'
@@ -190,7 +219,7 @@ call)
 	set_bank)
 		set_bank
 		;;
-	pon_info|set_identity|line|cpu)
+	pon_info|set_identity|line|cpu|wan_mode|set_wan_mode)
 		$2
 		;;
 	esac

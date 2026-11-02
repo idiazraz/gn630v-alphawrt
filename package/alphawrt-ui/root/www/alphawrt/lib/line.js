@@ -60,9 +60,9 @@ export default {
 		    mode = uci.get('alphawrt', 'setup', 'mode');
 
 		if (!mode)
-			mode = br ? 'bridge' : lan(wan) ? 'router' : 'combo';
+			mode = br ? 'bridge' : lan(wan) || wan == 'wan' ? 'router' : 'combo';
 
-		return [ mode, br ? list(br.ports).filter(lan)[0] : lan(wan) ? wan : null ];
+		return [ mode, br ? list(br.ports).filter(lan)[0] : lan(wan) || wan == 'wan' ? wan : null ];
 	},
 
 	portName: function(p) {
