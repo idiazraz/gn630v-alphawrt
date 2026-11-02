@@ -83,11 +83,12 @@ export CI_ARCH:=$(ARCH)
 # - -Werror trips on notes that only -Os gives (inlining, stack protector)
 # - the checksum mark step calls xxd -r from PATH
 # - -pie/-fPIE are hard-coded (see PKG_ASLR_PIE)
+# - SOURCE_ROOT puts the build directory in the binary
 define Build/Prepare
 	$(call Build/Prepare/Default)
 	$(TAR) -C $(PKG_BUILD_DIR) -xzf $(DL_DIR)/$(IDN2_SOURCE)
 	sed -i -e 's/-Werror\b//g' -e 's#| xxd -r -p#| $(XXD) -r -p#' \
-		-e 's/ -pie -fPIE//' $(PKG_BUILD_DIR)/src/CMakeLists.txt
+		-e 's/ -pie -fPIE//' -e '/SOURCE_ROOT=/d' $(PKG_BUILD_DIR)/src/CMakeLists.txt
 endef
 
 define Build/Configure
