@@ -150,6 +150,8 @@ async function start() {
 	/* first run: Quick Setup, as the stock firmware does (once per tab, so Home stays reachable) */
 	await uci.load('alphawrt');
 	syncClock();
+	/* a reload after setup's restart lands here: Quick Setup only opens from its button */
+	if (uci.get('alphawrt', 'setup', 'done') == '1' && route() == 'setup') return location.hash = '#/home';
 	if (uci.get('alphawrt', 'setup', 'done') == '0' && !sessionStorage.getItem('alphawrt-setup-offered')) {
 		sessionStorage.setItem('alphawrt-setup-offered', '1');
 		if (location.hash != '#/setup') return location.hash = '#/setup';   // the hashchange draws it

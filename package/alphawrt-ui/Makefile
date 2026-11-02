@@ -39,6 +39,10 @@ endef
 
 define Package/alphawrt-ui/install
 	$(CP) ./root/* $(1)/
+	ID=$$$$(cd ./root/www/alphawrt && find . -type f | LC_ALL=C sort | xargs cat | md5sum | cut -c1-12); \
+		echo $$$$ID > $(1)/www/alphawrt/build.txt; \
+		mkdir -p $(1)/www/alphawrt/b; \
+		ln -s .. $(1)/www/alphawrt/b/$$$$ID
 endef
 
 define Package/alphawrt-ui/postinst

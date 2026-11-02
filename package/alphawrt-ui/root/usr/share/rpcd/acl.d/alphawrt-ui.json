@@ -18,7 +18,8 @@
 				],
 				"luci-rpc": [
 					"getDHCPLeases",
-					"getHostHints"
+					"getHostHints",
+					"getWirelessDevices"
 				],
 				"network.device": [
 					"status"

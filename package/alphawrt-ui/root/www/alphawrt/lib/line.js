@@ -201,7 +201,7 @@ export default {
 
 		if (mode == 'router')
 			return { level: 'ok', title: 'Fibre not used',
-				text: 'In router mode the Internet comes in on a LAN port, so this box\'s fibre is idle.' };
+				text: 'In router mode this box\'s fibre isn\'t used.' };
 
 		if (st.state == 7)
 			return { level: 'bad', title: 'Stopped by the ISP',

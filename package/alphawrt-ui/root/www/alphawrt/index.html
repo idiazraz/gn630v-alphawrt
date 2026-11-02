@@ -7,8 +7,17 @@
 <meta name="color-scheme" content="light dark">
 <title>AlphaWRT</title>
 <link rel="icon" href="/alphawrt/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/alphawrt/ui.css?v=0.3.0">
-<script type="module" src="/alphawrt/app.js?v=0.3.0"></script>
+<script type="module">
+/* each build answers under its own URL (b/<id> links back here), so browsers
+ * can't keep running old pages after an update */
+let dir = '';
+try {
+	const r = await fetch('/alphawrt/build.txt', { cache: 'no-store' });
+	if (r.ok) dir = `b/${(await r.text()).trim()}/`;
+} catch (e) {}
+document.head.append(Object.assign(document.createElement('link'), { rel: 'stylesheet', href: `/alphawrt/${dir}ui.css` }));
+import(`/alphawrt/${dir}app.js`);
+</script>
 </head>
 <body class="bg-base-200 text-base-content min-h-dvh">
 <noscript><p class="p-4">This page needs JavaScript. <a class="link" href="/cgi-bin/luci/">Open Advanced settings (LuCI)</a>.</p></noscript>

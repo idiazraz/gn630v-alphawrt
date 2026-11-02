@@ -124,7 +124,9 @@ export default {
 			/* OpenWrt then picks the PMF setting that matches the encryption */
 			ops.push([ 'unset', 'wireless', p.b.iface, 'ieee80211w' ]);
 			/* the band is on only if its radio is too: Advanced can switch off either */
-			const radio = { channel: p.chan.input.value, ...(p.width.input.value ? { htmode: `HE${p.width.input.value}` } : {}) };
+			const gen = /^EHT/.test(uci.get('wireless', p.b.radio, 'htmode')) ? 'EHT' : 'HE', width = p.width.input.value;
+			/* keep Wi-Fi 7 radios on Wi-Fi 7. Auto can't pick 160 MHz: only channels 36-64 and 100-128 have it */
+			const radio = { channel: width == '160' && p.chan.input.value == 'auto' ? '100' : p.chan.input.value, ...(width ? { htmode: `${gen}${width}` } : {}) };
 			ops.push([ 'set', 'wireless', p.b.radio, radio ]);
 			if (on) ops.push([ 'unset', 'wireless', p.b.radio, 'disabled' ]);
 		}

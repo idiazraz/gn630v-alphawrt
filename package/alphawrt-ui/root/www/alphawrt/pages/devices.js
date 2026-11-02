@@ -23,7 +23,7 @@ export default {
 			const [ leases, hints, wstatus ] = await Promise.all([
 				maybe('luci-rpc', 'getDHCPLeases', { family: 4 }).then(r => r.dhcp_leases || []),
 				maybe('luci-rpc', 'getHostHints'),
-				maybe('network.wireless', 'status')
+				maybe('luci-rpc', 'getWirelessDevices')
 			]);
 			const radioOf = {};
 			for (const [ radio, r ] of Object.entries(wstatus))

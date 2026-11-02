@@ -1,6 +1,6 @@
 /*
  * Quick Setup, one question per screen (the layout of ui-draft/setup.html):
- *   welcome -> password -> how you'll use it -> provider -> fibre identity
+ *   welcome -> password -> country -> how you'll use it -> provider -> fibre identity
  *   -> Internet login / your router -> Wi-Fi -> plug in the fibre -> review.
  * Port of luci-app-alphawrt's alphawrt/quicksetup.js: the same uci writes,
  * the password and fibre identity applied at their own steps (Finish saves
@@ -24,6 +24,16 @@ const IPTV_PORT = 'lan4';
 const MODES = { combo: 'Fibre and router (combo)', bridge: 'Fibre only (bridge)', router: 'Router only' };
 /* boards with a WAN port on the fibre's SerDes: Router only uses that port, after a restart */
 const wanPort = () => d.mode == 'router' && wanSwitch.supported;
+/* the countries in wireless-regdb, which sets the channels and power Wi-Fi may use */
+const COUNTRIES = 'AD AE AF AI AL AM AR AS AT AU AW AZ BA BB BD BE BF BG BH BL BM BN BO BR BS BT BW BY BZ CA CF CH CI CL CN CO CR CU CX CY CZ DE DK DM DO DZ EC EE EG ES ET FI FM FO FR GB GD GE GF GH GI GL GP GR GT GU GY HK HN HR HT HU ID IE IL IM IN IR IS IT JM JO JP KE KH KN KP KR KW KY KZ LB LC LI LK LS LT LU LV MA MC MD ME MF MH MK MN MO MP MQ MR MT MU MV MW MX MY NA NG NI NL NO NP NZ OM PA PE PF PG PH PK PL PM PR PT PW PY QA RE RO RS RU RW SA SE SG SI SK SM SN SR SV SX SY TC TD TG TH TN TR TT TW TZ UA UG US UY UZ VA VC VE VI VN VU WF WS YE YT ZA ZW'.split(' ');
+/* where 5 GHz can't reach 160 MHz, and auto channel then fails: widest it can use, from the same list */
+const MAX80 = 'BD BH BO BZ CU NG PK'.split(' '), MAX40 = 'CF GU KP SV WS'.split(' ');
+const fitWidth = (mode, c) => {
+	const max = MAX40.includes(c) ? 40 : MAX80.includes(c) ? 80 : 320, [ , gen, w ] = /^([A-Z]+)(\d+)$/.exec(mode || '') || [];
+	return w > max ? gen + max : mode;
+};
+const countryName = c => new Intl.DisplayNames([ 'en' ], { type: 'region' }).of(c);
+const wifiRadios = () => uci.sections('wireless', 'wifi-device');
 const SETUP_TIMEOUT = 90;   // seconds the box waits for this page to confirm a new mode
 
 /* "48575443xxxxxxxx" (vendor as hex, as some ISPs print it) -> "HWTCxxxxxxxx" */
@@ -107,6 +117,14 @@ const STEPS = {
 			d.root_password = d.pw1;
 			d.pw1 = d.pw2 = '';
 		}
+	},
+
+	country: {
+		rail: 'Country',
+		title: 'Which country is this box in?',
+		lead: () => 'Each country has its own Wi-Fi rules. This sets the channels and power the box may use. If you change it, the box picks new channels, and Wi-Fi can take about 2 minutes to come back.',
+		skip: () => !wifiRadios().length,
+		body: () => [ pick('Country', 'country', COUNTRIES.map(c => [ c, countryName(c) ]).sort((a, b) => a[1].localeCompare(b[1]))) ]
 	},
 
 	mode: {
@@ -329,10 +347,11 @@ const STEPS = {
 					d.mode == 'combo' && d.iptv && [ 'IPTV', `LAN 4 · VLAN ${d.iptv_vlan}` ],
 					d.mode != 'bridge' && [ 'Internet', d.proto == 'pppoe' ? `PPPoE as ${d.username}` : 'Automatic' ],
 					[ 'VLAN', d.mode == 'bridge' && d.trunk ? 'All, passed to your router' : d.vlan || 'none' ],
+					wifiRadios().length && [ 'Country', countryName(d.country) ],
 					[ 'Wi-Fi', wifi ],
 					phStatus && [ 'Ad blocking', d.pihole == '1' ? `On · Pi-hole (${phPresets.find(p => p.id == d.pihole_preset)?.name || 'Normal'})` : 'Off' ]
 				]))),
-				h('div', { class: 'mt-4' }, sw('Malaysian time zone (UTC+8)', 'tz')),
+				d.country == 'MY' && h('div', { class: 'mt-4' }, sw('Malaysian time zone (UTC+8)', 'tz')),
 				d.mode != 'router' && !saved() && note('alert-warning', 'warn', [ h('b', {}, 'Have the fibre unplugged until this finishes. '),
 					'Finish saves the fibre identity first, so your provider never sees an unknown box. The identity stays saved even if the other settings are undone.' ]),
 				note('alert-info', 'warn', `Finish applies everything with a safety net: if this page can’t reach the box afterwards, the old settings come back by themselves within ${SETUP_TIMEOUT} seconds.`),
@@ -341,7 +360,7 @@ const STEPS = {
 		}
 	}
 };
-const ORDER = [ 'welcome', 'password', 'mode', 'pihole', 'isp', 'identity', 'login', 'wifi', 'fibre', 'finish' ];
+const ORDER = [ 'welcome', 'password', 'country', 'mode', 'pihole', 'isp', 'identity', 'login', 'wifi', 'fibre', 'finish' ];
 const visible = () => ORDER.filter(id => !STEPS[id].skip?.());
 const val = x => typeof x == 'function' ? x() : x;
 
@@ -463,8 +482,11 @@ function allOps() {
 		/* the radio too: a fresh config can leave it off */
 		ops.push([ 'unset', 'wireless', w.device, 'disabled' ]);
 	}
+	/* a saved fixed channel may not exist in the new country, and that radio then stays off */
+	for (const r of wifiRadios())
+		ops.push([ 'set', 'wireless', r['.name'], { country: d.country, ...(d.country != d.country_saved && { channel: 'auto', htmode: fitWidth(r.htmode, d.country) }) } ]);
 	const sys = uci.sections('system', 'system')[0];
-	if (d.tz && sys) ops.push([ 'set', 'system', sys['.name'], { zonename: 'Asia/Kuala Lumpur', timezone: '<+08>-8' } ]);
+	if (d.tz && d.country == 'MY' && sys) ops.push([ 'set', 'system', sys['.name'], { zonename: 'Asia/Kuala Lumpur', timezone: '<+08>-8' } ]);
 	if (phStatus && uci.get('pihole', 'main')) {
 		ops.push([ 'set', 'pihole', 'main', {
 			enabled: d.pihole == '1' ? '1' : '0',
@@ -518,6 +540,7 @@ async function finish() {
 		const r = await call('alphawrt', 'set_wan_mode', { mode: want }).catch(e => ({ ok: false, message: e.message }));
 		if (!r.ok) return toast('bad', r.message || 'Switching the internet port failed.');
 		await call('system', 'reboot').catch(() => {});
+		history.replaceState(null, '', '#/home');   // setup is done: come back to Home
 		return awaitReconnect(busy('Restarting the router', 'Setup is done. Internet and Wi-Fi go away for about two minutes. This page comes back by itself.'));
 	}
 	cur = 'done';
@@ -600,6 +623,8 @@ export default {
 			isp: uci.get('alphawrt', 'setup', 'isp') || '', mode, port: /^lan/.test(port) ? port : 'lan1',
 			proto: uci.get('network', 'wan', 'proto') || 'pppoe', vlan: m?.[2] || '',
 			username: uci.get('network', 'wan', 'username') || '', ppp_password: uci.get('network', 'wan', 'password') || '',
+			country_saved: wifiRadios().find(r => r.country && r.country != '00')?.country,
+			country: wifiRadios().find(r => r.country && r.country != '00')?.country || 'MY',
 			wifi_keep: false, tz: true, pw1: '', pw2: '', root_password: '',
 			pihole: first ? '1' : (piholeOn ? '1' : '0'),
 			pihole_preset: uci.get('pihole', 'main', 'preset') || 'multi',

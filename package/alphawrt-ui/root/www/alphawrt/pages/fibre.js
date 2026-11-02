@@ -89,7 +89,7 @@ export default {
 				maybe('network.interface', 'dump').then(r => r.interface || []),
 				maybe('alphawrt.fibre', 'topology', {}, null),
 				mode == 'bridge' ? [] : maybe('luci-rpc', 'getDHCPLeases', { family: 4 }).then(r => r.dhcp_leases || []),
-				mode == 'bridge' ? {} : maybe('network.wireless', 'status')
+				mode == 'bridge' ? {} : maybe('luci-rpc', 'getWirelessDevices')
 			]);
 			const wan = ifaces.find(i => i.interface == 'wan'), wanUp = !!wan?.up;
 			const v = line.verdict(st, ln, mode, wanUp);
