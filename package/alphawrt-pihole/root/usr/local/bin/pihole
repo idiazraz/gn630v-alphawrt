@@ -6,7 +6,8 @@
 #   ensure         rebuild gravity if it is empty (boot, WAN up)
 #   daily          rebuild gravity if Pi-hole is on (cron)
 #   reloadlists    make FTL re-read lists and domains after an edit
-#   apply          uci pihole.main -> dnsmasq port, FTL settings, presets, service
+#   apply          uci pihole.main -> dnsmasq port, FTL settings, presets,
+#                  DNS enforcement, service
 #   prepare        create the gravity database in RAM (init script)
 #   save           keep groups/lists/domains/clients on flash if they changed
 #   housekeep      save, cap the log files, retry an empty gravity (cron)
@@ -27,6 +28,14 @@ MARK='AlphaWRT preset'
 sql() { $FTL sqlite3 -ni "$@"; }
 own() { [ "$(id -u)" = 0 ] && chown pihole:pihole "$@"; return 0; }
 enabled() { [ "$(uci -q get pihole.main.enabled)" = 1 ]; }
+enforced() { enabled && [ "$(uci -q get pihole.main.enforce)" != 0 ]; }
+# canaries answered NXDOMAIN: Firefox then skips its own DoH, Apple devices
+# Private Relay; the rest are DoH servers browsers and apps can be set to
+NOHOST='use-application-dns.net mask.icloud.com mask-h2.icloud.com dns.google dns.google.com
+	cloudflare-dns.com mozilla.cloudflare-dns.com chrome.cloudflare-dns.com one.one.one.one
+	dns.quad9.net dns9.quad9.net dns10.quad9.net doh.opendns.com doh.familyshield.opendns.com
+	dns.adguard-dns.com dns.adguard.com unfiltered.adguard-dns.com family.adguard-dns.com
+	doh.cleanbrowsing.org dns.nextdns.io doh.mullvad.net dns.mullvad.net'
 count() { sql "$DB" "SELECT value FROM info WHERE property = 'gravity_count';" 2>/dev/null; }
 
 # new_db <file> <old db>: empty schema plus the old db's groups, lists,
@@ -175,12 +184,49 @@ ftl_config() {
 		files.log.ftl $DIR/FTL.log \
 		files.log.webserver $DIR/webserver.log \
 		files.log.dnsmasq $DIR/pihole.log \
-		database.maxDBdays 2
+		database.maxDBdays 2 \
+		misc.dnsmasq_lines "$(nohost_lines)"
 	while [ $# -gt 1 ]; do
 		$FTL --config "$1" "$2" >/dev/null || echo "FTL refused $1 = $2"
 		shift 2
 	done
 	own /etc/pihole/pihole.toml
+}
+
+nohost_lines() {
+	enforced || { echo '[]'; return; }
+	l=; for d in $NOHOST; do l="$l,\"address=/$d/\""; done
+	echo "[${l#,}]"
+}
+
+# Clients with their own DNS go through Pi-hole too: LAN port 53 is sent to
+# this box and DNS over TLS (853) out of the LAN is refused. Encrypted DNS to
+# a hard-coded address, or a VPN, still goes around it.
+enforce() {
+	if enforced; then
+		uci -q batch <<-EOF
+		set firewall.pihole_dns=redirect
+		set firewall.pihole_dns.name='Pi-hole: LAN DNS to this box'
+		set firewall.pihole_dns.src=lan
+		set firewall.pihole_dns.src_dport=53
+		set firewall.pihole_dns.proto='tcp udp'
+		set firewall.pihole_dns.target=DNAT
+		set firewall.pihole_dns.family=any
+		set firewall.pihole_dot=rule
+		set firewall.pihole_dot.name='Pi-hole: no DNS over TLS'
+		set firewall.pihole_dot.src=lan
+		set firewall.pihole_dot.dest='*'
+		set firewall.pihole_dot.dest_port=853
+		set firewall.pihole_dot.proto='tcp udp'
+		set firewall.pihole_dot.target=REJECT
+		EOF
+	else
+		uci -q delete firewall.pihole_dns
+		uci -q delete firewall.pihole_dot
+	fi
+	[ -n "$(uci changes firewall)" ] || return 0
+	uci commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
 }
 
 apply() {
@@ -198,6 +244,7 @@ apply() {
 		/etc/init.d/pihole-FTL disable
 		dnsmasq_port ''
 	fi
+	enforce
 }
 
 case "$1" in

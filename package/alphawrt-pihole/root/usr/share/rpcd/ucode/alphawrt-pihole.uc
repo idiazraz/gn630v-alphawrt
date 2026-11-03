@@ -119,7 +119,9 @@ const methods = {
 			const uci = cursor();
 			const enabled = uci.get('pihole', 'main', 'enabled') == '1';
 			const running = sh('pidof pihole-FTL') != '';
-			const b = running ? api('dns/blocking') : null;
+			// FTL's API misses a request now and then while it is busy (a
+			// list update, a forked helper): ask twice before saying failure
+			const b = running ? api('dns/blocking') ?? api('dns/blocking') : null;
 			return {
 				available: true,
 				reason: '',
