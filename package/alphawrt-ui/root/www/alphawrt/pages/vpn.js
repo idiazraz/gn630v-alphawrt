@@ -3,6 +3,8 @@
  * Connect securely to your home network from phone or laptop.
  * Displays peer status, live handshake/transfer metrics, and draws
  * scannable QR codes in the browser for instant mobile setup.
+ * Below it, Tailscale when the build has it (luci-app-tailscale-community's
+ * rpcd object "tailscale"; the GN630V's flash is too small for it).
  */
 import { h, icon, field, toggle, modal, toast, redraw, fmtTime } from '../lib/ui.js';
 import { call, maybe, uci, list } from '../lib/rpc.js';
@@ -53,7 +55,7 @@ export default {
 		const wgInstalled = await maybe('luci.wireguard', 'getWgInstances').then(r => r !== null).catch(() => false);
 		const head = h('div', { class: 'flex items-center justify-between mb-2' },
 			h('div', {},
-				h('h1', { class: 'text-2xl font-bold' }, 'VPN (WireGuard)'),
+				h('h1', { class: 'text-2xl font-bold' }, 'VPN'),
 				h('p', { class: 'text-sm opacity-70 mt-1' }, 'Encrypted tunnel back to your home network from anywhere.')
 			)
 		);
@@ -81,10 +83,11 @@ export default {
 
 		const tick = async () => {
 			await uci.load('network', 'firewall', 'alphawrt');
-			const [ instances, wanStatus, ifDump ] = await Promise.all([
+			/* the WAN address comes from the dump: network.interface.wan isn't in the ACL and sent the page to login (issue 0021) */
+			const [ instances, ifDump, ts ] = await Promise.all([
 				maybe('luci.wireguard', 'getWgInstances'),
-				maybe('network.interface.wan', 'status'),
-				maybe('network.interface', 'dump')
+				maybe('network.interface', 'dump'),
+				maybe('tailscale', 'get_status', {}, null)
 			]);
 
 			const wg = uci.get('network', 'wg0');
@@ -92,11 +95,7 @@ export default {
 			const isBridge = mode == 'bridge';
 
 			// Determine external endpoint
-			let wanIp = wanStatus?.ipv4_address?.[0]?.address;
-			if (!wanIp && ifDump?.interface) {
-				const wan = ifDump.interface.find(i => i.interface == 'wan');
-				wanIp = wan?.['ipv4-address']?.[0]?.address;
-			}
+			const wanIp = ifDump?.interface?.find(i => i.interface == 'wan')?.['ipv4-address']?.[0]?.address;
 			let epHost = location.hostname;
 			if (wanIp && !/^192\.168\./.test(wanIp) && !/^10\./.test(wanIp) && !/^172\.(1[6-9]|2\d|3[01])\./.test(wanIp)) {
 				epHost = wanIp;
@@ -133,6 +132,7 @@ export default {
 				content.append(this.serverCard(wg, serverPub, endpoint, isBridge));
 				content.append(this.peersCard(wg, serverPub, endpoint, isBridge, instances?.wg0?.peers || []));
 			}
+			if (ts?.status && ts.status != 'not_installed') content.append(this.tailscaleCard(ts));
 		};
 
 		await tick();
@@ -334,7 +334,8 @@ export default {
 			} ]);
 		}
 
-		const ok = await save(ops, { what: 'Setting up WireGuard VPN' }).catch(e => { toast('bad', e.message); return false; });
+		const ok = await save(ops, { what: 'Setting up WireGuard VPN' }).catch(e => { toast('bad', e.message); return null; });
+		if (ok === false) return toast('warn', 'The box didn’t confirm the change, so it was undone.');
 		if (ok) {
 			toast('ok', 'WireGuard VPN server enabled.');
 			redraw();
@@ -388,8 +389,8 @@ export default {
 		if (psk) peerValues.preshared_key = psk;
 
 		const ops = [ [ 'add', 'network', 'wireguard_wg0', peerValues ] ];
-		const saved = await save(ops, { what: 'Adding device' }).catch(e => { toast('bad', e.message); return false; });
-		if (!saved) return;
+		const saved = await save(ops, { what: 'Adding device' }).catch(e => { toast('bad', e.message); return null; });
+		if (!saved) return saved === false && toast('warn', 'The box didn’t confirm the change, so it was undone.');
 
 		const clientConf = makeClientConf({
 			clientPriv,
@@ -478,6 +479,42 @@ export default {
 		]);
 	},
 
+	/* status from get_status; login opens Tailscale's sign-in page, the rest is in LuCI */
+	tailscaleCard(ts) {
+		const peers = Object.values(ts.peers || {}), online = peers.filter(p => p.online).length;
+		const running = ts.status == 'running';
+		const login = async ev => {
+			ev.target.disabled = true;
+			toast('ok', 'Asking Tailscale for a sign-in link…');
+			const r = await call('tailscale', 'do_login', { form_data: { loginserver: '' } }).catch(e => ({ error: e.message }));
+			ev.target.disabled = false;
+			if (!r.url) return toast('bad', r.error || 'Tailscale gave no sign-in link.');
+			window.open(r.url, '_blank', 'noopener');
+		};
+		const logout = async () => {
+			if (!await modal('Log out of Tailscale?', h('p', { class: 'text-sm' }, 'Your other Tailscale devices can’t reach this box until you log in again.'),
+				[ [ 'Cancel', 'btn-ghost', false ], [ 'Log out', 'btn-warning', true ] ])) return;
+			const r = await call('tailscale', 'do_logout').catch(e => ({ error: e.message }));
+			toast(r.error ? 'bad' : 'ok', r.error || 'Logged out of Tailscale.');
+			redraw();
+		};
+		return h('div', { class: 'card bg-base-100 border border-base-300' },
+			h('div', { class: 'card-body p-6' },
+				h('div', { class: 'flex items-center gap-3' },
+					h('span', { class: `grid place-items-center size-9 rounded-full ${running ? 'bg-success/15 text-success' : 'bg-base-200'}` }, icon('vpn', 'size-5')),
+					h('div', {},
+						h('h2', { class: 'font-semibold text-base' }, 'Tailscale'),
+						h('span', { class: `badge badge-sm badge-soft ${running ? 'badge-success' : 'badge-ghost'}` }, running ? 'Connected' : ts.status == 'logout' ? 'Not logged in' : 'Stopped'))),
+				h('p', { class: 'text-sm opacity-80 mt-3' }, running
+					? `This box is ${ts.ipv4} on ${ts.domain_name || 'your tailnet'}. ${online} of ${peers.length} other devices online.`
+					: 'Reach your home network from any device with Tailscale, without opening a port. Works behind CGNAT too.'),
+				ts.health && h('p', { class: 'text-xs opacity-60 mt-1' }, ts.health),
+				h('div', { class: 'card-actions justify-end mt-3' },
+					h('a', { href: '/cgi-bin/luci/admin/vpn/tailscale', class: 'btn btn-ghost btn-sm' }, 'More settings', icon('external', 'size-4')),
+					running ? h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: logout }, 'Log out')
+						: ts.status == 'logout' && h('button', { type: 'button', class: 'btn btn-primary btn-sm', onclick: login }, 'Log in to Tailscale'))));
+	},
+
 	async removePeer(sectionName, desc) {
 		const ok = await modal(`Remove ${desc}?`, h('p', { class: 'text-sm' }, `This device will no longer be able to connect through this VPN.`), [
 			[ 'Cancel', 'btn-ghost', false ],
@@ -486,7 +523,8 @@ export default {
 		if (!ok) return;
 
 		const ops = [ [ 'remove', 'network', sectionName ] ];
-		const saved = await save(ops, { what: 'Removing device' }).catch(e => { toast('bad', e.message); return false; });
+		const saved = await save(ops, { what: 'Removing device' }).catch(e => { toast('bad', e.message); return null; });
+		if (saved === false) return toast('warn', 'The box didn’t confirm the change, so it was undone.');
 		if (saved) {
 			toast('ok', `${desc} removed.`);
 			redraw();
