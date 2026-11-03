@@ -1,0 +1,87 @@
+From 9bfbf67489222788e71e61ed097a23cde9d301cc Mon Sep 17 00:00:00 2001
+From: Lutfil Hadi <lutfilhadi1999@gmail.com>
+Date: Wed, 28 Oct 2026 16:32:55 +0000
+Subject: [PATCH 28/28] mt76: mt7915: debugfs file that dumps the chip efuse
+
+Adds a read-only phy*/mt76/efuse file: every eeprom-sized efuse block
+read through MCU_EXT_QUERY(EFUSE_ACCESS), with the free block count and
+whether the driver runs in flash mode. On the GN630V it showed the
+efuse holds little beyond what the flash eeprom already carries.
+---
+ ...0-mt7915-debugfs-dump-the-chip-efuse.patch | 64 +++++++++++++++++++
+ 1 file changed, 64 insertions(+)
+ create mode 100644 package/kernel/mt76/patches/900-mt7915-debugfs-dump-the-chip-efuse.patch
+
+diff --git a/package/kernel/mt76/patches/900-mt7915-debugfs-dump-the-chip-efuse.patch b/package/kernel/mt76/patches/900-mt7915-debugfs-dump-the-chip-efuse.patch
+new file mode 100644
+index 0000000000..e2ce3b7241
+--- /dev/null
++++ b/package/kernel/mt76/patches/900-mt7915-debugfs-dump-the-chip-efuse.patch
+@@ -0,0 +1,64 @@
++From d2189cf910e33f5f4ebe9a914cd141e166e5669c Mon Sep 17 00:00:00 2001
++From: Lutfil Hadi <lutfilhadi1999@gmail.com>
++Date: Wed, 28 Oct 2026 22:27:32 +0800
++Subject: [PATCH] wifi: mt76: mt7915: debugfs: dump the chip efuse
++
++Add a read-only 'efuse' debugfs file that reads every eeprom-sized
++block of the chip efuse through MCU_EXT_QUERY(EFUSE_ACCESS), plus the
++free block count and whether the driver runs in flash mode. Lets a
++board that loads a flash eeprom be compared with the efuse contents.
++---
++ mt7915/debugfs.c | 30 ++++++++++++++++++++++++++++++
++ 1 file changed, 30 insertions(+)
++
++diff --git a/mt7915/debugfs.c b/mt7915/debugfs.c
++index 7e561a47..1d3d9ea9 100644
++--- a/mt7915/debugfs.c
+++++ b/mt7915/debugfs.c
++@@ -1301,6 +1301,34 @@ mt7915_rf_regval_set(void *data, u64 val)
++ DEFINE_DEBUGFS_ATTRIBUTE(fops_rf_regval, mt7915_rf_regval_get,
++ 			 mt7915_rf_regval_set, "0x%08llx\n");
++ 
+++static int
+++mt7915_efuse_dump(struct seq_file *s, void *data)
+++{
+++	struct mt7915_dev *dev = dev_get_drvdata(s->private);
+++	u16 size = mt7915_eeprom_size(dev);
+++	u8 free_blk = 0, *buf;
+++	int i, ret = 0;
+++
+++	/* reads the chip efuse via the MCU, independent of the loaded eeprom */
+++	buf = kzalloc(size, GFP_KERNEL);
+++	if (!buf)
+++		return -ENOMEM;
+++
+++	for (i = 0; i < size; i += MT7915_EEPROM_BLOCK_SIZE) {
+++		ret = mt7915_mcu_get_eeprom(dev, i, buf + i);
+++		if (ret)
+++			goto out;
+++	}
+++
+++	mt7915_mcu_get_eeprom_free_block(dev, &free_blk);
+++	seq_printf(s, "flash_mode: %d free_blocks: %u\n", dev->flash_mode,
+++		   free_blk);
+++	seq_hex_dump(s, "", DUMP_PREFIX_OFFSET, 16, 1, buf, size, false);
+++out:
+++	kfree(buf);
+++	return ret;
+++}
+++
++ int mt7915_init_debugfs(struct mt7915_phy *phy)
++ {
++ 	struct mt7915_dev *dev = phy->dev;
++@@ -1334,6 +1362,8 @@ int mt7915_init_debugfs(struct mt7915_phy *phy)
++ 			    &mt7915_txpower_path_fops);
++ 	debugfs_create_devm_seqfile(dev->mt76.dev, "twt_stats", dir,
++ 				    mt7915_twt_stats);
+++	debugfs_create_devm_seqfile(dev->mt76.dev, "efuse", dir,
+++				    mt7915_efuse_dump);
++ 	debugfs_create_file("rf_regval", 0600, dir, dev, &fops_rf_regval);
++ 	if (!is_mt7915(&dev->mt76))
++ 		debugfs_create_file("vow_atf", 0600, dir, dev, &fops_vow_atf);
++-- 
++2.56.0
++
+-- 
+2.47.3
+
