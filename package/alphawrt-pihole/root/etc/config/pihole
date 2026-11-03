@@ -4,5 +4,8 @@ config pihole 'main'
 	option preset 'multi'
 	# also block Hagezi's threat intelligence feed (tif.mini)
 	option tif '0'
+	# while on, LAN devices with their own DNS go through Pi-hole too
+	# (port 53 sent here, DNS over TLS refused, known DoH servers blocked)
+	option enforce '1'
 	# bridge mode: ask the main router for device names, e.g.
 	# list revserver 'true,192.168.0.0/24,192.168.100.2#5354,am'
