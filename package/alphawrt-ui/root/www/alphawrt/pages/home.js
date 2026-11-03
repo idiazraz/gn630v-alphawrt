@@ -17,8 +17,10 @@ const setupLink = () => h('a', { href: SETUP, class: 'btn btn-sm btn-warning mt-
 function dnsServers(wan) {
 	const port = uci.get('dnsproxy', 'global', 'listen_port');
 	if (uci.get('dnsproxy', 'global', 'enabled') == '1' && list(uci.get('dhcp', '@dnsmasq[0]', 'server')).includes(`127.0.0.1#${port}`))
-		return 'Encrypted via ' + list(uci.get('dnsproxy', 'servers', 'upstream')).map(u => u.replace(/^\w+:\/\/|\/.*$/g, '')).join(', ');
-	return (wan?.['dns-server'] || []).join(', ') || '—';
+		return 'Encrypted: ' + list(uci.get('dnsproxy', 'servers', 'upstream')).map(u => u.replace(/^\w+:\/\/|\/.*$/g, '')
+			.replace(/^unfiltered\.adguard-dns\.com$/, 'AdGuard (no blocking)').replace(/^cloudflare-dns\.com$/, 'Cloudflare')).join(', ');
+	const own = list(uci.get('dhcp', '@dnsmasq[0]', 'server'));
+	return (own.length ? own : wan?.['dns-server'] || []).join(', ') || '—';
 }
 
 /* combo mode's IPTV port: br-iptv = lan4 + pon0.<vlan> (Quick Setup) */
