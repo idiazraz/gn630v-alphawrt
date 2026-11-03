@@ -1,0 +1,14 @@
+The Makefile picks .dylib from the build host's uname, which breaks a cross
+build from macOS. ddns-scripts pulls giflib in for one provider.
+
+--- a/Makefile
++++ b/Makefile
+@@ -37,7 +37,7 @@
+ UHEADERS = getarg.h
+ UOBJECTS = $(USOURCES:.c=.o)
+ 
+-UNAME:=$(shell uname)
++UNAME:=Linux
+ 
+ # Some utilities are installed
+ INSTALLABLE = \
