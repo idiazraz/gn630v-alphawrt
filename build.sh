@@ -39,10 +39,12 @@ rm -rf package/alphawrt && cp -R "$HERE/package" package/alphawrt
 for p in package/alphawrt/*/; do git log -1 --format=%ct > "$p/version.date"; done
 cp "$HERE/config/feeds.conf" feeds.conf
 ./scripts/feeds update -a
+mkdir -p feeds/packages/libs/giflib/patches
+cp "$HERE/giflib-990-target-is-linux.patch" feeds/packages/libs/giflib/patches/
 # every feed package gn630v.config selects, or defconfig silently drops it
 ./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode usteer luci-app-usteer \
 	prometheus-node-exporter-lua iperf3 etherwake miniupnpd luci-app-upnp \
-	ddns-scripts luci-app-ddns htop
+	ddns-scripts luci-app-ddns htop cgi-io
 
 cp "$HERE/config/gn630v.config" .config
 # bridger's BPF program is built with the host clang/llc: on macOS that is
