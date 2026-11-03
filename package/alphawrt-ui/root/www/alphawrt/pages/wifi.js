@@ -10,7 +10,7 @@ import { save } from '../lib/apply.js';
 import { qrSvg, wifiQr } from '../lib/qr.js';
 
 const BAND = { '2g': '2.4 GHz', '5g': '5 GHz', '6g': '6 GHz' };
-const SECURITY = [ [ 'wpa2-wpa3', 'WPA2 + WPA3 (recommended)' ], [ 'wpa2', 'WPA2 only' ], [ 'wpa3', 'WPA3 only' ] ];
+const SECURITY = [ [ 'wpa2-wpa3', 'WPA2 + WPA3 (recommended)' ], [ 'wpa2', 'WPA2 only (printers and older devices)' ], [ 'wpa3', 'WPA3 only' ] ];
 const ENCRYPTION = { wpa2: 'psk2', 'wpa2-wpa3': 'sae-mixed', wpa3: 'sae' };
 
 /* WPA passphrase: 8-63 printable characters, or 64 hex digits (not with WPA3 only) */
@@ -42,7 +42,7 @@ export default {
 
 		const together = toggle('Same name and password on both bands', st.same_name, 'Phones and laptops pick the faster band by themselves.');
 		const pw = (label, value, sec) => field(label, { value: value || '', password: true, autocomplete: 'new-password',
-			hint: sec == 'wpa3' ? '8 to 63 characters. WPA3 only: older devices may not connect.' : '8 to 63 characters.' });
+			hint: sec == 'wpa3' ? '8 to 63 characters. WPA3 only: older devices may not connect.' : sec == 'wpa2-wpa3' ? '8 to 63 characters. If a printer or older device won’t connect, choose WPA2 only.' : '8 to 63 characters.' });
 		const shared = { ssid: field('Network name', { value: bands[0].ssid || '', maxlength: 32 }), key: pw('Password', bands[0].key),
 			sec: choice('Security', SECURITY, secOf(bands[0].security)) };
 

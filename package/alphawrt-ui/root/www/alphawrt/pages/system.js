@@ -5,9 +5,9 @@
  * and restores run only through /usr/libexec/alphawrt-ui/flash, never with
  * --force (issue 0005).
  */
-import { h, icon, rows, card, field, toggle, modal, busy, toast, redraw, fmtTime } from '../lib/ui.js';
-import { call, maybe, upload, sessionId } from '../lib/rpc.js';
-import { awaitReconnect } from '../lib/apply.js';
+import { h, icon, rows, card, field, toggle, choice, modal, busy, toast, redraw, fmtTime } from '../lib/ui.js';
+import { call, maybe, upload, sessionId, uci, list } from '../lib/rpc.js';
+import { awaitReconnect, save } from '../lib/apply.js';
 import { usage } from '../lib/stats.js';
 
 const FW = '/tmp/firmware.bin', BACKUP = '/tmp/backup.tar.gz';
@@ -15,6 +15,8 @@ const exec = (command, params) => call('file', 'exec', { command, params });
 /* every flash and restore goes through this wrapper: fixed verbs, checks first, never --force (issue 0005) */
 const flash = verb => exec('/usr/libexec/alphawrt-ui/flash', [ verb ]);
 const mb = n => `${(n / 1048576).toFixed(1)} MB`;
+const IP = /^(\d{1,3}(\.\d{1,3}){3}|[0-9a-f:]*:[0-9a-f:]+)$/i;
+const DNS = [ [ 'encrypted', 'Encrypted (recommended)' ], [ 'isp', 'Internet provider’s (e.g. TM Unifi)' ], [ 'custom', 'Other servers' ] ];
 
 /* what a bank holds, as alphawrt-bootbank reports it ("AlphaWRT-r37113+…" or a stock version) */
 function bankLabel(holds) {
@@ -44,13 +46,14 @@ export default {
 	title: 'System',
 
 	async render(main) {
-		const [ board, banks ] = await Promise.all([ maybe('system', 'board'), maybe('alphawrt', 'banks') ]);
+		const [ board, banks ] = await Promise.all([ maybe('system', 'board'), maybe('alphawrt', 'banks'), uci.load('dhcp', 'dnsproxy') ]);
 		const u = usage([ [ 'Firmware', board.release?.description?.replace(/ r\d+.*$/, '') || '—' ], [ 'Model', board.model || '—' ] ]);
 
 		main.append(h('h1', { class: 'text-2xl font-bold' }, 'System'),
 			h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
 				card('box', 'This box', null, u.el),
 				this.password(),
+				this.dns(),
 				this.firmware(banks),
 				banks.a != null && this.banks(banks),
 				this.backup(),
@@ -76,6 +79,32 @@ export default {
 		};
 		return card('key', 'Admin password', null, h('div', {}, pw1, pw2,
 			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Change password'))));
+	},
+
+	/* dnsmasq serves the LAN either way (Pi-hole, when on, asks dnsmasq); only where dnsmasq forwards changes */
+	dns() {
+		const dm = uci.get('dhcp', '@dnsmasq[0]'), port = uci.get('dnsproxy', 'global', 'listen_port') || '5353';
+		const servers = list(dm?.server), proxy = `127.0.0.1#${port}`;
+		const mode = servers.includes(proxy) ? 'encrypted' : servers.length ? 'custom' : 'isp';
+		const sel = choice('DNS servers', DNS, mode);
+		const own = field('DNS server addresses', { value: mode == 'custom' ? servers.join(' ') : '', placeholder: 'e.g. 8.8.8.8 1.1.1.1',
+			hint: 'One or more addresses, separated by spaces.' });
+		const show = () => own.classList.toggle('hidden', sel.input.value != 'custom');
+		sel.input.addEventListener('change', show);
+		show();
+		const go = async () => {
+			const m = sel.input.value, ips = own.input.value.trim().split(/[\s,]+/).filter(Boolean);
+			if (m == 'custom' && (!ips.length || !ips.every(a => IP.test(a)))) return toast('warn', 'Type one or more IP addresses, such as 8.8.8.8.');
+			const ops = m == 'isp'
+				? [ [ 'unset', 'dhcp', dm['.name'], 'server' ], [ 'unset', 'dhcp', dm['.name'], 'noresolv' ] ]
+				: [ [ 'set', 'dhcp', dm['.name'], { server: m == 'encrypted' ? [ proxy ] : ips, noresolv: '1' } ] ];
+			if (m == 'encrypted') ops.push([ 'set', 'dnsproxy', 'global', { enabled: '1' } ]);
+			if (await save(ops, { what: 'Saving DNS' }).catch(e => { toast('bad', e.message); return null; })) { toast('ok', 'DNS saved.'); redraw(); }
+		};
+		return card('globe', 'DNS', null, h('div', {},
+			h('p', { class: 'text-sm opacity-80' }, 'Turns names like google.com into addresses for every device here. Encrypted uses AdGuard and Cloudflare, which don’t block anything; ad blocking is Pi-hole’s job.'),
+			sel, own,
+			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
 	},
 
 	firmware(banks) {

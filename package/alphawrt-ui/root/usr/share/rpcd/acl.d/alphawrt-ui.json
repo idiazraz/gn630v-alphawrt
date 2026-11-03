@@ -160,6 +160,7 @@
 			},
 			"uci": [
 				"dhcp",
+				"dnsproxy",
 				"wireless",
 				"usteer",
 				"firewall",
