@@ -57,7 +57,7 @@ function shell(page, main) {
 }
 
 function loginView(error) {
-	const pw = h('input', { type: 'password', name: 'password', class: 'grow min-w-0', autocomplete: 'current-password', required: true, autofocus: true });
+	const pw = h('input', { type: 'password', name: 'password', class: 'grow min-w-0', autocomplete: 'current-password', autofocus: true });
 	const form = h('form', { class: 'card bg-base-100 border border-base-300 w-full max-w-sm' },
 		h('div', { class: 'card-body gap-4' },
 			logo('h-9 w-auto self-center mb-2'),
@@ -158,6 +158,8 @@ async function start() {
 	/* first run: Quick Setup, as the stock firmware does (once per tab, so Home stays reachable) */
 	await uci.load('alphawrt');
 	syncClock();
+	/* a reload after setup's restart lands here: Quick Setup only opens from its button */
+	if (uci.get('alphawrt', 'setup', 'done') == '1' && route() == 'setup') return location.hash = '#/home';
 	if (uci.get('alphawrt', 'setup', 'done') == '0' && !sessionStorage.getItem('alphawrt-setup-offered')) {
 		sessionStorage.setItem('alphawrt-setup-offered', '1');
 		if (location.hash != '#/setup') return location.hash = '#/setup';   // the hashchange draws it

@@ -85,16 +85,20 @@ export default {
 		if (!g.available) for (const x of Object.values(guest)) x.input.disabled = true;
 
 		const body = h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' });
+		const guestCard = () => card('wifi', 'Guest Wi-Fi', g.enabled ? badge('ok', `${g.clients || 0} connected`) : badge('off', 'Off'),
+			h('div', { class: g.available ? '' : 'opacity-50' }, guest.on, guest.ssid, guest.key, guest.sec,
+				!g.available && h('p', { class: 'text-sm mt-2' }, g.reason == 'bridge' ? 'Your own router handles guest Wi-Fi in bridge mode.' : 'Guest Wi-Fi isn’t available right now.'),
+				g.enabled && h('div', { class: 'card-actions justify-end mt-2' }, qrButton(g.ssid, g.key))));
+		/* two columns: the two bands always share a row, and the guest card
+		 * sits beside the tall card it matches */
 		const draw = () => body.replaceChildren(...[
 			together.input.checked && card('wifi', 'Your Wi-Fi', null, h('div', {}, shared.ssid, shared.key, shared.sec,
 				h('div', { class: 'card-actions justify-end mt-2' }, qrButton(bands[0].ssid, bands[0].key)))),
+			together.input.checked && guestCard(),
 			per.map(p => card('wifi', BAND[p.b.band] || p.b.band, p.b.enabled ? badge('ok', `${p.b.clients} connected`) : badge('off', 'Off'),
 				h('div', {}, p.on, !together.input.checked && [ p.ssid, p.key, p.sec ], radio(p), p.info,
 					!together.input.checked && p.b.enabled && h('div', { class: 'card-actions justify-end mt-2' }, qrButton(p.b.ssid, p.b.key))))),
-			card('wifi', 'Guest Wi-Fi', g.enabled ? badge('ok', `${g.clients || 0} connected`) : badge('off', 'Off'),
-				h('div', { class: g.available ? '' : 'opacity-50' }, guest.on, guest.ssid, guest.key, guest.sec,
-					!g.available && h('p', { class: 'text-sm mt-2' }, g.reason == 'bridge' ? 'Your own router handles guest Wi-Fi in bridge mode.' : 'Guest Wi-Fi isn’t available right now.'),
-					g.enabled && h('div', { class: 'card-actions justify-end mt-2' }, qrButton(g.ssid, g.key)))),
+			!together.input.checked && guestCard(),
 			steer && card('wifi', 'Band steering', null, steer)
 		].flat().filter(Boolean));
 		together.input.addEventListener('change', draw);
@@ -120,7 +124,9 @@ export default {
 			/* OpenWrt then picks the PMF setting that matches the encryption */
 			ops.push([ 'unset', 'wireless', p.b.iface, 'ieee80211w' ]);
 			/* the band is on only if its radio is too: Advanced can switch off either */
-			const radio = { channel: p.chan.input.value, ...(p.width.input.value ? { htmode: `HE${p.width.input.value}` } : {}) };
+			const gen = /^EHT/.test(uci.get('wireless', p.b.radio, 'htmode')) ? 'EHT' : 'HE', width = p.width.input.value;
+			/* keep Wi-Fi 7 radios on Wi-Fi 7. Auto can't pick 160 MHz: only channels 36-64 and 100-128 have it */
+			const radio = { channel: width == '160' && p.chan.input.value == 'auto' ? '100' : p.chan.input.value, ...(width ? { htmode: `${gen}${width}` } : {}) };
 			ops.push([ 'set', 'wireless', p.b.radio, radio ]);
 			if (on) ops.push([ 'unset', 'wireless', p.b.radio, 'disabled' ]);
 		}

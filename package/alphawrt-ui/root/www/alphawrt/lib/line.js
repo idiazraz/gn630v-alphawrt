@@ -60,9 +60,9 @@ export default {
 		    mode = uci.get('alphawrt', 'setup', 'mode');
 
 		if (!mode)
-			mode = br ? 'bridge' : lan(wan) ? 'router' : 'combo';
+			mode = br ? 'bridge' : lan(wan) || wan == 'wan' ? 'router' : 'combo';
 
-		return [ mode, br ? list(br.ports).filter(lan)[0] : lan(wan) ? wan : null ];
+		return [ mode, br ? list(br.ports).filter(lan)[0] : lan(wan) || wan == 'wan' ? wan : null ];
 	},
 
 	/* false on a board without fibre (alphawrt.board.fibre = 0, set by the
@@ -183,6 +183,16 @@ export default {
 	},
 
 	/*
+	 * The box runs on the serial the kernel generated (issues/0013). pon:
+	 * alphawrt pon_info, whose serial_source is missing if it can't be read.
+	 * Returns { title, text } or null.
+	 */
+	serialWarning: function(pon, mode) {
+		return mode != 'router' && pon.serial_source < 5 ? { title: 'No serial number saved',
+			text: 'The box generated its own GPON serial number and gets a new one at every restart. The ISP can flag or block a box it does not recognise. Enter the serial number from the ISP\'s fibre box in Quick Setup.' } : null;
+	},
+
+	/*
 	 * st: omci.agent status, mode: combo|router|bridge, wanUp: bool.
 	 * Returns { level: 'ok'|'warn'|'bad', title, text }.
 	 */
@@ -200,7 +210,7 @@ export default {
 
 		if (mode == 'router')
 			return { level: 'ok', title: 'Fibre not used',
-				text: 'In router mode the Internet comes in on a LAN port, so this box\'s fibre is idle.' };
+				text: 'In router mode this box\'s fibre isn\'t used.' };
 
 		if (st.state == 7)
 			return { level: 'bad', title: 'Stopped by the ISP',

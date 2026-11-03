@@ -1,0 +1,57 @@
+From 70e45438842ec78da53dd1e744f03186b8f23175 Mon Sep 17 00:00:00 2001
+From: Lutfil Hadi <lutfilhadi1999@gmail.com>
+Date: Thu, 29 Oct 2026 16:47:34 +0000
+Subject: [PATCH] airoha: wed: take the TXD size from the WLAN driver
+
+airoha_wed required the WLAN driver's init_buf() to return exactly 128
+bytes and placed the packet buffer at +128. mt7915 (MT7915/MT7916)
+returns MT_TXD_SIZE plus its TXP (76 bytes) and tells the firmware the
+packet sits right after that, so WED attach failed with -EINVAL and a
+WARN at airoha_wed.c:484.
+
+Use the size the driver returns for buf1 and LEN0, as mtk_wed does for
+WED v1, and only refuse sizes that do not fit the 128 bytes reserved
+ahead of the packet. Tested on a GN630V (EN7523 + MT7916): WED1 now
+attaches and sets up its rings (tokens 4096-8191).
+---
+ ...ke-the-TXD-size-from-the-WLAN-driver.patch | 28 +++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/931-net-airoha-wed-take-the-TXD-size-from-the-WLAN-driver.patch
+
+diff --git a/target/linux/airoha/patches-6.18/931-net-airoha-wed-take-the-TXD-size-from-the-WLAN-driver.patch b/target/linux/airoha/patches-6.18/931-net-airoha-wed-take-the-TXD-size-from-the-WLAN-driver.patch
+new file mode 100644
+index 0000000000..9b0c0e4f1b
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/931-net-airoha-wed-take-the-TXD-size-from-the-WLAN-driver.patch
+@@ -0,0 +1,28 @@
++From: Lutfil Hadi <lutfilhadi1999@gmail.com>
++Subject: [PATCH] net: airoha: wed: take the TXD size from the WLAN driver
++
++mtk_wed_tx_buffer_alloc() required init_buf() to return exactly 128
++bytes. mt7915 (MT7915/MT7916) returns MT_TXD_SIZE plus its TXP, so
++attach failed with -EINVAL and the WARN at the size check. Use the size
++the driver returns for buf1 and LEN0, as mtk_wed does for WED v1, and
++only refuse sizes that don't fit the 128 bytes reserved ahead of the
++packet buffer.
++---
++--- a/drivers/net/ethernet/airoha/airoha_wed.c
+++++ b/drivers/net/ethernet/airoha/airoha_wed.c
++@@ -481,12 +481,11 @@
++ 
++ 			desc->buf0 = cpu_to_le32(buf_phys);
++ 			txd_size = dev->wlan.init_buf(buf, buf_phys, token++);
++-			if (WARN_ON_ONCE(txd_size != MTK_WED_TXD_SIZE))
+++			if (WARN_ON_ONCE(!txd_size || txd_size > MTK_WED_TXD_SIZE))
++ 				return -EINVAL;
++ 
++-			desc->buf1 = cpu_to_le32(buf_phys + MTK_WED_TXD_SIZE);
++-			ctrl = FIELD_PREP(MTK_WDMA_DESC_CTRL_LEN0,
++-					  MTK_WED_TXD_SIZE) |
+++			desc->buf1 = cpu_to_le32(buf_phys + txd_size);
+++			ctrl = FIELD_PREP(MTK_WDMA_DESC_CTRL_LEN0, txd_size) |
++ 			       AIROHA_WDMA_DESC_CTRL_LAST_SEG1 |
++ 			       FIELD_PREP(MTK_WDMA_DESC_CTRL_LEN1_V2,
++ 					  MTK_WED_PKT_SIZE);
+-- 
+2.47.3
+

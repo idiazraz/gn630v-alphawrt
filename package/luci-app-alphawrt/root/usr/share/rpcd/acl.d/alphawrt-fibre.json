@@ -5,7 +5,8 @@
 			"ubus": {
 				"alphawrt.fibre": [
 					"topology",
-					"detail"
+					"detail",
+					"map"
 				]
 			}
 		}

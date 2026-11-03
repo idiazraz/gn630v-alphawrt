@@ -89,15 +89,18 @@ export default {
 				maybe('network.interface', 'dump').then(r => r.interface || []),
 				maybe('alphawrt.fibre', 'topology', {}, null),
 				mode == 'bridge' ? [] : maybe('luci-rpc', 'getDHCPLeases', { family: 4 }).then(r => r.dhcp_leases || []),
-				mode == 'bridge' ? {} : maybe('network.wireless', 'status')
+				mode == 'bridge' ? {} : maybe('luci-rpc', 'getWirelessDevices')
 			]);
 			const wan = ifaces.find(i => i.interface == 'wan'), wanUp = !!wan?.up;
 			const v = line.verdict(st, ln, mode, wanUp);
 			last = { st, ln, pon, mode, wanUp, v };
 			const net = mode == 'bridge' ? `On ${portName(port)}, dials the Internet`
 				: `Wi-Fi ${Object.values(radios).some(r => r.up) ? 'on' : 'off'} · ${leases.length} devices`;
+			const sn = line.serialWarning(pon, mode);
 			body.replaceChildren(topo?.optics ? card('fibre', 'Your fibre line', null, topology(topo, ln, wanUp, net)) : '',
-				alert(v.level, v.title, v.text), this.rxChart(ln), h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
+				alert(v.level, v.title, v.text),
+				sn ? alert('warn', sn.title, sn.text, h('a', { href: '#/setup', class: 'btn btn-sm btn-warning mt-2' }, 'Open Quick Setup')) : '',
+				this.rxChart(ln), h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
 				this.light(st, ln), this.registration(st, pon), this.internet(mode, port, ln, wan, wanUp)),
 				this.errors(st, ln), this.events(ln));
 		};

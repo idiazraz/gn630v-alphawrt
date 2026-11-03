@@ -6,10 +6,12 @@
  *             OLT provisioned (VLAN -> GEM ports -> Alloc-IDs -> LAN ports)
  *   detail    the OMCI tables behind it: T-CONTs, GEM ports, bridge ports,
  *             VLAN rules, the ME inventory and the line counters
+ *   map       every managed entity with its attribute bytes, for the
+ *             provisioning map, with the private bytes masked
  *
  * Reads the MIB through the native omci module (a ubus call to omci.agent
  * would loop back into rpcd). Never returns the serial number, the PLOAM
- * password, MAC addresses or raw MIB data.
+ * password or MAC addresses; only map returns raw MIB data, masked.
  */
 
 import * as omci from 'omci';
@@ -18,6 +20,13 @@ import { cursor } from 'uci';
 
 const XMAC = '/sys/bus/platform/devices/1fb60000.xmac';
 const PON = XMAC + '/xpon/pon0';
+
+/* OMCI OLT-G vendor IDs, the same ones the kernel's profile detection knows */
+const OLT_BRANDS = {
+	ALCL: 'Nokia', NOKI: 'Nokia', HWTC: 'Huawei', HWTI: 'Huawei',
+	FHTT: 'FiberHome', FHTC: 'FiberHome', ZTEG: 'ZTE', ZTEC: 'ZTE',
+	DSNW: 'DASAN', DASA: 'DASAN'
+};
 
 /* attribute at byte offset off, len bytes, from a MIB object's hex data */
 function attr(o, off, len) {
@@ -133,6 +142,57 @@ function decode() {
 	};
 }
 
+/* MEs that hold identity, addresses or logins: their bytes stay on the box */
+const HIDDEN = [ 134, 136, 137, 148, 150, 153, 157, 256, 340, 347 ];
+/* class -> [ offset, length ] of the private bytes (circuit pack serial, bridge port MAC) */
+const PRIVATE = { [6]: [ 2, 8 ], [47]: [ 13, 6 ] };
+
+/*
+ * The box's serial and PLOAM password as hex, as they would sit in raw MIB
+ * data. Each agent keeps them in its own file: omci-agent in omci, xpon-agent
+ * in xpon.
+ */
+function secrets(uci) {
+	let out = [];
+
+	for (let conf in [ 'omci', 'xpon' ]) {
+		let sn = uci.get(conf, 'main', 'serial') ?? '', pw = uci.get(conf, 'main', 'password') ?? '';
+
+		if (length(sn) == 12)
+			push(out, hexenc(substr(sn, 0, 4)) + lc(substr(sn, 4)));
+		else if (length(sn))
+			push(out, lc(sn));
+		if (length(pw))
+			push(out, hexenc(pw), lc(pw));
+	}
+	return filter(out, s => length(s) >= 8);
+}
+
+function masked(o, secret) {
+	let d = o.data ?? '', p = PRIVATE[o.class_id];
+
+	if (o.class_id in HIDDEN)
+		return null;
+	if (p)
+		d = substr(d, 0, p[0] * 2) + replace(substr(d, p[0] * 2, p[1] * 2), /./g, 'x') + substr(d, (p[0] + p[1]) * 2);
+	for (let s in secret)
+		d = replace(d, s, replace(s, /./g, 'x'));
+	/* 64 bytes per object, most of them zero: the page pads them back */
+	return replace(d, /(00)+$/, '');
+}
+
+function mib_map() {
+	let s = omci.status(0) ?? {}, secret = secrets(cursor());
+
+	return {
+		state: s.state ?? 0, sync: s.mib_sync,
+		objects: map(omci.mib_list(0) ?? [], o => ({
+			class: o.class_id, id: o.entity_id, name: o.name, origin: o.origin, mask: o.attr_mask,
+			data: masked(o, secret), vlan_filter: o.vlan_filter, extended_vlan: o.extended_vlan
+		}))
+	};
+}
+
 /* ISP preset VLANs -> what each service is */
 function kinds(uci) {
 	let isp = uci.get('alphawrt', 'setup', 'isp'), k = {};
@@ -183,7 +243,7 @@ function topology(d) {
 		limits: length(thr) == 4
 			? { sf: thr[0], sd: thr[1], rx_min: thr[2] / 10, rx_max: thr[3] / 10 }
 			: { sf: null, sd: null, rx_min: -28, rx_max: -8 },
-		olt: { vendor: olt && olt != 'unknown' ? olt : null },
+		olt: { vendor: olt && olt != 'unknown' ? OLT_BRANDS[uc(olt)] ?? olt : null },
 		services: map(d.services, sv => {
 			let dev = 'pon0.' + sv.vlan, st = '/sys/class/net/' + dev;
 			return { ...sv, kind: k[sv.vlan] ?? 'other',
@@ -202,6 +262,9 @@ return {
 	'alphawrt.fibre': {
 		topology: {
 			call: () => topology(decode())
+		},
+		map: {
+			call: () => mib_map()
 		},
 		detail: {
 			call: function() {

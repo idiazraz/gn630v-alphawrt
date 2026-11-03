@@ -6,7 +6,9 @@
  * any session whose values hold a string "token" (its CSRF token) and a
  * username (dispatcher.uc session_retrieve). So after session.login we set a
  * token in our own session and write the cookie for /cgi-bin/luci/: Advanced
- * then opens without a second login. Checked on the box, 2026-10-27.
+ * then opens without a second login. Checked on the box, 2026-10-27. The
+ * other way round, the theme's menu-alphawrt.js stores LuCI's session under
+ * KEY, so a login in Advanced opens the Simple UI too.
  */
 
 const NULL_SID = '00000000000000000000000000000000';

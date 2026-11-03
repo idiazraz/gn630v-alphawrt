@@ -5,6 +5,7 @@
 			"ubus": {
 				"alphawrt": [
 					"banks",
+					"wan_mode",
 					"presets",
 					"stock_identity",
 					"pon_info",
@@ -18,7 +19,8 @@
 				],
 				"luci-rpc": [
 					"getDHCPLeases",
-					"getHostHints"
+					"getHostHints",
+					"getWirelessDevices"
 				],
 				"network.device": [
 					"status"
@@ -69,6 +71,7 @@
 				"firewall",
 				"system",
 				"omci",
+				"xpon",
 				"pihole"
 			],
 			"cgi-io": [
@@ -133,6 +136,7 @@
 				],
 				"alphawrt": [
 					"set_bank",
+					"set_wan_mode",
 					"set_identity"
 				],
 				"alphawrt.wifi": [

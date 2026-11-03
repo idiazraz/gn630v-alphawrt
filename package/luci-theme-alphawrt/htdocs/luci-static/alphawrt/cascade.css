@@ -2986,6 +2986,10 @@ footer.login-foot {
 		margin-left: 0;
 	}
 
+	.nav > li.topmenu-pihole > a {
+		justify-content: flex-start;
+	}
+
 	.nav > li.topmenu-logout {
 		margin-left: 0;
 	}

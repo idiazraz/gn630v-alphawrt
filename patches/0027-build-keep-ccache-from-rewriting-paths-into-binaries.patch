@@ -1,0 +1,28 @@
+From 2a91f4e4ed7fb7934c6083e1ae108f4d5b82b284 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 22:17:20 +0800
+Subject: [PATCH 27/27] build: keep ccache from rewriting paths into binaries
+
+CCACHE_BASEDIR turns absolute paths into relative ones, so __FILE__ in
+headers from the kernel and mac80211 escapes the prefix maps and lands in
+the image: a build with ccache differs from one without it. The tree's
+path doesn't change between builds, so the rewrite gains nothing here.
+---
+ rules.mk | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/rules.mk b/rules.mk
+index 18f2ca289f..b25df2eeab 100644
+--- a/rules.mk
++++ b/rules.mk
+@@ -417,7 +417,6 @@ ifneq ($(CONFIG_CCACHE),)
+   HOSTCC:= ccache $(HOSTCC)
+   HOSTCXX:= ccache $(HOSTCXX)
+   export CCACHE_NOCOMPRESS:=true
+-  export CCACHE_BASEDIR:=$(TOPDIR)
+   export CCACHE_DIR:=$(if $(call qstrip,$(CONFIG_CCACHE_DIR)),$(call qstrip,$(CONFIG_CCACHE_DIR)),$(TOPDIR)/.ccache)
+ endif
+ 
+-- 
+2.54.0 (Apple Git-157)
+
