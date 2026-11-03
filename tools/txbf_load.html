@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>TXBF load</title>
+<body style="font:20px sans-serif;padding:16px;background:#111;color:#eee">
+<h2>Downlink load</h2>
+<p>Keep this screen on.</p>
+<p id="s">starting…</p>
+<script>
+// Pull big.bin forever, throw the bytes away, retry after Wi-Fi drops.
+const s = document.getElementById('s');
+let total = 0, t0 = Date.now(), last = 0;
+setInterval(() => {
+  const mbps = ((total - last) * 8 / 1e6).toFixed(0);
+  last = total;
+  s.textContent = `${(total / 1e9).toFixed(2)} GB, ${mbps} Mbit/s`;
+}, 1000);
+(async function loop() {
+  for (;;) {
+    try {
+      const r = await fetch('big.bin?' + Date.now(), { cache: 'no-store' });
+      const rd = r.body.getReader();
+      for (;;) { const { done, value } = await rd.read(); if (done) break; total += value.length; }
+    } catch (e) { s.textContent = 'reconnecting…'; await new Promise(r => setTimeout(r, 2000)); }
+  }
+})();
+// ponytail: wake lock keeps the screen on where supported; otherwise the user does it
+navigator.wakeLock?.request('screen').catch(() => {});
+</script>
