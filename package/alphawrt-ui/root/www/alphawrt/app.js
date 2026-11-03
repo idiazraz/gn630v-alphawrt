@@ -13,6 +13,7 @@ const NAV = [
 	[ 'fibre', 'Fibre', 'fibre' ],
 	[ 'wifi', 'Wi-Fi', 'wifi' ],
 	[ 'devices', 'Devices', 'devices' ],
+	[ 'network', 'Network', 'globe' ],
 	[ 'pihole', 'Pi-hole', 'block' ],
 	[ 'vpn', 'VPN', 'vpn' ],
 	[ 'tether', 'Mobile', 'phone' ],
@@ -20,7 +21,7 @@ const NAV = [
 	[ 'homelab', 'Home lab', 'box' ]
 ];
 const DOCK = [ 'home', 'wifi', 'devices', 'more' ];
-const PAGES = [ 'home', 'fibre', 'wifi', 'devices', 'system', 'homelab', 'vpn', 'tether', 'pihole', 'setup' ];
+const PAGES = [ 'home', 'fibre', 'wifi', 'devices', 'network', 'system', 'homelab', 'vpn', 'tether', 'pihole', 'setup' ];
 
 const app = document.getElementById('app');
 let timer = null;

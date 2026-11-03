@@ -1,15 +1,14 @@
 /*
- * Home lab (under More): services, remote syslog, port forwards, local
- * names and SSH keys, on WS4's alphawrt-homelab backend (contract:
+ * Home lab (under More): services, remote syslog and SSH keys (port
+ * forwards and local names are on the Network page), on WS4's alphawrt-homelab backend (contract:
  * side-session notes ws4-homelab-contract.md). Services and SSH apply at
  * once through the backend; the rest is plain uci with rollback.
  */
-import { h, icon, badge, rows, card, field, toggle, choice, modal, toast, redraw } from '../lib/ui.js';
+import { h, card, field, toggle, choice, modal, toast, redraw } from '../lib/ui.js';
 import { call, maybe, uci } from '../lib/rpc.js';
 import { save } from '../lib/apply.js';
 
 const ROUTER_ONLY = () => h('p', { class: 'text-sm opacity-70' }, 'Only in router mode. In bridge mode your own router does this.');
-const PROTO = [ [ 'tcp', 'TCP' ], [ 'udp', 'UDP' ], [ 'tcp udp', 'TCP and UDP' ] ];
 const ipOk = ip => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) && ip.split('.').every(n => +n < 256);
 const portOk = p => /^\d{1,5}(-\d{1,5})?$/.test(p) && p.split('-').every(n => +n > 0 && +n < 65536);
 
@@ -23,7 +22,7 @@ export default {
 	async render(main) {
 		const [ st ] = await Promise.all([
 			maybe('alphawrt-homelab', 'status', {}, { mode: 'bridge', services: {}, ssh: {} }),
-			uci.load('firewall', 'dhcp', 'system')
+			uci.load('system')
 		]);
 		const bridge = st.mode == 'bridge';
 		main.append(h('h1', { class: 'text-2xl font-bold' }, 'Home lab'),
@@ -32,8 +31,6 @@ export default {
 			h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
 				this.services(st, bridge),
 				this.ssh(st),
-				this.forwards(bridge),
-				this.names(bridge),
 				this.syslog()));
 	},
 
@@ -63,43 +60,6 @@ export default {
 			bridge && ROUTER_ONLY(),
 			maps.length > 0 && h('div', { class: 'mt-2' }, h('div', { class: 'text-sm font-medium mb-1' }, 'Ports opened by UPnP'),
 				h('ul', { class: 'text-sm opacity-80' }, maps.map(m => h('li', {}, `${m.desc || 'App'}: ${m.proto} ${m.ext_port} → ${m.int_addr}:${m.int_port}`))))));
-	},
-
-	forwards(bridge) {
-		if (bridge) return card('globe', 'Port forwards', null, ROUTER_ONLY());
-		const list = uci.sections('firewall', 'redirect').filter(r => (r.target || 'DNAT') == 'DNAT' && (r.src || 'wan') == 'wan');
-		const add = async () => {
-			const name = field('Name', { placeholder: 'e.g. Minecraft' }), proto = choice('Protocol', PROTO, 'tcp'),
-			      ext = field('Outside port', { placeholder: '25565', hint: 'A port or a range like 6000-6010.' }),
-			      ip = field('To device address', { placeholder: '192.168.1.50' }), port = field('Device port', { placeholder: 'Same as outside' });
-			if (!await modal('Add a port forward', h('div', {}, name, proto, ext, ip, port), [ [ 'Cancel', 'btn-ghost', false ], [ 'Add', 'btn-primary', true ] ])) return;
-			const v = { name: name.input.value.trim() || 'Forward', proto: proto.input.value, src: 'wan', src_dport: ext.input.value.trim(),
-				dest: 'lan', dest_ip: ip.input.value.trim(), dest_port: port.input.value.trim() || ext.input.value.trim(), target: 'DNAT' };
-			if (!portOk(v.src_dport) || !portOk(v.dest_port)) return toast('warn', 'Ports are numbers from 1 to 65535.');
-			if (!ipOk(v.dest_ip)) return toast('warn', 'Enter the device’s address, like 192.168.1.50.');
-			await this.apply([ [ 'add', 'firewall', 'redirect', v ] ], 'Port forward added.');
-		};
-		return card('globe', 'Port forwards', null, h('div', { class: 'space-y-3' },
-			h('div', { role: 'status', class: 'alert alert-soft alert-warning text-sm' }, icon('warn'),
-				'Needs a public IPv4 address. TIME home plans are behind CGNAT unless you ask TIME for a public IP; Unifi usually gives one.'),
-			this.listOf(list, r => `${r.name || 'Forward'}`, r => `${(r.proto || 'tcp udp').toUpperCase().replace(' ', '+')} ${r.src_dport} → ${r.dest_ip}:${r.dest_port || r.src_dport}`, 'firewall', 'port forward'),
-			h('div', { class: 'card-actions justify-end' }, h('button', { class: 'btn btn-sm btn-primary', onclick: add }, 'Add'))));
-	},
-
-	names(bridge) {
-		if (bridge) return card('devices', 'Local names', null, ROUTER_ONLY());
-		const list = uci.sections('dhcp', 'domain');
-		const add = async () => {
-			const name = field('Name', { placeholder: 'nas', hint: 'Devices on your network can then use nas.lan.' }), ip = field('Address', { placeholder: '192.168.1.20' });
-			if (!await modal('Add a local name', h('div', {}, name, ip), [ [ 'Cancel', 'btn-ghost', false ], [ 'Add', 'btn-primary', true ] ])) return;
-			const n = name.input.value.trim().toLowerCase().replace(/\.lan$/, '');
-			if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(n)) return toast('warn', 'Use letters, digits and dashes.');
-			if (!ipOk(ip.input.value.trim())) return toast('warn', 'Enter an address like 192.168.1.20.');
-			await this.apply([ [ 'add', 'dhcp', 'domain', { name: n, ip: ip.input.value.trim() } ] ], `${n}.lan added.`);
-		};
-		return card('devices', 'Local names', null, h('div', { class: 'space-y-3' },
-			this.listOf(list, d => `${d.name}.lan`, d => d.ip, 'dhcp', 'local name'),
-			h('div', { class: 'card-actions justify-end' }, h('button', { class: 'btn btn-sm btn-primary', onclick: add }, 'Add'))));
 	},
 
 	syslog() {
@@ -140,16 +100,6 @@ export default {
 					if (await confirmDelete('this key')) send(keys.filter((x, j) => j != i).map(x => x.key), ssh.password_auth, 'Key removed.');
 				} }, 'Remove'))) : h('li', { class: 'text-sm opacity-70 py-2' }, 'No keys yet.')),
 			h('div', { class: 'card-actions justify-end' }, h('button', { class: 'btn btn-sm btn-primary', onclick: add }, 'Add key'))));
-	},
-
-	/* a list of uci sections with a Remove button each */
-	listOf(sections, title, sub, config, what) {
-		if (!sections.length) return h('p', { class: 'text-sm opacity-70' }, 'None yet.');
-		return h('ul', { class: 'divide-y divide-base-300' }, sections.map(s => h('li', { class: 'flex items-center gap-3 py-2' },
-			h('span', { class: 'flex-1 min-w-0' }, h('span', { class: 'block font-medium truncate' }, title(s)), h('span', { class: 'block text-sm opacity-70 truncate' }, sub(s))),
-			h('button', { class: 'btn btn-ghost btn-xs', onclick: async () => {
-				if (await confirmDelete(`this ${what}`)) this.apply([ [ 'remove', config, s['.name'] ] ], 'Removed.');
-			} }, 'Remove'))));
 	},
 
 	async apply(ops, done) {

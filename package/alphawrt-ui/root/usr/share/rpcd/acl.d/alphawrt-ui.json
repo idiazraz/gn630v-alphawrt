@@ -59,6 +59,9 @@
 				],
 				"luci.wireguard": [
 					"getWgInstances"
+				],
+				"tailscale": [
+					"get_status"
 				]
 			},
 			"uci": [
@@ -157,6 +160,10 @@
 					"generateKeyPair",
 					"getPublicAndPrivateKeyFromPrivate",
 					"generatePsk"
+				],
+				"tailscale": [
+					"do_login",
+					"do_logout"
 				]
 			},
 			"uci": [
