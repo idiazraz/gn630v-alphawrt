@@ -1,0 +1,17 @@
+{
+	"alphawrt-voice": {
+		"description": "Phone line on the TEL port (Simple UI Phone page)",
+		"read": {
+			"ubus": {
+				"alphawrt-voice": [ "status" ]
+			},
+			"uci": [ "voice" ]
+		},
+		"write": {
+			"ubus": {
+				"alphawrt-voice": [ "ring" ]
+			},
+			"uci": [ "voice" ]
+		}
+	}
+}

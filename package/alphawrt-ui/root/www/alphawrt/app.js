@@ -16,14 +16,18 @@ const NAV = [
 	[ 'network', 'Network', 'globe' ],
 	[ 'pihole', 'Pi-hole', 'block' ],
 	[ 'vpn', 'VPN', 'vpn' ],
+	[ 'phone', 'Phone', 'phone' ],
 	[ 'system', 'System', 'system' ],
 	[ 'homelab', 'Home lab', 'box' ]
 ];
 const DOCK = [ 'home', 'wifi', 'devices', 'more' ];
-const PAGES = [ 'home', 'fibre', 'wifi', 'devices', 'network', 'system', 'homelab', 'vpn', 'pihole', 'setup' ];
+const PAGES = [ 'home', 'fibre', 'wifi', 'devices', 'network', 'system', 'homelab', 'vpn', 'phone', 'pihole', 'setup' ];
 
 const app = document.getElementById('app');
 let timer = null;
+
+/* the Phone page only on boards with a TEL port (alphawrt-voice sets alphawrt.board.voice) */
+const nav = () => NAV.filter(n => n[0] != 'phone' || uci.get('alphawrt', 'board', 'voice') == '1');
 
 function route() { return (location.hash.match(/^#\/([\w-]+)/) || [])[1] || 'home'; }
 
@@ -32,7 +36,7 @@ function shell(page, main) {
 	return h('div', { class: 'lg:flex' },
 		h('aside', { class: 'hidden lg:flex flex-col w-64 shrink-0 h-dvh sticky top-0 bg-base-100 border-r border-base-300 px-3 py-5' },
 			h('a', { href: '#/home', class: 'px-3 mb-6' }, logo('h-9 w-auto')),
-			h('ul', { class: 'menu w-full gap-1 p-0 text-base' }, NAV.map(n => h('li', {}, link(n, n[0] == page ? 'menu-active' : null)))),
+			h('ul', { class: 'menu w-full gap-1 p-0 text-base' }, nav().map(n => h('li', {}, link(n, n[0] == page ? 'menu-active' : null)))),
 			h('ul', { class: 'menu w-full gap-1 p-0 mt-auto text-base' },
 				h('li', {}, h('a', { href: LUCI }, icon('external'), 'Advanced (LuCI)')),
 				h('li', {}, h('a', { href: '#/logout' }, icon('logout'), 'Log out')))),
@@ -80,7 +84,7 @@ const more = {
 	render(main) {
 		main.append(h('h1', { class: 'text-2xl font-bold' }, 'More'),
 			h('ul', { class: 'menu w-full bg-base-100 rounded-box border border-base-300 text-base' },
-				NAV.filter(n => !DOCK.includes(n[0])).map(([ id, label, ic ]) => h('li', {}, h('a', { href: `#/${id}` }, icon(ic), label))),
+				nav().filter(n => !DOCK.includes(n[0])).map(([ id, label, ic ]) => h('li', {}, h('a', { href: `#/${id}` }, icon(ic), label))),
 				h('li', {}, h('a', { href: LUCI }, icon('external'), 'Advanced settings (LuCI)')),
 				h('li', {}, h('a', { href: '#/logout' }, icon('logout'), 'Log out'))));
 	}

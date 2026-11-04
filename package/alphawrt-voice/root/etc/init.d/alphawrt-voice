@@ -1,0 +1,62 @@
+#!/bin/sh /etc/rc.common
+# Phone line: renders /etc/config/voice into a baresip config in /var and
+# runs it. The TEL port is baresip's audio device through the fxs module
+# (src/fxs.c), loaded when the FXS driver's /dev/en75xx-fxs0 is there;
+# without the driver baresip still registers, so the line can be checked,
+# but the phone can't ring.
+
+START=93
+USE_PROCD=1
+DIR=/var/etc/baresip
+MODS=/usr/lib/baresip/modules
+
+start_service() {
+	config_load voice
+	local enabled registrar proxy user auth_user password display transport codecs vlan
+	config_get_bool enabled main enabled 0
+	[ "$enabled" = 1 ] || return
+	for o in registrar proxy user auth_user password display transport codecs vlan; do config_get $o main $o; done
+	[ -n "$registrar" ] && [ -n "$user" ] || return
+
+	mkdir -p $DIR
+	chmod 700 $DIR
+	{
+		echo "module_path $MODS"
+		echo "sip_listen 0.0.0.0:5060"
+		# the voice VLAN's device, so SIP and RTP leave through it
+		[ -n "$vlan" ] && echo "net_interface $(uci -q get network.voice.device)"
+		echo "module g711.so"
+		echo "module ctrl_tcp.so"
+		echo "ctrl_tcp_listen 127.0.0.1:4444"
+		if [ -c /dev/en75xx-fxs0 ]; then
+			echo "module fxs.so"
+			echo "ausrc_srate 8000"
+			echo "auplay_srate 8000"
+			echo "ausrc_channels 1"
+			echo "auplay_channels 1"
+			echo "audio_player fxs,0"
+			echo "audio_source fxs,0"
+			echo "audio_alert fxs,0"
+		fi
+	} > $DIR/config
+
+	local acc="<sip:$user@$registrar;transport=${transport:-udp}>"
+	[ -n "$display" ] && acc="\"$display\" $acc"
+	[ -n "$auth_user" ] && acc="$acc;auth_user=$auth_user"
+	[ -n "$password" ] && acc="$acc;auth_pass=$password"
+	[ -n "$proxy" ] && acc="$acc;outbound=\"sip:$proxy;lr\""
+	acc="$acc;regint=600;answermode=manual;audio_codecs=$(echo ${codecs:-PCMA PCMU} | tr ' ' ',')"
+	echo "$acc" > $DIR/accounts
+	: > $DIR/contacts
+
+	procd_open_instance
+	procd_set_param command /usr/bin/baresip -f $DIR
+	procd_set_param respawn
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+service_triggers() {
+	procd_add_reload_trigger voice
+}

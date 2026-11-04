@@ -1,0 +1,16 @@
+# Phone line on the TEL port, set from the Simple UI's Phone page.
+# preset: unifi or custom. user is the phone number; auth_user only when the
+# provider gives a separate login. vlan: the provider's voice VLAN on the
+# fibre, empty to use the internet connection.
+config voice 'main'
+	option enabled '0'
+	option preset 'custom'
+	option registrar ''
+	option proxy ''
+	option user ''
+	option auth_user ''
+	option password ''
+	option display ''
+	option transport 'udp'
+	option codecs 'PCMA PCMU'
+	option vlan ''

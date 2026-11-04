@@ -1,0 +1,6 @@
+#!/bin/sh
+# Show the Phone page: this package is only in builds of boards with a TEL port.
+uci -q get alphawrt.board >/dev/null || uci set alphawrt.board=board
+uci set alphawrt.board.voice='1'
+uci commit alphawrt
+exit 0
