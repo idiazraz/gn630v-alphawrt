@@ -11,15 +11,15 @@ How this file is kept:
 
 ## Unreleased
 
+## 0.4.0 (tester build 2026-11-05; public date when testers confirm)
+
 ### Added
 - **Block a device's internet** from the Devices page: tap a device and switch on "Block its Internet". It stays on Wi-Fi and the home network, but can't reach the internet until you unblock it. Blocked devices show a red "Blocked" badge and stay listed while they're away. Not in bridge mode.
 - **Network page:** this box's address and DHCP range, where names are looked up (DNS), IPv6, local names and port forwards, all in one place.
 - **DNS choice:** encrypted DNS (the default), your provider's DNS, or servers you pick. Pi-hole keeps working with any of them.
 - **IPv6 card** on the Network page.
-- **Phone (TEL port):** a Phone page that turns the TEL port into a SIP phone line, with a Unifi preset. It needs the box's voice driver, which only official AlphaWRT images carry. It's still in development.
 - **Fibre provisioning page:** a map of what the ISP's equipment (OLT) set up on the box, with every setting decoded.
 - **Quick Setup:** a Fibre or WAN choice. Router-only mode uses the 2.5G WAN port where the box has one.
-- **Tailscale card** on the VPN page, on builds that include Tailscale.
 
 ### Changed
 - **Faster Wi-Fi and IPv6:** Wi-Fi traffic, IPv6 and UDP now go through the hardware packet engine instead of the CPU. Over Wi-Fi, IPv6 runs at about 906–965 Mb/s down and 770–800 up. Wi-Fi upload offload uses the stock firmware's NPU file, which only official images carry.
