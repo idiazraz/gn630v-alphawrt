@@ -1,0 +1,35 @@
+From 7399940bfd11b9862c8b9746ffc10493a9d82b67 Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Thu, 5 Nov 2026 12:44:21 +0800
+Subject: [PATCH] dnsmasq: keep respawning after restarts
+
+Every static lease change restarts dnsmasq, and procd counts those
+restarts as crashes. With the default respawn limit (5 within an
+hour) renaming a handful of devices made procd stop dnsmasq for good,
+leaving the LAN without DHCP and DNS until a reboot. Respawn without
+a retry limit.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ package/network/services/dnsmasq/files/dnsmasq.init | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/package/network/services/dnsmasq/files/dnsmasq.init b/package/network/services/dnsmasq/files/dnsmasq.init
+index fe19530772..69466816e8 100755
+--- a/package/network/services/dnsmasq/files/dnsmasq.init
++++ b/package/network/services/dnsmasq/files/dnsmasq.init
+@@ -1273,7 +1273,10 @@ dnsmasq_start()
+ 	procd_set_param command $PROG -C $CONFIGFILE -k -x /var/run/dnsmasq/dnsmasq."${cfg}".pid
+ 	procd_set_param file $CONFIGFILE
+ 	[ -n "$user_dhcpscript" ] && procd_set_param env USER_DHCPSCRIPT="$user_dhcpscript"
+-	procd_set_param respawn
++	# Note: never give up. Each static lease change restarts dnsmasq and procd
++	# counts those restarts as crashes; with the default limit (5 an hour)
++	# renaming a few devices left the LAN without DHCP and DNS.
++	procd_set_param respawn 3600 5 0
+ 
+ 	[ -n "$vrf" ] && procd_set_param vrf "$vrf"
+ 
+-- 
+2.54.0 (Apple Git-157)
+
