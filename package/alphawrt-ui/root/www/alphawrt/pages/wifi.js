@@ -37,7 +37,7 @@ export default {
 		if (!bands.length)
 			return main.append(h('p', {}, 'No Wi-Fi radios found.'));
 		if (st.mode == 'bridge')
-			main.append(h('div', { role: 'status', class: 'alert alert-soft alert-info text-sm' }, icon('warn'),
+			main.append(h('div', { role: 'status', class: 'alert alert-soft alert-info text-sm items-start' }, icon('info', 'size-5 shrink-0'),
 				'In bridge mode your own router normally does Wi-Fi. If you switch this box’s Wi-Fi on, it serves the devices on LAN 2–4, not your router’s network.'));
 
 		const together = toggle('Same name and password on both bands', st.same_name, 'Phones and laptops pick the faster band by themselves.');
@@ -50,7 +50,7 @@ export default {
 			const p = { b, on: toggle(`${BAND[b.band] || b.band} on`, b.enabled),
 				ssid: field('Network name', { value: b.ssid || '', maxlength: 32 }), key: pw('Password', b.key),
 				sec: choice('Security', SECURITY, secOf(b.security)),
-				chan: choice('Channel', [ [ 'auto', 'Auto (self-healing)' ], ...(b.channels || []).map(c => [ String(c.channel), `${c.channel}${c.dfs ? ' · radar check' : ''}` ]) ],
+				chan: choice('Channel', [ [ 'auto', 'Auto' ], ...(b.channels || []).map(c => [ String(c.channel), `${c.channel}${c.dfs ? ' · radar check' : ''}` ]) ],
 					b.auto_channel ? 'auto' : String(b.channel)),
 				width: choice('Width', (b.widths || []).map(w => [ String(w), `${w} MHz` ]), String(b.width_mhz)),
 				info: h('div') };
@@ -75,7 +75,7 @@ export default {
 		const qrButton = (ssid, key) => h('button', { type: 'button', class: 'btn btn-ghost btn-sm', onclick: () => showQr(ssid, key) }, 'Show QR code');
 		const radio = p => h('div', { class: 'grid grid-cols-2 gap-3' }, p.chan, p.width);
 
-		const steer = st.band_steering?.installed && toggle('Band steering', st.band_steering.enabled,
+		const steer = st.band_steering?.installed && toggle('Steer devices to the best band', st.band_steering.enabled,
 			'Nudges phones and laptops onto the faster band when they’re close enough. Fast roaming (802.11k/v) stays on either way.');
 
 		const g = st.guest || {};
@@ -88,16 +88,16 @@ export default {
 		const guestCard = () => card('wifi', 'Guest Wi-Fi', g.enabled ? badge('ok', `${g.clients || 0} connected`) : badge('off', 'Off'),
 			h('div', { class: g.available ? '' : 'opacity-50' }, guest.on, guest.ssid, guest.key, guest.sec,
 				!g.available && h('p', { class: 'text-sm mt-2' }, g.reason == 'bridge' ? 'Your own router handles guest Wi-Fi in bridge mode.' : 'Guest Wi-Fi isn’t available right now.'),
-				g.enabled && h('div', { class: 'card-actions justify-end mt-2' }, qrButton(g.ssid, g.key))));
+				g.enabled && h('div', { class: 'card-actions justify-end mt-3' }, qrButton(g.ssid, g.key))));
 		/* two columns: the two bands always share a row, and the guest card
 		 * sits beside the tall card it matches */
 		const draw = () => body.replaceChildren(...[
 			together.input.checked && card('wifi', 'Your Wi-Fi', null, h('div', {}, shared.ssid, shared.key, shared.sec,
-				h('div', { class: 'card-actions justify-end mt-2' }, qrButton(bands[0].ssid, bands[0].key)))),
+				h('div', { class: 'card-actions justify-end mt-3' }, qrButton(bands[0].ssid, bands[0].key)))),
 			together.input.checked && guestCard(),
 			per.map(p => card('wifi', BAND[p.b.band] || p.b.band, p.b.enabled ? badge('ok', `${p.b.clients} connected`) : badge('off', 'Off'),
 				h('div', {}, p.on, !together.input.checked && [ p.ssid, p.key, p.sec ], radio(p), p.info,
-					!together.input.checked && p.b.enabled && h('div', { class: 'card-actions justify-end mt-2' }, qrButton(p.b.ssid, p.b.key))))),
+					!together.input.checked && p.b.enabled && h('div', { class: 'card-actions justify-end mt-3' }, qrButton(p.b.ssid, p.b.key))))),
 			!together.input.checked && guestCard(),
 			steer && card('wifi', 'Band steering', null, steer)
 		].flat().filter(Boolean));
