@@ -1,0 +1,27 @@
+# Devices blocked on the Devices page (firewall.alphawrt_block.mac): no
+# Internet. fw4 runs this on every firewall start and reload (an include of
+# type script), so a change saved on the page applies with the firewall
+# reload. Its own table, at a priority before fw4's forward chain and the
+# hardware flowtable chain (alphawrt_hw, filter - 1): a blocked device's
+# packets never reach "flow add", and since the reload recreates the
+# flowtables, flows offloaded before the block come back through here too.
+# Note: matches the device's MAC; a phone with a new private MAC is a new device.
+macs=
+for m in $(uci -q get firewall.alphawrt_block.mac); do
+	case "$m" in
+	[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f])
+		macs="${macs:+$macs, }$(echo "$m" | tr A-F a-f)" ;;
+	esac
+done
+{
+	echo 'table inet alphawrt_block'
+	echo 'delete table inet alphawrt_block'
+	[ -n "$macs" ] && cat <<NFT
+table inet alphawrt_block {
+	chain forward {
+		type filter hook forward priority filter - 10; policy accept;
+		ether saddr { $macs } counter drop comment "blocked on the Devices page"
+	}
+}
+NFT
+} | nft -f -

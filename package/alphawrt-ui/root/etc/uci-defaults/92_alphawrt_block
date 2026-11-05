@@ -1,0 +1,12 @@
+#!/bin/sh
+# The Devices page's Block switch: an fw4 include that cuts the listed MACs
+# off the Internet (/usr/libexec/alphawrt-ui/block). The page adds the
+# section too if it's missing.
+uci -q get firewall.alphawrt_block >/dev/null || {
+	uci set firewall.alphawrt_block=include
+	uci set firewall.alphawrt_block.type=script
+	uci set firewall.alphawrt_block.path=/usr/libexec/alphawrt-ui/block
+	uci set firewall.alphawrt_block.fw4_compatible=1
+	uci commit firewall
+}
+exit 0
