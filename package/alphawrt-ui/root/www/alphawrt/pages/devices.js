@@ -1,8 +1,8 @@
 /*
  * Devices: everything with a DHCP lease or on the Wi-Fi, with how it's
  * connected. Tap one to rename it, give it a fixed address (one dhcp "host"
- * section for both), block its Internet (MACs in firewall.alphawrt_block,
- * applied by /usr/libexec/alphawrt-ui/block) or wake it (WS4's
+ * section for both), block its Internet (MACs in firewall.alphawrt_blocked, a
+ * section type fw4 ignores, applied by /usr/libexec/alphawrt-ui/block) or wake it (WS4's
  * alphawrt-homelab wol). The box's own address and the DHCP range are on the
  * Network page.
  */
@@ -42,7 +42,7 @@ export default {
 			const rows = new Map();
 			for (const l of leases) rows.set(String(l.macaddr).toUpperCase(), { name: l.hostname, ip: l.ipaddr });
 			/* blocked devices stay listed while away, so they can be unblocked */
-			const blocked = new Set(list(uci.get('firewall', 'alphawrt_block', 'mac')).map(m => m.toUpperCase()));
+			const blocked = new Set(list(uci.get('firewall', 'alphawrt_blocked', 'mac')).map(m => m.toUpperCase()));
 			for (const mac of [ ...Object.keys(wifi), ...blocked ]) if (!rows.has(mac)) rows.set(mac, { name: hints[mac.toLowerCase()]?.name || hints[mac]?.name, ip: (hints[mac]?.ipaddrs || [])[0] });
 			const devs = [ ...rows ].map(([ mac, d ]) => ({ mac, ...d, name: named[mac]?.name || d.name, w: wifi[mac], blocked: blocked.has(mac) }))
 				.sort((a, b) => !a.name - !b.name || (a.name || '').localeCompare(b.name || ''));   // unnamed last
@@ -95,11 +95,14 @@ export default {
 			done.push(keep.input.checked ? `${name} keeps ${addr}.` : `Renamed to ${name}.`);
 		}
 		if (block && block.input.checked != d.blocked) {
-			const macs = list(uci.get('firewall', 'alphawrt_block', 'mac')).filter(m => m.toUpperCase() != d.mac);
+			const macs = list(uci.get('firewall', 'alphawrt_blocked', 'mac')).filter(m => m.toUpperCase() != d.mac);
 			if (block.input.checked) macs.push(d.mac);
-			ops.push(uci.get('firewall', 'alphawrt_block')
-				? macs.length ? [ 'set', 'firewall', 'alphawrt_block', { mac: macs } ] : [ 'unset', 'firewall', 'alphawrt_block', 'mac' ]
-				: [ 'add', 'firewall', 'include', { type: 'script', path: '/usr/libexec/alphawrt-ui/block', fw4_compatible: '1', mac: macs }, 'alphawrt_block' ]);
+			/* the MACs live outside the include: fw4 warns about unknown options on an include on every reload */
+			ops.push(uci.get('firewall', 'alphawrt_blocked')
+				? macs.length ? [ 'set', 'firewall', 'alphawrt_blocked', { mac: macs } ] : [ 'unset', 'firewall', 'alphawrt_blocked', 'mac' ]
+				: [ 'add', 'firewall', 'alphawrt_block', { mac: macs }, 'alphawrt_blocked' ]);
+			if (!uci.get('firewall', 'alphawrt_block'))
+				ops.push([ 'add', 'firewall', 'include', { type: 'script', path: '/usr/libexec/alphawrt-ui/block', fw4_compatible: '1' }, 'alphawrt_block' ]);
 			done.push(block.input.checked ? `${name || 'The device'} is blocked.` : `${name || 'The device'} is unblocked.`);
 		}
 		if (!ops.length) return;
