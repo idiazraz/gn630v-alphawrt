@@ -29,9 +29,14 @@ sql() { $FTL sqlite3 -ni "$@"; }
 own() { [ "$(id -u)" = 0 ] && chown pihole:pihole "$@"; return 0; }
 enabled() { [ "$(uci -q get pihole.main.enabled)" = 1 ]; }
 enforced() { enabled && [ "$(uci -q get pihole.main.enforce)" != 0 ]; }
-# canaries answered NXDOMAIN: Firefox then skips its own DoH, Apple devices
-# Private Relay; the rest are DoH servers browsers and apps can be set to
-NOHOST='use-application-dns.net mask.icloud.com mask-h2.icloud.com dns.google dns.google.com
+strict() { enforced && [ "$(uci -q get pihole.main.strict)" = 1 ]; }
+# canaries answered NXDOMAIN whenever Pi-hole is enforced: Firefox then skips
+# its own DoH, Apple devices Private Relay, and browsers on "automatic" secure
+# DNS fall back to the box
+CANARY='use-application-dns.net mask.icloud.com mask-h2.icloud.com'
+# strict only (pihole.main.strict): DoH servers browsers and apps can be set
+# to. A device set to one of them in strict mode loses DNS while this is on.
+NOHOST='dns.google dns.google.com
 	cloudflare-dns.com mozilla.cloudflare-dns.com chrome.cloudflare-dns.com one.one.one.one
 	dns.quad9.net dns9.quad9.net dns10.quad9.net doh.opendns.com doh.familyshield.opendns.com
 	dns.adguard-dns.com dns.adguard.com unfiltered.adguard-dns.com family.adguard-dns.com
@@ -206,13 +211,15 @@ ftl_config() {
 
 nohost_lines() {
 	enforced || { echo '[]'; return; }
-	l=; for d in $NOHOST; do l="$l,\"address=/$d/\""; done
+	l=; for d in $CANARY $(strict && echo $NOHOST); do l="$l,\"address=/$d/\""; done
 	echo "[${l#,}]"
 }
 
 # Clients with their own DNS go through Pi-hole too: LAN port 53 is sent to
-# this box and DNS over TLS (853) out of the LAN is refused. Encrypted DNS to
-# a hard-coded address, or a VPN, still goes around it.
+# this box. Strict (pihole.main.strict=1) also refuses DNS over TLS/QUIC
+# (853) out of the LAN and blocks the known DoH servers, so devices set to
+# strict encrypted DNS lose DNS. Encrypted DNS to a hard-coded address, or a
+# VPN, still goes around it.
 enforce() {
 	if enforced; then
 		uci -q batch <<-EOF
@@ -223,6 +230,12 @@ enforce() {
 		set firewall.pihole_dns.proto='tcp udp'
 		set firewall.pihole_dns.target=DNAT
 		set firewall.pihole_dns.family=any
+		EOF
+	else
+		uci -q delete firewall.pihole_dns
+	fi
+	if strict; then
+		uci -q batch <<-EOF
 		set firewall.pihole_dot=rule
 		set firewall.pihole_dot.name='Pi-hole: no DNS over TLS'
 		set firewall.pihole_dot.src=lan
@@ -232,7 +245,6 @@ enforce() {
 		set firewall.pihole_dot.target=REJECT
 		EOF
 	else
-		uci -q delete firewall.pihole_dns
 		uci -q delete firewall.pihole_dot
 	fi
 	[ -n "$(uci changes firewall)" ] || return 0
@@ -261,6 +273,8 @@ apply() {
 case "$1" in
 	-g|updateGravity) gravity ;;
 	ensure|daily|reloadlists|apply|prepare|save|housekeep) "$1" ;;
+	# FTL settings and firewall rules from uci, FTL stopped (uci-defaults)
+	sync) enabled && { ftl_config; enforce; } ;;
 	restartdns|reloaddns) /etc/init.d/pihole-FTL restart ;;
 	-v|version) $FTL --version ;;
 	*) echo "usage: pihole -g|ensure|daily|reloadlists|restartdns|apply|save|housekeep|version"; exit 1 ;;

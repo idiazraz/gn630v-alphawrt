@@ -23,7 +23,7 @@ How this file is kept:
 
 ### Changed
 - **Faster Wi-Fi and IPv6:** Wi-Fi traffic, IPv6 and UDP now go through the hardware packet engine instead of the CPU. Over Wi-Fi, IPv6 runs at about 906–965 Mb/s down and 770–800 up. Wi-Fi upload offload uses the stock firmware's NPU file, which only official images carry.
-- **Pi-hole can't be skipped:** with Pi-hole on, devices that set their own DNS server are sent to the box anyway, DNS over TLS is refused, and well-known DNS-over-HTTPS names are blocked, so browsers fall back to the box.
+- **Pi-hole is harder to skip:** with Pi-hole on, devices that set their own plain DNS server (such as 1.1.1.1) are sent to the box anyway, and browsers are told to drop their own encrypted DNS. Devices with strict encrypted DNS (Android Private DNS, iPhone DNS profiles) keep working. To block encrypted DNS as well, turn on "Stop devices skipping Pi-hole" on the Pi-hole page. Devices set to strict encrypted DNS then lose internet until they switch it off.
 - **Every page tidied** on desktop and phone: the VPN page uses the same cards as the rest, Fibre charts are readable on a phone, pause buttons are grouped, and notes have an info icon.
 - **Advanced menu** grouped into Status, Fibre, Network, Wi-Fi and VPN. One login works for both the Simple UI and Advanced.
 - **Home** names the encrypted DNS servers ("AdGuard (no blocking), Cloudflare"), since "AdGuard" read like an ad blocker.
