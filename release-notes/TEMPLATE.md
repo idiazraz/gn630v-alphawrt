@@ -19,7 +19,7 @@
 The stock firmware stays in the other flash bank, so you can always switch back. Read the [recovery guide](https://github.com/idiazraz/gn630v-alphawrt/blob/<tag>/docs/RECOVERY.md) before flashing.
 
 ## What's new since <previous>
-- <change, in user terms>
+<Copied from the version's section of CHANGELOG.md: Added, Changed, Fixed. Known issues go in the section below.>
 
 ## Hardware acceptance
 Rows from [ACCEPTANCE.md](https://github.com/idiazraz/gn630v-alphawrt/blob/<tag>/docs/ACCEPTANCE.md), run on one AX3000 unit on <ISP, OLT vendor>:
