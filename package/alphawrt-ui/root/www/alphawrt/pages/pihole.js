@@ -62,6 +62,7 @@ export default {
 		const presetSel = choice('Block list preset', presetOptions, pi.preset || 'multi');
 		const tifTog = toggle('Threat intelligence', pi.tif, 'Block known malware and phishing domains (Hagezi TIF)');
 		const enTog = toggle('Enable ad blocking', pi.enabled, 'Filter ads and trackers for all devices on your network');
+		const strictTog = toggle('Stop devices skipping Pi-hole', pi.strict, 'Also blocks encrypted DNS (DNS over TLS, and the well-known DNS over HTTPS servers). Devices set to strict encrypted DNS, such as Android Private DNS with a hostname, lose internet while this is on.');
 
 		const gw = uci.get('network', 'gnmgmt', 'gateway') || '';
 		const gwField = bridge && field('Your router’s address', { value: gw, placeholder: '192.168.100.2',
@@ -118,6 +119,7 @@ export default {
 				const enabled = enTog.input.checked;
 				const preset = presetSel.input.value;
 				const tif = tifTog.input.checked;
+				const strict = strictTog.input.checked;
 				const pw = pwField?.input?.value?.trim() || null;
 				const newGw = gwField?.input?.value?.trim() || '';
 				if (gwField && enabled && gwError(newGw)) {
@@ -136,7 +138,7 @@ export default {
 					saveBtn.disabled = false;
 					return;
 				}
-				const r = await call('alphawrt-pihole', 'set', pw ? { enabled, preset, tif, password: pw } : { enabled, preset, tif }).catch(e => ({ error: e.message }));
+				const r = await call('alphawrt-pihole', 'set', pw ? { enabled, preset, tif, strict, password: pw } : { enabled, preset, tif, strict }).catch(e => ({ error: e.message }));
 				saveBtn.disabled = false;
 				if (r.error) {
 					const msgs = {
@@ -176,6 +178,7 @@ export default {
 				enTog,
 				presetSel,
 				tifTog,
+				strictTog,
 				gwField,
 				pwField),
 			h('div', { class: 'flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-base-300' },
