@@ -1,0 +1,163 @@
+From ed8afddfc4cc5757c5562b46e3f8ce731ac08569 Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Thu, 5 Nov 2026 10:43:52 +0800
+Subject: [PATCH] airoha: en7523: gn630v: Wi-Fi offload on by default
+
+mt7915e now turns the NPU and WED on by itself when the card's device
+tree node links an EN7523 NPU, which the GN630V's does (mt76 patch
+167); npu_enable/wed_enable 0 or 1 still force them. The GN630V
+hardware flowtable (IPv4 TCP) now also takes the two Wi-Fi APs, so
+Wi-Fi flows bind in the PPE while fw4's flowtable stays software-only
+for IPv6 and UDP.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ...-NPU-and-WED-on-from-the-device-tree.patch | 98 +++++++++++++++++++
+ .../airoha/dts/en7523-skyworth-gn630v.dts     |  2 +-
+ .../usr/share/alphawrt/gn630v-hw-offload.nft  |  5 +-
+ 3 files changed, 102 insertions(+), 3 deletions(-)
+ create mode 100644 package/kernel/mt76/patches/167-mt7915-turn-the-EN7523-NPU-and-WED-on-from-the-device-tree.patch
+
+diff --git a/package/kernel/mt76/patches/167-mt7915-turn-the-EN7523-NPU-and-WED-on-from-the-device-tree.patch b/package/kernel/mt76/patches/167-mt7915-turn-the-EN7523-NPU-and-WED-on-from-the-device-tree.patch
+new file mode 100644
+index 0000000000..a942e0003f
+--- /dev/null
++++ b/package/kernel/mt76/patches/167-mt7915-turn-the-EN7523-NPU-and-WED-on-from-the-device-tree.patch
+@@ -0,0 +1,98 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] mt7915: turn the EN7523 NPU and WED on from the device tree
++
++npu_enable and wed_enable now default to -1, auto: an MT7916 whose
++device tree node links an EN7523 NPU ("airoha,npu") gets the NPU and
++WED, everything else keeps both off as before. 0 or 1 still forces
++them. A module option file would only apply from the second boot,
++since kmodloader runs before uci-defaults.
++---
++ mt7915/mmio.c |  9 +++++----
++ mt7915/npu.c  | 26 +++++++++++++++++++++-----
++ 2 files changed, 26 insertions(+), 9 deletions(-)
++
++diff --git a/mt7915/mmio.c b/mt7915/mmio.c
++index 28377c9..0793817 100644
++--- a/mt7915/mmio.c
+++++ b/mt7915/mmio.c
++@@ -13,9 +13,10 @@
++ #include "../trace.h"
++ #include "../dma.h"
++ 
++-static bool wed_enable;
++-module_param(wed_enable, bool, 0644);
++-MODULE_PARM_DESC(wed_enable, "Enable Wireless Ethernet Dispatch support");
+++static int wed_enable = -1;
+++module_param(wed_enable, int, 0644);
+++MODULE_PARM_DESC(wed_enable,
+++		 "Enable Wireless Ethernet Dispatch support (-1: with the EN7523 NPU)");
++ 
++ static const u32 mt7915_reg[] = {
++ 	[INT_SOURCE_CSR]		= 0xd7010,
++@@ -637,7 +638,7 @@ int mt7915_mmio_wed_init(struct mt7915_dev *dev, void *pdev_ptr,
++ 	struct mtk_wed_device *wed = &dev->mt76.mmio.wed;
++ 	int ret;
++ 
++-	if (!wed_enable)
+++	if (!wed_enable || (wed_enable < 0 && !mt7915_npu_enabled(dev)))
++ 		return 0;
++ 
++ 	if (pci) {
++diff --git a/mt7915/npu.c b/mt7915/npu.c
++index de13432..07de231 100644
++--- a/mt7915/npu.c
+++++ b/mt7915/npu.c
++@@ -8,6 +8,7 @@
++  * NPU->host rings (one per band) in the NPU WLAN block. The host gives
++  * those rings their buffers and reads them like any DMA ring.
++  */
+++#include <linux/of.h>
++ #include <linux/pci.h>
++ #include <linux/regmap.h>
++ #include <linux/soc/airoha/airoha_offload.h>
++@@ -15,9 +16,10 @@
++ #include "mt7915.h"
++ #include "../dma.h"
++ 
++-static bool npu_enable;
++-module_param(npu_enable, bool, 0644);
++-MODULE_PARM_DESC(npu_enable, "Offload MT7916 RX to the EN7523 NPU");
+++static int npu_enable = -1;
+++module_param(npu_enable, int, 0644);
+++MODULE_PARM_DESC(npu_enable,
+++		 "Offload MT7916 RX to the EN7523 NPU (-1: when the device tree links one)");
++ 
++ #define MT7915_NPU_RING_SIZE	512
++ #define MT7915_NPU_BUF_SIZE	3500
++@@ -282,7 +284,21 @@ static void mt7915_npu_free(struct mt7915_npu *np)
++ 
++ bool mt7915_npu_enabled(struct mt7915_dev *dev)
++ {
++-	return npu_enable && is_mt7916(&dev->mt76);
+++	struct device_node *np;
+++	bool ret;
+++
+++	if (!is_mt7916(&dev->mt76))
+++		return false;
+++	if (npu_enable >= 0)
+++		return npu_enable;
+++
+++	/* A board opts in by linking the card to an EN7523 NPU. */
+++	np = of_parse_phandle(dev->mt76.dev->of_node, "airoha,npu", 0);
+++	ret = of_device_is_compatible(np, "airoha,en7523-npu") ||
+++	      of_device_is_compatible(np, "airoha,airoha_en7523-npu");
+++	of_node_put(np);
+++
+++	return ret;
++ }
++ 
++ static struct mt76_driver_ops npu_drv_ops;
++@@ -295,7 +311,7 @@ int mt7915_npu_init(struct mt7915_dev *dev)
++ 	struct pci_dev *pdev;
++ 	int n, err;
++ 
++-	if (!npu_enable || !is_mt7916(mdev))
+++	if (!mt7915_npu_enabled(dev))
++ 		return 0;
++ 
++ 	pdev = to_pci_dev(mdev->dev);
+diff --git a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+index 727db7fcfd..e7abcd7a88 100644
+--- a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
++++ b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+@@ -285,7 +285,7 @@
+ 			nvmem-cells = <&mt7916_eeprom_factory>, <&macaddr_uboot 4>;
+ 			nvmem-cell-names = "eeprom", "mac-address";
+ 
+-			/* RX offload through the NPU (mt7915e npu_enable=1). */
++			/* Wi-Fi offload through WED and the NPU, on by default. */
+ 			airoha,npu = <&npu>;
+ 			airoha,eth = <&eth>;
+ 
+diff --git a/target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft b/target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft
+index b3eb4b7ee5..40e1c5ff9f 100644
+--- a/target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft
++++ b/target/linux/airoha/en7523/base-files/usr/share/alphawrt/gn630v-hw-offload.nft
+@@ -1,7 +1,8 @@
+ # AlphaWRT: hardware (PPE) offload for IPv4 TCP only. On EN7523 the
+ # offloaded IPv6 entries pass no traffic (source MAC/PPPoE layout), so IPv6
+ # and UDP stay in fw4's software flowtable "ft". Runs just before fw4's
+-# forward chain, so these flows land here first.
++# forward chain, so these flows land here first. The Wi-Fi APs go through
++# WED and the NPU; a missing AP (radio off) does not stop the table loading.
+ #
+ # Its own table, loaded at ruleset-post: nf_tables refuses one device in
+ # two flowtables of the same table, so with a bare pon0 WAN (every fresh
+@@ -13,7 +14,7 @@ delete table inet alphawrt_hw
+ table inet alphawrt_hw {
+ 	flowtable ft_hw {
+ 		hook ingress priority filter
+-		devices = { "lan1", "lan2", "lan3", "lan4", "pon0" }
++		devices = { "lan1", "lan2", "lan3", "lan4", "pon0", "phy0-ap0", "phy1-ap0" }
+ 		flags offload
+ 		counter
+ 	}
+-- 
+2.54.0 (Apple Git-157)
+

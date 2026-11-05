@@ -1,0 +1,156 @@
+From 25809e2a6c02c1297d675eaf768dfdbc2b7eae02 Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Thu, 5 Nov 2026 11:25:34 +0800
+Subject: [PATCH 42/43] airoha: en7523: IPv6 PPE entries in the vendor layout
+
+EN7523 IPv6 entries keep three reserved words after the ports, so
+data, ib2 and the MAC block sit three words later than on AN7581.
+Bound IPv6 flows went out with the wrong port and MACs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ...-airoha-ppe-en7523-ipv6-entry-layout.patch | 132 ++++++++++++++++++
+ 1 file changed, 132 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/9998-net-airoha-ppe-en7523-ipv6-entry-layout.patch
+
+diff --git a/target/linux/airoha/patches-6.18/9998-net-airoha-ppe-en7523-ipv6-entry-layout.patch b/target/linux/airoha/patches-6.18/9998-net-airoha-ppe-en7523-ipv6-entry-layout.patch
+new file mode 100644
+index 0000000000..490b6ac4b7
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9998-net-airoha-ppe-en7523-ipv6-entry-layout.patch
+@@ -0,0 +1,132 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] net: airoha: ppe: EN7523 IPv6 entry layout
++
++EN7523 IPv6 entries (3T and 5T) keep three reserved words after the
++ports, as the vendor hw_nat layout has them: data at word 13, ib2 at
++14 and the MAC block from 15. The driver used the AN7581 layout (data
++at word 10), so bound IPv6 flows went out with the wrong port, queue
++and MACs and passed no traffic.
++
++Reach data, ib2 and the MAC block through airoha_foe_ipv6_info(),
++which adds the three words on EN7523, in entry prepare, L2 subflows
++and debugfs.
++
++--- a/drivers/net/ethernet/airoha/airoha_eth.h
+++++ b/drivers/net/ethernet/airoha/airoha_eth.h
++@@ -1405,6 +1405,24 @@
++ 	_found; \
++ })
++ 
+++struct airoha_foe_ipv6_info {
+++	u32 data;
+++	u32 ib2;
+++	struct airoha_foe_mac_info_common l2;
+++};
+++
+++/*
+++ * EN7523 IPv6 entries keep three reserved words after the ports (vendor
+++ * hw_nat layout), so data, ib2 and the MAC block sit three words later
+++ * than in struct airoha_foe_ipv6.
+++ */
+++static inline struct airoha_foe_ipv6_info *
+++airoha_foe_ipv6_info(struct airoha_eth *eth, struct airoha_foe_entry *hwe)
+++{
+++	return (void *)&hwe->ipv6.data +
+++	       (airoha_is(eth, airoha_en7523) ? 3 * sizeof(u32) : 0);
+++}
+++
++ static inline bool airoha_is_econet(struct airoha_eth *eth)
++ {
++ 	return airoha_is(eth, econet_en751221, econet_en7528,
++--- a/drivers/net/ethernet/airoha/airoha_ppe.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
++@@ -773,9 +773,11 @@
++ 		hwe->bridge.ib2 = val;
++ 		l2 = &hwe->bridge.l2.common;
++ 	} else if (type >= PPE_PKT_TYPE_IPV6_ROUTE_3T) {
++-		hwe->ipv6.data = qdata;
++-		hwe->ipv6.ib2 = val;
++-		l2 = &hwe->ipv6.l2;
+++		struct airoha_foe_ipv6_info *v6 = airoha_foe_ipv6_info(eth, hwe);
+++
+++		v6->data = qdata;
+++		v6->ib2 = val;
+++		l2 = &v6->l2;
++ 		l2->etype = ETH_P_IPV6;
++ 	} else {
++ 		hwe->ipv4.data = qdata;
++@@ -1299,31 +1301,34 @@
++ 
++ 	type = FIELD_GET(AIROHA_FOE_IB1_BIND_PACKET_TYPE, hwe.ib1);
++ 	if (type >= PPE_PKT_TYPE_IPV6_ROUTE_3T) {
++-		hwe.ipv6.ib2 = e->data.bridge.ib2;
+++		struct airoha_foe_ipv6_info *v6;
+++
+++		v6 = airoha_foe_ipv6_info(ppe->common.eth, &hwe);
+++		v6->data = e->data.bridge.data;
+++		v6->ib2 = e->data.bridge.ib2;
++ 		/*
++ 		 * EN7523 IPv6 entries carry the full source MAC and the
++ 		 * SMAC[15:0] | PPPoE ID word (see airoha_ppe_foe_entry_prepare),
++ 		 * with no SMAC_ID 0xf "keep the source MAC" encoding.
++ 		 */
++ 		if (airoha_is(ppe->common.eth, airoha_en7523)) {
++-			*(struct airoha_foe_mac_info *)&hwe.ipv6.l2 =
+++			*(struct airoha_foe_mac_info *)&v6->l2 =
++ 				e->data.bridge.l2;
++ 		} else {
++-			memcpy(&hwe.ipv6.l2, &e->data.bridge.l2,
++-			       sizeof(hwe.ipv6.l2));
++-			hwe.ipv6.l2.src_mac_hi =
+++			memcpy(&v6->l2, &e->data.bridge.l2, sizeof(v6->l2));
+++			v6->l2.src_mac_hi =
++ 				FIELD_PREP(AIROHA_FOE_MAC_SMAC_ID, 0xf);
++ 		}
++ 	} else {
++ 		memcpy(&hwe.bridge.l2, &e->data.bridge.l2,
++ 		       sizeof(hwe.bridge.l2));
++ 		hwe.bridge.ib2 = e->data.bridge.ib2;
+++		hwe.bridge.data = e->data.bridge.data;
++ 		if (type == PPE_PKT_TYPE_IPV4_HNAPT)
++ 			memcpy(&hwe.ipv4.new_tuple, &hwe.ipv4.orig_tuple,
++ 			       sizeof(hwe.ipv4.new_tuple));
++ 	}
++ 
++-	hwe.bridge.data = e->data.bridge.data;
++ 	airoha_ppe_foe_commit_entry(ppe, &hwe, sw_idx, rx_wlan);
++ 
++ 	return 0;
++--- a/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe_debugfs.c
++@@ -214,9 +214,12 @@
++ 			l2 = &hwe->bridge.l2.common;
++ 			*((__be16 *)&h_source[4]) = cpu_to_be16(hwe->bridge.l2.src_mac_lo);
++ 		} else if (type >= PPE_PKT_TYPE_IPV6_ROUTE_3T) {
++-			data = hwe->ipv6.data;
++-			ib2 = hwe->ipv6.ib2;
++-			l2 = &hwe->ipv6.l2;
+++			struct airoha_foe_ipv6_info *v6;
+++
+++			v6 = airoha_foe_ipv6_info(ppe->common.eth, hwe);
+++			data = v6->data;
+++			ib2 = v6->ib2;
+++			l2 = &v6->l2;
++ 			/* EN7523 IPv6 entries carry SMAC[15:0] like IPv4 */
++ 			*((__be16 *)&h_source[4]) =
++ 				airoha_is(ppe->common.eth, airoha_en7523) ?
++@@ -349,9 +352,12 @@
++ 			l2 = &hwe->bridge.l2.common;
++ 			*((__be16 *)&h_source[4]) = cpu_to_be16(hwe->bridge.l2.src_mac_lo);
++ 		} else if (type >= PPE_PKT_TYPE_IPV6_ROUTE_3T) {
++-			data = hwe->ipv6.data;
++-			ib2 = hwe->ipv6.ib2;
++-			l2 = &hwe->ipv6.l2;
+++			struct airoha_foe_ipv6_info *v6;
+++
+++			v6 = airoha_foe_ipv6_info(ppe->common.eth, hwe);
+++			data = v6->data;
+++			ib2 = v6->ib2;
+++			l2 = &v6->l2;
++ 			/* EN7523 IPv6 entries carry SMAC[15:0] like IPv4 */
++ 			*((__be16 *)&h_source[4]) =
++ 				airoha_is(ppe->common.eth, airoha_en7523) ?
+-- 
+2.54.0 (Apple Git-157)
+
