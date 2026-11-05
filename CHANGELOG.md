@@ -11,10 +11,19 @@ How this file is kept:
 
 ## Unreleased
 
+## 0.4.1 (2026-11-06)
+
 ### Added
 - **Kernel modules for zapret and SQM:** NFQUEUE, CAKE and IFB are now included, so both can be installed. SQM only shapes traffic the hardware packet engine doesn't handle; turn offload off if you want it to shape everything ([#4](https://github.com/idiazraz/gn630v-alphawrt/issues/4)).
 
-## 0.4.0 (tester build 2026-11-05; public date when testers confirm)
+### Fixed
+- **Network page could show only "Something went wrong"** after an upgrade, when a port forward had been made in Advanced (LuCI). The page now opens and lists that forward.
+
+### Known issues
+- At idle, the Wi-Fi interrupt fires much more often than it should, wasting CPU. The cause is found; the fix is planned.
+- Turning "Stop devices skipping Pi-hole" on or off drops name lookups for about 15 seconds while Pi-hole restarts.
+
+## 0.4.0 (tester build 2026-11-05; not released publicly, shipped in 0.4.1)
 
 ### Added
 - **Block a device's internet** from the Devices page: tap a device and switch on "Block its Internet". It stays on Wi-Fi and the home network, but can't reach the internet until you unblock it. Blocked devices show a red "Blocked" badge and stay listed while they're away. Not in bridge mode.

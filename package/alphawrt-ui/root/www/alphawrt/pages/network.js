@@ -156,7 +156,7 @@ export default {
 
 	forwards(bridge) {
 		if (bridge) return card('globe', 'Port forwards', null, ROUTER_ONLY());
-		const list = uci.sections('firewall', 'redirect').filter(r => (r.target || 'DNAT') == 'DNAT' && (r.src || 'wan') == 'wan');
+		const fwds = uci.sections('firewall', 'redirect').filter(r => (r.target || 'DNAT') == 'DNAT' && (r.src || 'wan') == 'wan');
 		const add = async () => {
 			const name = field('Name', { placeholder: 'e.g. Minecraft' }), proto = choice('Protocol', PROTO, 'tcp'),
 			      ext = field('Outside port', { placeholder: '25565', hint: 'A port or a range like 6000-6010.' }),
@@ -171,7 +171,7 @@ export default {
 		return card('globe', 'Port forwards', null, h('div', { class: 'space-y-3' },
 			h('div', { role: 'status', class: 'alert alert-soft alert-warning text-sm' }, icon('warn'),
 				'Needs a public IPv4 address. TIME home plans are behind CGNAT unless you ask TIME for a public IP; Unifi usually gives one.'),
-			this.listOf(list, r => `${r.name || 'Forward'}`, r => `${(r.proto || 'tcp udp').toUpperCase().replace(' ', '+')} ${r.src_dport} → ${r.dest_ip}:${r.dest_port || r.src_dport}`, 'firewall', 'port forward'),
+			this.listOf(fwds, r => `${r.name || 'Forward'}`, r => `${(list(r.proto).join('+') || 'tcp+udp').toUpperCase()} ${r.src_dport} → ${r.dest_ip}:${r.dest_port || r.src_dport}`, 'firewall', 'port forward'),
 			h('div', { class: 'card-actions justify-end' }, h('button', { class: 'btn btn-sm btn-primary', onclick: add }, 'Add'))));
 	},
 
