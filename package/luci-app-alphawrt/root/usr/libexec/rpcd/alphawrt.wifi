@@ -277,6 +277,10 @@ guest_setup() {
 		uci set dhcp.guest.start=100
 		uci set dhcp.guest.limit=150
 		uci set dhcp.guest.leasetime=2h
+		# dnsmasq.init treats a missing dhcpv4 as disabled (issues/0024)
+		uci set dhcp.guest.dhcpv4=server
+		# Pi-hole moves dnsmasq off port 53, so name this box as DNS (issues/0024)
+		[ -z "$(uci -q get dhcp.@dnsmasq[0].port)" ] || uci add_list dhcp.guest.dhcp_option='6,0.0.0.0'
 	}
 	uci -q get firewall.guest >/dev/null || {
 		# Internet only: no LAN, no box admin, only DHCP and DNS from the box

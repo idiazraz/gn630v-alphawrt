@@ -147,16 +147,27 @@ sync_lists() {
 	[ "$before" != "$(sql $DB "SELECT group_concat(address) FROM adlist WHERE comment = '$MARK';")" ]
 }
 
-# dnsmasq keeps DHCP and the .lan names on $DNSMASQ_PORT while FTL has :53
+# dnsmasq keeps DHCP and the .lan names on $DNSMASQ_PORT while FTL has :53.
+# Off port 53, dnsmasq stops naming itself as DNS in its leases, so every pool
+# (LAN and guest, issues/0024) hands out 6,0.0.0.0 (0.0.0.0 = this box).
 dnsmasq_port() {
-	[ "$(uci -q get dhcp.@dnsmasq[0].port)" = "$1" ] && return 0
-	if [ -n "$1" ]; then
-		uci set dhcp.@dnsmasq[0].port="$1"
-		uci add_list dhcp.lan.dhcp_option='6,0.0.0.0'	# 0.0.0.0 = this box
-	else
-		uci -q delete dhcp.@dnsmasq[0].port
-		uci -q del_list dhcp.lan.dhcp_option='6,0.0.0.0'
+	local s
+	if [ "$(uci -q get dhcp.@dnsmasq[0].port)" != "$1" ]; then
+		if [ -n "$1" ]; then
+			uci set dhcp.@dnsmasq[0].port="$1"
+		else
+			uci delete dhcp.@dnsmasq[0].port
+		fi
 	fi
+	for s in lan guest; do
+		uci -q get dhcp.$s >/dev/null || continue
+		if uci -q get dhcp.$s.dhcp_option | tr ' ' '\n' | grep -qx '6,0.0.0.0'; then
+			[ -n "$1" ] || uci del_list dhcp.$s.dhcp_option='6,0.0.0.0'
+		else
+			[ -z "$1" ] || uci add_list dhcp.$s.dhcp_option='6,0.0.0.0'
+		fi
+	done
+	[ -n "$(uci changes dhcp)" ] || return 0
 	uci commit dhcp
 	/etc/init.d/dnsmasq restart
 }

@@ -1,0 +1,9 @@
+#!/bin/sh
+# issues/0024: with Pi-hole on, dnsmasq sits off port 53 and no longer names
+# itself as DNS, so the guest pool needs 6,0.0.0.0 like the LAN pool has.
+[ -n "$(uci -q get dhcp.@dnsmasq[0].port)" ] || exit 0
+uci -q get dhcp.guest >/dev/null || exit 0
+uci -q get dhcp.guest.dhcp_option | tr ' ' '\n' | grep -qx '6,0.0.0.0' && exit 0
+uci add_list dhcp.guest.dhcp_option='6,0.0.0.0'
+uci commit dhcp
+exit 0

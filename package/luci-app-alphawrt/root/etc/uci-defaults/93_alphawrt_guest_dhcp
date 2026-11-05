@@ -1,0 +1,8 @@
+#!/bin/sh
+# issues/0024: guest pools made before the fix had no dhcpv4=server, and
+# dnsmasq.init treats a missing dhcpv4 as disabled, so guests got no address
+uci -q get dhcp.guest >/dev/null || exit 0
+[ -n "$(uci -q get dhcp.guest.dhcpv4)" ] && exit 0
+uci set dhcp.guest.dhcpv4=server
+uci commit dhcp
+exit 0
