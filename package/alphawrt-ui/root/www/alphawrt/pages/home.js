@@ -242,23 +242,19 @@ export default {
 		let actions = null;
 		if (pi.running) {
 			if (pi.blocking == 'enabled') {
-				actions = h('div', { class: 'flex items-center gap-2 pt-1' },
-					h('span', { class: 'text-xs opacity-60' }, 'Pause:'),
-					h('button', {
+				actions = h('div', { class: 'flex flex-wrap items-center justify-between gap-2' },
+					h('span', { class: 'text-sm opacity-70' }, 'Pause blocking'),
+					h('div', { class: 'join' }, [ [ 5, '5 min' ], [ 15, '15 min' ] ].map(([ m, lbl ]) => h('button', {
 						type: 'button',
-						class: 'btn btn-xs btn-outline',
-						onclick: async () => { await call('alphawrt-pihole', 'pause', { minutes: 5 }); tick(); }
-					}, '5m'),
-					h('button', {
-						type: 'button',
-						class: 'btn btn-xs btn-outline',
-						onclick: async () => { await call('alphawrt-pihole', 'pause', { minutes: 15 }); tick(); }
-					}, '15m'));
+						class: 'btn btn-sm join-item',
+						onclick: async () => { await call('alphawrt-pihole', 'pause', { minutes: m }); tick(); }
+					}, lbl))));
 			} else if (pi.blocking == 'disabled') {
-				actions = h('div', { class: 'pt-1' },
+				actions = h('div', { class: 'flex flex-wrap items-center justify-between gap-2' },
+					h('span', { class: 'text-sm opacity-70' }, 'Blocking is paused'),
 					h('button', {
 						type: 'button',
-						class: 'btn btn-xs btn-primary',
+						class: 'btn btn-sm btn-primary',
 						onclick: async () => { await call('alphawrt-pihole', 'pause', { minutes: 0 }); tick(); }
 					}, 'Resume blocking'));
 			}
@@ -283,7 +279,7 @@ export default {
 					mode == 'bridge' && [ 'Other LAN ports', lan ]
 				]),
 				h('div', { class: 'flex flex-wrap justify-end gap-1' },
-					h('a', { href: '/cgi-bin/luci/', class: 'btn btn-ghost btn-sm' }, 'Advanced settings', icon('external', 'size-4')),
+					h('a', { href: '/cgi-bin/luci/', class: 'btn btn-ghost btn-sm text-primary' }, 'Advanced settings', icon('external', 'size-4')),
 					h('a', { href: '#/system', class: 'btn btn-ghost btn-sm text-primary' }, 'System', icon('chevron', 'size-4')))),
 			null);
 	}

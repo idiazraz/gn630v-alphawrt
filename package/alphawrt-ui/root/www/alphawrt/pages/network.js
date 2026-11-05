@@ -1,10 +1,11 @@
 /*
  * Network: everything about the home network in one place. This box's
  * address and the DHCP range, where names are looked up (DNS), local names
- * and port forwards. Moved here from Devices, System and Home lab.
+ * IPv6, local names and port forwards. Moved here from Devices, System and
+ * Home lab.
  */
-import { h, icon, card, field, choice, modal, busy, toast, redraw } from '../lib/ui.js';
-import { uci, list } from '../lib/rpc.js';
+import { h, icon, card, field, choice, toggle, modal, busy, toast, redraw } from '../lib/ui.js';
+import { uci, list, maybe } from '../lib/rpc.js';
 import { save } from '../lib/apply.js';
 
 const IP4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
@@ -22,10 +23,12 @@ export default {
 	async render(main) {
 		await uci.load('network', 'dhcp', 'dnsproxy', 'firewall', 'alphawrt');
 		const bridge = uci.get('alphawrt', 'setup', 'mode') == 'bridge';
+		const ifaces = bridge ? [] : (await maybe('network.interface', 'dump')).interface || [];
 		main.append(h('h1', { class: 'text-2xl font-bold' }, 'Network'),
 			h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
 				this.lan(),
 				this.dns(),
+				this.ipv6(bridge, ifaces),
 				this.names(bridge),
 				this.forwards(bridge)));
 	},
@@ -109,6 +112,45 @@ export default {
 		return card('globe', 'DNS', null, h('div', {},
 			h('p', { class: 'text-sm opacity-80' }, 'Turns names like google.com into addresses for every device here. Encrypted uses AdGuard and Cloudflare, which don’t block anything; ad blocking is Pi-hole’s job.'),
 			sel, own,
+			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
+	},
+
+	/*
+	 * Internet side: PPPoE asks for IPv6 itself (wan.ipv6, unset means auto);
+	 * DHCP and static use the wan6 DHCPv6 interface, as Quick Setup writes it.
+	 * Home side: odhcpd hands out addresses (SLAAC and DHCPv6) from the
+	 * provider's prefix, network.lan ip6assign.
+	 */
+	ipv6(bridge, ifaces) {
+		if (bridge) return card('globe', 'IPv6', null, ROUTER_ONLY());
+		const pppoe = uci.get('network', 'wan', 'proto') == 'pppoe', w6 = uci.get('network', 'wan6');
+		const wanOn = pppoe ? uci.get('network', 'wan', 'ipv6') != '0' : !!w6 && w6.disabled != '1';
+		const lanOn = !!uci.get('network', 'lan', 'ip6assign') && /^(server|relay|hybrid)$/.test(uci.get('dhcp', 'lan', 'ra') || '');
+		const wan = toggle('IPv6 on the internet connection', wanOn, 'Asks your provider for IPv6, if it gives it.');
+		const lan = toggle('Give my devices IPv6', lanOn, 'Phones and computers here get IPv6 addresses from your provider’s range.');
+
+		const pfx = ifaces.flatMap(i => /^wan/.test(i.interface) ? (i['ipv6-prefix'] || []).map(p => `${p.address}/${p.mask}`) : [])[0];
+		const addr = ifaces.flatMap(i => /^wan/.test(i.interface) ? (i['ipv6-address'] || []).map(a => a.address) : [])[0];
+		const now = !wanOn ? null : pfx ? `Your provider gave ${pfx}.` : addr ? `This box has ${addr}, but no range for your devices yet.` : 'No IPv6 from your provider yet.';
+
+		const go = async () => {
+			const ops = [];
+			if (pppoe) { if (!wan.input.checked) ops.push([ 'set', 'network', 'wan', { ipv6: '0' } ]); else if (!wanOn) ops.push([ 'set', 'network', 'wan', { ipv6: 'auto' } ]); }
+			else if (wan.input.checked) {
+				ops.push(w6 ? [ 'set', 'network', 'wan6', { proto: 'dhcpv6', device: '@wan' } ] : [ 'add', 'network', 'interface', { proto: 'dhcpv6', device: '@wan' }, 'wan6' ]);
+				if (w6?.disabled) ops.push([ 'unset', 'network', 'wan6', 'disabled' ]);
+			}
+			else if (w6) ops.push([ 'set', 'network', 'wan6', { disabled: '1' } ]);
+			if (lan.input.checked) {
+				if (!uci.get('network', 'lan', 'ip6assign')) ops.push([ 'set', 'network', 'lan', { ip6assign: '60' } ]);
+				ops.push([ 'set', 'dhcp', 'lan', { ra: 'server', dhcpv6: 'server' } ]);
+			}
+			else ops.push([ 'set', 'dhcp', 'lan', { ra: 'disabled', dhcpv6: 'disabled' } ]);
+			await this.apply(ops, 'IPv6 saved.');
+		};
+		return card('globe', 'IPv6', null, h('div', {},
+			now && h('p', { class: 'text-sm opacity-80 mb-2' }, now),
+			wan, h('div', { class: 'mt-3' }, lan),
 			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
 	},
 

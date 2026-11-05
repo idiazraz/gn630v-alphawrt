@@ -156,7 +156,7 @@ const STEPS = {
 						h('span', { class: 'badge badge-soft badge-primary badge-sm' }, 'Recommended')),
 					card('pihole', '0', 'No, use standard DNS',
 						'No ad blocking. You can turn it on later on the Pi-hole page.')),
-				d.mode == 'bridge' && d.pihole == '1' && note('alert-info', 'warn', [
+				d.mode == 'bridge' && d.pihole == '1' && note('alert-info', 'info', [
 					h('b', {}, 'Bridge mode: '),
 					'Pi-hole reaches the internet through your router. Give your router’s Internet (WAN) port a second address on 192.168.100.x and let it forward this box’s traffic, then set its DNS server to ',
 					h('b', {}, '192.168.100.1'),
@@ -260,7 +260,7 @@ const STEPS = {
 					h('div', { class: 'mt-3' }, sw('Pass every provider VLAN, tagged (trunk)', 'trunk',
 						'Your router then handles Internet, IPTV and voice itself, like TM’s own bridge mode (Unifi: Internet 500, IPTV 600, voice 400). Off: only the Internet, untagged.')),
 					!d.trunk && text('Internet VLAN', 'vlan', { hint: 'Filled in from the provider. Once the fibre registers, the VLAN your provider’s equipment sends replaces it.' }),
-					note('alert-info', 'warn', 'Your router does the Internet login (PPPoE) with the username and password from your provider.')
+					note('alert-info', 'info', 'Your router does the Internet login (PPPoE) with the username and password from your provider.')
 				];
 			return [
 				d.mode == 'router' && !wanPort() && [ pick('Plug your provider’s fibre box into', 'port', PORTS),
@@ -354,7 +354,7 @@ const STEPS = {
 				d.country == 'MY' && h('div', { class: 'mt-4' }, sw('Malaysian time zone (UTC+8)', 'tz')),
 				d.mode != 'router' && !saved() && note('alert-warning', 'warn', [ h('b', {}, 'Have the fibre unplugged until this finishes. '),
 					'Finish saves the fibre identity first, so your provider never sees an unknown box. The identity stays saved even if the other settings are undone.' ]),
-				note('alert-info', 'warn', `Finish applies everything with a safety net: if this page can’t reach the box afterwards, the old settings come back by themselves within ${SETUP_TIMEOUT} seconds.`),
+				note('alert-info', 'info', `Finish applies everything with a safety net: if this page can’t reach the box afterwards, the old settings come back by themselves within ${SETUP_TIMEOUT} seconds.`),
 				h('p', { class: 'text-xs opacity-70 mt-4' }, 'The stock firmware stays in the other flash bank. System → Firmware banks switches back to it.')
 			];
 		}

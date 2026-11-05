@@ -6,6 +6,8 @@
  */
 @import "tailwindcss" source(none);
 @source "../root/www/alphawrt";
+/* not the last build: its class names would carry over into the next one */
+@source not "../root/www/alphawrt/ui.css";
 
 /* Tailwind matches any word in the sources, so prose ("step", "list",
  * "status") would pull in whole components: leave out the ones no page uses.

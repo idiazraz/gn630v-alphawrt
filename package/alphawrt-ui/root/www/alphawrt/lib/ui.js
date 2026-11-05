@@ -35,6 +35,7 @@ const ICONS = {
 	warn: 'M12 3l10 18H2zM12 10v4M12 17h.01',
 	bad: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 9l6 6M15 9l-6 6',
 	off: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8 12h8',
+	info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 11v5M12 8h.01',
 	cable: 'M4 8h16v8H4zM8 16v3M16 16v3M8 12h8',
 	chevron: 'M9 6l6 6-6 6',
 	eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
@@ -78,7 +79,7 @@ export function badge(level, text) {
 
 export function alert(level, title, text, action) {
 	return h('div', { role: level == 'bad' ? 'alert' : 'status', class: `alert alert-soft ${LEVEL[level][1]} items-start` },
-		icon(LEVEL[level][2], 'size-6 shrink-0'),
+		icon(level == 'off' ? 'info' : LEVEL[level][2], 'size-6 shrink-0'),
 		h('div', { class: 'space-y-1' },
 			h('div', { class: 'font-bold text-base' }, title),
 			text && h('div', { class: 'text-sm' }, text),
