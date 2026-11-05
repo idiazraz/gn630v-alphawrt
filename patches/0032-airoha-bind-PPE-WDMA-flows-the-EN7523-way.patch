@@ -1,0 +1,112 @@
+From 2210127eeb77616d294db5ee9e3a883949d5c442 Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Tue, 3 Nov 2026 18:48:06 +0800
+Subject: [PATCH] airoha: bind PPE WDMA flows the EN7523 way
+
+Kernel patch 9996 sets NBQ, QDMA channel and the WED v1 TX info like the vendor driver; mt76 patch 163 reports the real wcid on WED v1.
+---
+ ...t7915-report-the-real-wcid-on-WED-v1.patch | 19 ++++++
+ ...a-ppe-bind-WDMA-flows-the-EN7523-way.patch | 65 +++++++++++++++++++
+ 2 files changed, 84 insertions(+)
+ create mode 100644 package/kernel/mt76/patches/163-mt7915-report-the-real-wcid-on-WED-v1.patch
+ create mode 100644 target/linux/airoha/patches-6.18/9996-net-airoha-ppe-bind-WDMA-flows-the-EN7523-way.patch
+
+diff --git a/package/kernel/mt76/patches/163-mt7915-report-the-real-wcid-on-WED-v1.patch b/package/kernel/mt76/patches/163-mt7915-report-the-real-wcid-on-WED-v1.patch
+new file mode 100644
+index 0000000000..d219d56759
+--- /dev/null
++++ b/package/kernel/mt76/patches/163-mt7915-report-the-real-wcid-on-WED-v1.patch
+@@ -0,0 +1,19 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] wifi: mt76: mt7915: report the real wcid to WED v1
++
++WED v1 carries the wcid in an 8-bit TX info field, so the 0x3ff "look
++it up" value used for mt7916 on newer WED cannot be expressed there.
++Report the station's own wcid when the WED is version 1, as the
++EN7523 vendor driver does for mt7916.
++
++--- a/mt7915/main.c
+++++ b/mt7915/main.c
++@@ -1830,7 +1830,7 @@ mt7915_net_fill_forward_path(struct ieee
++ 	path->mtk_wdma.bss = mvif->mt76.idx;
++ 	path->mtk_wdma.queue = phy->mt76->band_idx;
++ 	if (test_bit(MT_WCID_FLAG_4ADDR, &msta->wcid.flags) ||
++-	    is_mt7915(&dev->mt76))
+++	    is_mt7915(&dev->mt76) || wed->version == 1)
++ 		path->mtk_wdma.wcid = msta->wcid.idx;
++ 	else
++ 		path->mtk_wdma.wcid = 0x3ff;
+diff --git a/target/linux/airoha/patches-6.18/9996-net-airoha-ppe-bind-WDMA-flows-the-EN7523-way.patch b/target/linux/airoha/patches-6.18/9996-net-airoha-ppe-bind-WDMA-flows-the-EN7523-way.patch
+new file mode 100644
+index 0000000000..27b3ec4214
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9996-net-airoha-ppe-bind-WDMA-flows-the-EN7523-way.patch
+@@ -0,0 +1,65 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] net: airoha: ppe: bind WDMA flows the EN7523 way
++
++EN7523 sends PPE flows for a WED-attached WLAN out through GDM3 and
++QDMA, and WDMA decodes them the way the WED v1 vendor driver writes
++them:
++
++- NBQ selects the WDMA and its RX ring: (wdma_idx & 1) * 2 + ring.
++  The driver used the WDMA index alone, so WDMA1 flows landed on
++  WDMA0 RX1.
++- The QDMA channel is 6 + NBQ.
++- The EtherType carries the TX info: wcid in bits 13:6, bss in 5:0.
++  The bit 11 band / 10:0 wcid layout belongs to newer SoCs.
++
++Keep the existing encoding for the other SoCs.
++
++--- a/drivers/net/ethernet/airoha/airoha_ppe.c
+++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
++@@ -563,6 +563,7 @@
++ 		return -EINVAL;
++ 
++ 	info->idx = path->mtk_wdma.wdma_idx;
+++	info->queue = path->mtk_wdma.queue;
++ 	info->bss = path->mtk_wdma.bss;
++ 	info->wcid = path->mtk_wdma.wcid;
++ 
++@@ -643,16 +644,32 @@
++ 			 airoha_is(eth, airoha_en7523) ? 0x0 : 0x1f);
++ 	if (netdev) {
++ 		struct airoha_wdma_info info = {};
+++		bool wdma = !airoha_ppe_get_wdma_info(netdev, data->eth.h_dest,
+++						      &info);
++ 
++-		if (!airoha_ppe_get_wdma_info(netdev, data->eth.h_dest,
++-					      &info)) {
+++		if (wdma && airoha_is(eth, airoha_en7523)) {
+++			/*
+++			 * EN7523 reaches WDMA through GDM3 and QDMA, as the
+++			 * vendor driver does it: NBQ picks the WDMA and its RX
+++			 * ring (idx * 2 + ring), the QDMA channel is 6 + NBQ
+++			 * and the EtherType carries the WED v1 TX info
+++			 * (wcid in 13:6, bss in 5:0).
+++			 */
+++			u8 nbq = ((info.idx & 1) << 1) | (info.queue & 1);
+++
+++			if (info.wcid > 0xff || info.bss > 0x3f)
+++				return -EINVAL;
+++
+++			val |= FIELD_PREP(AIROHA_FOE_IB2_NBQ, nbq) |
+++			       FIELD_PREP(AIROHA_FOE_IB2_PSE_PORT,
+++					  FE_PSE_PORT_GDM3) |
+++			       AIROHA_FOE_IB2_PSE_QOS;
+++			qdata |= FIELD_PREP(AIROHA_FOE_CHANNEL, 6 + nbq);
+++			wlan_etype = (info.wcid << 6) | info.bss;
+++		} else if (wdma) {
++ 			val |= FIELD_PREP(AIROHA_FOE_IB2_NBQ, info.idx) |
++ 			       FIELD_PREP(AIROHA_FOE_IB2_PSE_PORT,
++-					  airoha_is(eth, airoha_en7523) ?
++-					  FE_PSE_PORT_GDM3 :
++ 					  FE_PSE_PORT_CDM4);
++-			if (airoha_is(eth, airoha_en7523))
++-				val |= AIROHA_FOE_IB2_PSE_QOS;
++ 			qdata |= FIELD_PREP(AIROHA_FOE_ACTDP, info.bss);
++ 			wlan_etype = FIELD_PREP(AIROHA_FOE_MAC_WDMA_BAND,
++ 						info.idx) |
+-- 
+2.54.0 (Apple Git-157)
+

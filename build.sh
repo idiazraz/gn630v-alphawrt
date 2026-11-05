@@ -37,6 +37,12 @@ git config core.abbrev 10
 # take the tree's date instead of the checkout time.
 rm -rf package/alphawrt && cp -R "$HERE/package" package/alphawrt
 for p in package/alphawrt/*/; do git log -1 --format=%ct > "$p/version.date"; done
+# Proprietary firmware the stock image ships (e.g. the NPU's
+# lib/firmware/airoha/en7523_npu_*.bin) is not in this repository. Put it
+# under blobs/ at its rootfs path and it goes into the image unmodified;
+# without it the build works and those features stay off.
+rm -rf files
+[ -d "$HERE/blobs" ] && cp -R "$HERE/blobs" files
 cp "$HERE/config/feeds.conf" feeds.conf
 ./scripts/feeds update -a
 mkdir -p feeds/packages/libs/giflib/patches

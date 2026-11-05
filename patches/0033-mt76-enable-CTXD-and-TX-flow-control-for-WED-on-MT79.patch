@@ -1,0 +1,72 @@
+From 91c28105dc607e9955b6dbc983c09401b829f3ab Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Wed, 4 Nov 2026 01:55:09 +0800
+Subject: [PATCH] mt76: enable CTXD and TX flow control for WED on MT7916
+
+mt76 patch 164 sets WPDMA_CTXD_CFG and GLO_CFG_EXT1 TX_FCTRL_MODE like the vendor driver; without them routed WAN to Wi-Fi offload hangs the MT7916.
+---
+ ...nd-TX-flow-control-for-WED-on-MT7916.patch | 52 +++++++++++++++++++
+ 1 file changed, 52 insertions(+)
+ create mode 100644 package/kernel/mt76/patches/164-mt7915-enable-CTXD-and-TX-flow-control-for-WED-on-MT7916.patch
+
+diff --git a/package/kernel/mt76/patches/164-mt7915-enable-CTXD-and-TX-flow-control-for-WED-on-MT7916.patch b/package/kernel/mt76/patches/164-mt7915-enable-CTXD-and-TX-flow-control-for-WED-on-MT7916.patch
+new file mode 100644
+index 0000000000..ad13797087
+--- /dev/null
++++ b/package/kernel/mt76/patches/164-mt7915-enable-CTXD-and-TX-flow-control-for-WED-on-MT7916.patch
+@@ -0,0 +1,52 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] mt7915: enable CTXD and TX flow control for WED on MT7916
++
++The vendor driver sets WPDMA_CTXD_CFG (rings 18/19, both bands on,
++cascade 0) and GLO_CFG_EXT1 TX_FCTRL_MODE when WED is used. Without
++them routed WAN to Wi-Fi offload on EN7523 + MT7916 hangs the card.
++
++--- a/mt7915/regs.h
+++++ b/mt7915/regs.h
++@@ -604,6 +604,16 @@
++ #define MT_WFDMA0_EXT0_CFG		MT_WFDMA0(0x2b0)
++ #define MT_WFDMA0_EXT0_RXWB_KEEP	BIT(10)
++ 
+++#define MT_WFDMA0_GLO_CFG_EXT1		MT_WFDMA0(0x2b4)
+++#define MT_WFDMA0_GLO_CFG_EXT1_TX_FCTRL	BIT(28)
+++
+++#define MT_WFDMA0_CTXD_CFG		MT_WFDMA0(0x2bc)
+++#define MT_WFDMA0_CTXD_CASCADE_NUM	GENMASK(15, 12)
+++#define MT_WFDMA0_CTXD_BAND1_RING	GENMASK(11, 7)
+++#define MT_WFDMA0_CTXD_BAND1_EN		BIT(6)
+++#define MT_WFDMA0_CTXD_BAND0_RING	GENMASK(5, 1)
+++#define MT_WFDMA0_CTXD_BAND0_EN		BIT(0)
+++
++ #define MT_WFDMA0_PRI_DLY_INT_CFG0	MT_WFDMA0(0x2f0)
++ #define MT_WFDMA0_PRI_DLY_INT_CFG1	MT_WFDMA0(0x2f4)
++ #define MT_WFDMA0_PRI_DLY_INT_CFG2	MT_WFDMA0(0x2f8)
++--- a/mt7915/dma.c
+++++ b/mt7915/dma.c
++@@ -320,6 +320,23 @@
++ 		if (ret)
++ 			return ret;
++ 
+++		/* Note: the vendor driver turns on CTXD for the WED rings 18/19
+++		 * and TX flow control when WED is used. Without them the MT7916
+++		 * stops taking WED frames after a few and the MCU times out.
+++		 */
+++		if (is_mt7916(&dev->mt76)) {
+++			mt76_rmw(dev, MT_WFDMA0_CTXD_CFG,
+++				 MT_WFDMA0_CTXD_CASCADE_NUM |
+++				 MT_WFDMA0_CTXD_BAND1_RING |
+++				 MT_WFDMA0_CTXD_BAND0_RING,
+++				 FIELD_PREP(MT_WFDMA0_CTXD_BAND1_RING, 19) |
+++				 MT_WFDMA0_CTXD_BAND1_EN |
+++				 FIELD_PREP(MT_WFDMA0_CTXD_BAND0_RING, 18) |
+++				 MT_WFDMA0_CTXD_BAND0_EN);
+++			mt76_set(dev, MT_WFDMA0_GLO_CFG_EXT1,
+++				 MT_WFDMA0_GLO_CFG_EXT1_TX_FCTRL);
+++		}
+++
++ 		mtk_wed_device_start(&dev->mt76.mmio.wed, wed_irq_mask);
++ 	}
++ 
+-- 
+2.54.0 (Apple Git-157)
+

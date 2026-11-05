@@ -2,6 +2,8 @@
 /openwrt/
 /backup/
 /tftp/
+# proprietary firmware: goes into images, never into git
+/blobs/
 *.bin
 *.log
 __pycache__/

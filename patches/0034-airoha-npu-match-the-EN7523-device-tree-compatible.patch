@@ -1,0 +1,38 @@
+From 668ba56d6bbc2d5d942a5111a6512ec282a4dcba Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Wed, 4 Nov 2026 10:59:47 +0800
+Subject: [PATCH] airoha: npu: match the EN7523 device tree compatible
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ...tch-the-EN7523-device-tree-compatible.patch | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/933-net-airoha-npu-match-the-EN7523-device-tree-compatible.patch
+
+diff --git a/target/linux/airoha/patches-6.18/933-net-airoha-npu-match-the-EN7523-device-tree-compatible.patch b/target/linux/airoha/patches-6.18/933-net-airoha-npu-match-the-EN7523-device-tree-compatible.patch
+new file mode 100644
+index 0000000000..c04c127b9a
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/933-net-airoha-npu-match-the-EN7523-device-tree-compatible.patch
+@@ -0,0 +1,18 @@
++Subject: [PATCH] net: airoha: npu: match the EN7523 device tree compatible
++
++The SoC identifier rename gave the driver "airoha,airoha_en7523-npu",
++but en7523.dtsi still names the node "airoha,en7523-npu", so the NPU
++never probed and airoha-eth logged "Failed to get NPU module". Match
++both names.
++---
++--- a/drivers/net/ethernet/airoha/airoha_npu.c
+++++ b/drivers/net/ethernet/airoha/airoha_npu.c
++@@ -1710,6 +1710,8 @@
++ 
++ static const struct of_device_id of_airoha_npu_match[] = {
++ 	{ .compatible = "airoha,airoha_en7523-npu", .data = &en7523_npu_soc_data },
+++	/* Note: the EN7523 device tree still uses the old name. */
+++	{ .compatible = "airoha,en7523-npu", .data = &en7523_npu_soc_data },
++ 	{ .compatible = "airoha,airoha_en7581-npu", .data = &en7581_npu_soc_data },
++ 	{ .compatible = "airoha,airoha_an7583-npu", .data = &an7583_npu_soc_data },
++ 	{ /* sentinel */ }
+-- 
+2.54.0 (Apple Git-157)
+

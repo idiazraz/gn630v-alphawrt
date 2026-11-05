@@ -1,0 +1,74 @@
+From a78bb3211f6c05c26206f998bfbb7d77bb2c206d Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Wed, 4 Nov 2026 14:26:54 +0800
+Subject: [PATCH] airoha: npu: fix the EN7523 V1 WLAN set IDs
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ...a-npu-fix-the-EN7523-V1-WLAN-set-IDs.patch | 54 +++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/934-net-airoha-npu-fix-the-EN7523-V1-WLAN-set-IDs.patch
+
+diff --git a/target/linux/airoha/patches-6.18/934-net-airoha-npu-fix-the-EN7523-V1-WLAN-set-IDs.patch b/target/linux/airoha/patches-6.18/934-net-airoha-npu-fix-the-EN7523-V1-WLAN-set-IDs.patch
+new file mode 100644
+index 0000000000..694df39aa9
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/934-net-airoha-npu-fix-the-EN7523-V1-WLAN-set-IDs.patch
+@@ -0,0 +1,54 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] net: airoha: npu: fix the EN7523 V1 WLAN set IDs
++
++The V1.001 firmware has 16 set-wait handlers, in an order that matches
++neither V2 nor the SDK header (read from its dispatch table): 7 is a
++per-band BA entry, PCIE_STATE is 11, PCIE_PORT_TYPE 12, BAR_INFO 14 and
++FAST_FLAG 15. With the V2 numbers the firmware rejects NPU_BAND0
++("exceed max num", funcId 18) and the WLAN init fails with -EINVAL.
++
++--- a/drivers/net/ethernet/airoha/airoha_npu.c
+++++ b/drivers/net/ethernet/airoha/airoha_npu.c
++@@ -1546,23 +1546,27 @@
++ 		[WLAN_FUNC_SET_WAIT_BA_WIN_SIZE] = 4,
++ 		[WLAN_FUNC_SET_WAIT_DRIVER_MODEL] = 5,
++ 		[WLAN_FUNC_SET_WAIT_DEL_STA] = 6,
++-		[WLAN_FUNC_SET_WAIT_DRAM_BA_NODE_ADDR] = 7,
++-		[WLAN_FUNC_SET_WAIT_PKT_BUF_ADDR] = 8,
++-		[WLAN_FUNC_SET_WAIT_IS_TEST_NOBA] = 9,
++-		[WLAN_FUNC_SET_WAIT_FLUSHONE_TIMEOUT] = 10,
++-		[WLAN_FUNC_SET_WAIT_FLUSHALL_TIMEOUT] = 11,
++-		[WLAN_FUNC_SET_WAIT_IS_FORCE_TO_CPU] = 12,
++-		[WLAN_FUNC_SET_WAIT_PCIE_STATE] = 13,
++-		[WLAN_FUNC_SET_WAIT_PCIE_PORT_TYPE] = 14,
++-		[WLAN_FUNC_SET_WAIT_ERROR_RETRY_TIMES] = 15,
++-		[WLAN_FUNC_SET_WAIT_BAR_INFO] = 16,
++-		[WLAN_FUNC_SET_WAIT_FAST_FLAG] = 17,
++-		[WLAN_FUNC_SET_WAIT_NPU_BAND0_ONCPU] = 18,
++-		[WLAN_FUNC_SET_WAIT_TX_RING_PCIE_ADDR] = 19,
++-		[WLAN_FUNC_SET_WAIT_TX_DESC_HW_BASE] = 20,
++-		[WLAN_FUNC_SET_WAIT_TX_BUF_SPACE_HW_BASE] = 21,
+++		/* Note: IDs from the V1.001 firmware's own set-wait table
+++		 * (16 handlers). 7 is a per-band BA entry address, and stock
+++		 * sends force-to-CPU through 3.
+++		 */
+++		[WLAN_FUNC_SET_WAIT_DRAM_BA_NODE_ADDR] = 8,
+++		[WLAN_FUNC_SET_WAIT_PKT_BUF_ADDR] = 9,
+++		[WLAN_FUNC_SET_WAIT_IS_TEST_NOBA] = 10,
+++		[WLAN_FUNC_SET_WAIT_IS_FORCE_TO_CPU] = 3,
+++		[WLAN_FUNC_SET_WAIT_PCIE_STATE] = 11,
+++		[WLAN_FUNC_SET_WAIT_PCIE_PORT_TYPE] = 12,
+++		[WLAN_FUNC_SET_WAIT_ERROR_RETRY_TIMES] = 13,
+++		[WLAN_FUNC_SET_WAIT_BAR_INFO] = 14,
+++		[WLAN_FUNC_SET_WAIT_FAST_FLAG] = 15,
++ 
++ 		/* Not implemented by the EN7523 V1.001/V1.002 firmware. */
+++		[WLAN_FUNC_SET_WAIT_FLUSHONE_TIMEOUT] = WLAN_FUNC_SET_WAIT_MAX,
+++		[WLAN_FUNC_SET_WAIT_FLUSHALL_TIMEOUT] = WLAN_FUNC_SET_WAIT_MAX,
+++		[WLAN_FUNC_SET_WAIT_NPU_BAND0_ONCPU] = WLAN_FUNC_SET_WAIT_MAX,
+++		[WLAN_FUNC_SET_WAIT_TX_RING_PCIE_ADDR] = WLAN_FUNC_SET_WAIT_MAX,
+++		[WLAN_FUNC_SET_WAIT_TX_DESC_HW_BASE] = WLAN_FUNC_SET_WAIT_MAX,
+++		[WLAN_FUNC_SET_WAIT_TX_BUF_SPACE_HW_BASE] = WLAN_FUNC_SET_WAIT_MAX,
++ 		[WLAN_FUNC_SET_WAIT_RX_RING_FOR_TXDONE_HW_BASE] = WLAN_FUNC_SET_WAIT_MAX,
++ 		[WLAN_FUNC_SET_WAIT_TX_PKT_BUF_ADDR] = WLAN_FUNC_SET_WAIT_MAX,
++ 		[WLAN_FUNC_SET_WAIT_INODE_TXRX_REG_ADDR] = WLAN_FUNC_SET_WAIT_MAX,
+-- 
+2.54.0 (Apple Git-157)
+

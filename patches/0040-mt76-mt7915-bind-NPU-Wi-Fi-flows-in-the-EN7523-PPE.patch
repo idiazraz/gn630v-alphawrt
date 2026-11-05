@@ -1,0 +1,189 @@
+From 0c8c354fcc0243f35d2d4cc5e89db06b42b7c9c6 Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Thu, 5 Nov 2026 10:23:02 +0800
+Subject: [PATCH 40/40] mt76: mt7915: bind NPU Wi-Fi flows in the EN7523 PPE
+
+With npu_enable=1, set the NPU no-BA mode so data frames reach the
+PPE, commit pending flows on FOE_UNHIT/HIT_UNBIND as the ethernet RX
+path does (EN7523 does not learn flows itself), keep hif2 with WED
+when the NPU is on, and count timed-out TX status as acked. Routed
+Wi-Fi on the GN630V: 970 down / 859 up, 860 / 260 before.
+
+Limit: no RX reordering for frames the NPU sends to the PPE.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ...nd-NPU-Wi-Fi-flows-in-the-EN7523-PPE.patch | 161 ++++++++++++++++++
+ 1 file changed, 161 insertions(+)
+ create mode 100644 package/kernel/mt76/patches/166-mt7915-bind-NPU-Wi-Fi-flows-in-the-EN7523-PPE.patch
+
+diff --git a/package/kernel/mt76/patches/166-mt7915-bind-NPU-Wi-Fi-flows-in-the-EN7523-PPE.patch b/package/kernel/mt76/patches/166-mt7915-bind-NPU-Wi-Fi-flows-in-the-EN7523-PPE.patch
+new file mode 100644
+index 0000000000..b4ba28e359
+--- /dev/null
++++ b/package/kernel/mt76/patches/166-mt7915-bind-NPU-Wi-Fi-flows-in-the-EN7523-PPE.patch
+@@ -0,0 +1,161 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] mt7915: bind NPU Wi-Fi flows in the EN7523 PPE
++
++With npu_enable=1 Wi-Fi to WAN frames now reach the PPE in hardware
++and their flows bind:
++
++- V1 firmware only queues a data frame to the PPE when a BA node is
++  active for it, and no BA session is registered with the NPU. Set
++  its no-BA mode (set ID 10) so data frames go to the PPE.
++- EN7523 does not learn flows by itself. The NPU returns unbound
++  frames hashed with CPU reason FOE_UNHIT, so commit the pending flow
++  on FOE_UNHIT and HIT_UNBIND too, through airoha_ppe_dev_check_skb
++  as the ethernet RX path does. check_skb_reason only acts on the V1
++  FOE format, which EN7523 does not use.
++- The NPU firmware only runs with both links of a dual-link card
++  (P0_P1), so keep hif2 when WED is attached and the NPU is on.
++- The NPU drops the TX status records, so a status that times out
++  counts as acked.
++
++Needs the airoha_eth change that leaves QDMA0 TX ring 6 and TX IRQ
++queue 1 to the NPU. Measured on the GN630V (MT7916, 5 GHz, routed):
++970 down / 859 up, 860 / 260 before.
++
++Limit: no RX reordering for frames the NPU sends to the PPE.
++---
++ mt7915/mt7915.h |  6 ++++++
++ mt7915/npu.c    | 52 +++++++++++++++++++++++++++++++++++++++++++---------
++ mt7915/pci.c    |  6 ++++++
++ 3 files changed, 55 insertions(+), 9 deletions(-)
++
++diff --git a/mt7915/mt7915.h b/mt7915/mt7915.h
++index 287dfdf..364e322 100644
++--- a/mt7915/mt7915.h
+++++ b/mt7915/mt7915.h
++@@ -671,11 +671,17 @@ void mt7915_sta_add_debugfs(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
++ 			    struct ieee80211_sta *sta, struct dentry *dir);
++ #endif
++ #if IS_ENABLED(CONFIG_NET_AIROHA_NPU)
+++bool mt7915_npu_enabled(struct mt7915_dev *dev);
++ int mt7915_npu_init(struct mt7915_dev *dev);
++ void mt7915_npu_deinit(struct mt7915_dev *dev);
++ void mt7915_npu_check_ppe(struct mt7915_dev *dev, enum mt76_rxq_id q,
++ 			  struct sk_buff *skb, u32 info);
++ #else
+++static inline bool mt7915_npu_enabled(struct mt7915_dev *dev)
+++{
+++	return false;
+++}
+++
++ static inline int mt7915_npu_init(struct mt7915_dev *dev)
++ {
++ 	return 0;
++diff --git a/mt7915/npu.c b/mt7915/npu.c
++index 35d2ef7..de13432 100644
++--- a/mt7915/npu.c
+++++ b/mt7915/npu.c
++@@ -35,6 +35,9 @@ MODULE_PARM_DESC(npu_enable, "Offload MT7916 RX to the EN7523 NPU");
++ #define NPU_V1_CTRL_LEN		GENMASK(26, 14)
++ #define NPU_V1_INFO_FOE		GENMASK(14, 0)
++ #define NPU_V1_INFO_CRSN	GENMASK(19, 15)
+++#define NPU_V1_FOE_INVALID	0x7fff
+++#define PPE_CPU_REASON_FOE_UNHIT	0x0d
+++#define PPE_CPU_REASON_HIT_UNBIND	0x0e
++ 
++ /* V1 firmware values for SET DRIVER_MODEL and SET PCIE_PORT_TYPE */
++ #define NPU_MODEL_MT7916_DBDC	2
++@@ -277,6 +280,13 @@ static void mt7915_npu_free(struct mt7915_npu *np)
++ 	kfree(np);
++ }
++ 
+++bool mt7915_npu_enabled(struct mt7915_dev *dev)
+++{
+++	return npu_enable && is_mt7916(&dev->mt76);
+++}
+++
+++static struct mt76_driver_ops npu_drv_ops;
+++
++ int mt7915_npu_init(struct mt7915_dev *dev)
++ {
++ 	struct mt76_dev *mdev = &dev->mt76;
++@@ -331,7 +341,13 @@ int mt7915_npu_init(struct mt7915_dev *dev)
++ 	      mt7915_npu_set(np, 0, WLAN_FUNC_SET_WAIT_PCIE_PORT_TYPE,
++ 			     dev->hif2 ? NPU_PORT_P0_P1 : NPU_PORT_P0_P0) ?:
++ 	      mt7915_npu_set(np, 0, WLAN_FUNC_SET_WAIT_DRAM_BA_NODE_ADDR,
++-			     np->ba_dma);
+++			     np->ba_dma) ?:
+++	      /* Limit: no BA session is registered with the NPU, and without
+++	       * one V1 firmware hands every data frame to the host instead of
+++	       * the PPE. Its no-BA mode sends them to the PPE without RX
+++	       * reordering, which the host stack does not redo for them.
+++	       */
+++	      mt7915_npu_set(np, 0, WLAN_FUNC_SET_WAIT_IS_TEST_NOBA, 1);
++ 	for (n = 0; !err && n < ARRAY_SIZE(np->ring); n++) {
++ 		struct mt76_queue *q = &mdev->q_rx[mt7915_npu_qid(n)];
++ 		u32 regs = (void __iomem *)q->regs - mdev->mmio.regs;
++@@ -363,6 +379,17 @@ int mt7915_npu_init(struct mt7915_dev *dev)
++ 	 * instead.
++ 	 */
++ 	dev->npu = np;
+++
+++	/* Note: the NPU firmware passes only RX frames to the host and drops
+++	 * the TX status records the MT7916 puts in the same rings. Without
+++	 * them a frame that asked for status is reported as not acked, so a
+++	 * status that times out counts as acked, as on chips whose TX status
+++	 * is unreliable.
+++	 */
+++	npu_drv_ops = *mdev->drv;
+++	npu_drv_ops.drv_flags |= MT_DRV_IGNORE_TXS_FAILED;
+++	mdev->drv = &npu_drv_ops;
+++
++ 	for (n = 0; n < ARRAY_SIZE(np->ring); n++) {
++ 		struct mt76_queue *q = &mdev->q_rx[mt7915_npu_qid(n)];
++ 		u32 base;
++@@ -403,15 +430,22 @@ void mt7915_npu_check_ppe(struct mt7915_dev *dev, enum mt76_rxq_id q,
++ 			  struct sk_buff *skb, u32 info)
++ {
++ 	struct mt7915_npu *np = dev->npu;
+++	u16 hash = FIELD_GET(NPU_V1_INFO_FOE, info);
++ 
++-	if (!np || (q != MT_RXQ_MAIN && q != MT_RXQ_BAND1))
++-		return;
++-
++-	if (FIELD_GET(NPU_V1_INFO_CRSN, info) !=
++-	    PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED)
+++	if (!np || (q != MT_RXQ_MAIN && q != MT_RXQ_BAND1) ||
+++	    hash == NPU_V1_FOE_INVALID)
++ 		return;
++ 
++-	airoha_ppe_dev_check_skb_reason(np->ppe, skb,
++-					FIELD_GET(NPU_V1_INFO_FOE, info),
++-					PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED);
+++	/* EN7523 does not learn flows by itself: as on the ethernet RX path,
+++	 * a pending flow is committed on FOE_UNHIT and HIT_UNBIND too, not
+++	 * only on HIT_UNBIND_RATE_REACHED.
+++	 */
+++	switch (FIELD_GET(NPU_V1_INFO_CRSN, info)) {
+++	case PPE_CPU_REASON_FOE_UNHIT:
+++	case PPE_CPU_REASON_HIT_UNBIND:
+++	case PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED:
+++		skb_set_mac_header(skb, 0);
+++		airoha_ppe_dev_check_skb(np->ppe, skb, hash, true);
+++		break;
+++	}
++ }
++diff --git a/mt7915/pci.c b/mt7915/pci.c
++index 627c3e0..78245ae 100644
++--- a/mt7915/pci.c
+++++ b/mt7915/pci.c
++@@ -140,6 +140,12 @@ static int mt7915_pci_probe(struct pci_dev *pdev,
++ 	if (ret < 0)
++ 		goto free_wed_or_irq_vector;
++ 
+++	/* The NPU firmware only runs with both links of a dual-link card
+++	 * (P0_P1, as the vendor driver), so keep hif2 when WED is attached.
+++	 */
+++	if (ret && mt7915_npu_enabled(dev))
+++		hif2 = mt7915_pci_init_hif2(pdev);
+++
++ 	if (!ret) {
++ 		hif2 = mt7915_pci_init_hif2(pdev);
++ 
+-- 
+2.54.0 (Apple Git-157)
+

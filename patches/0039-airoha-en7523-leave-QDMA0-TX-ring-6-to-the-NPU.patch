@@ -1,0 +1,89 @@
+From 9f5d1507ec06fe8f12ea2dca82dd9a5c4cd81bfe Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Thu, 5 Nov 2026 10:23:02 +0800
+Subject: [PATCH 39/40] airoha: en7523: leave QDMA0 TX ring 6 to the NPU
+
+The EN7523 NPU firmware sends WLAN frames to the PPE through QDMA0 TX
+ring 6 and takes their completions on TX IRQ queue 1. The vendor
+driver leaves both to the NPU. airoha_eth used ring 6 for priority 7
+traffic and serviced IRQ queue 1, so ethernet broke as soon as the
+NPU fed the PPE. Skip ring 6 on QDMA0 and leave IRQ queue 1 masked
+on EN7523.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ ...523-leave-qdma0-tx-ring-6-to-the-npu.patch | 62 +++++++++++++++++++
+ 1 file changed, 62 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/9997-net-airoha-en7523-leave-qdma0-tx-ring-6-to-the-npu.patch
+
+diff --git a/target/linux/airoha/patches-6.18/9997-net-airoha-en7523-leave-qdma0-tx-ring-6-to-the-npu.patch b/target/linux/airoha/patches-6.18/9997-net-airoha-en7523-leave-qdma0-tx-ring-6-to-the-npu.patch
+new file mode 100644
+index 0000000000..bdfa698132
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9997-net-airoha-en7523-leave-qdma0-tx-ring-6-to-the-npu.patch
+@@ -0,0 +1,62 @@
++From: AlphaWRT <build@alphawrt.invalid>
++Subject: [PATCH] net: airoha: en7523: leave QDMA0 TX ring 6 to the NPU
++
++The EN7523 NPU firmware (V1.001) sends WLAN frames to PPE1 through
++QDMA0 TX ring 6, and reads the TX done entries for that ring from TX
++IRQ queue 1. Ring 6 is the only ring bound to IRQ queue 1
++(TX_RING_IRQ_BLOCKING_MAP_MASK). The vendor QDMA driver leaves both
++to the NPU.
++
++The host driver also put frames on ring 6 (priority 7) and polled TX
++IRQ queue 1, so once the NPU used the ring the host and the NPU
++consumed each other's completions and LAN traffic stopped.
++
++Keep ring 6 and IRQ queue 1 allocated and programmed, since the NPU
++reads their base registers at boot, but on EN7523 QDMA0 send ring 6
++traffic to ring 7 and leave the IRQ queue 1 interrupt masked.
++
++--- a/drivers/net/ethernet/airoha/airoha_eth.h
+++++ b/drivers/net/ethernet/airoha/airoha_eth.h
++@@ -1367,9 +1367,25 @@
++ void airoha_qdma_start(struct airoha_qdma *qdma);
++ void airoha_qdma_stop(struct airoha_qdma *qdma);
++ 
+++/* On EN7523 the NPU firmware sends WLAN frames to the PPE through QDMA0
+++ * TX ring 6, whose completions go to TX IRQ queue 1. The vendor driver
+++ * leaves both to the NPU, so the host must not use them.
+++ */
+++#define AIROHA_EN7523_NPU_TXQ	6
+++
+++static inline bool airoha_qdma_npu_owns_txq(struct airoha_qdma *qdma)
+++{
+++	return qdma->eth->soc->version == airoha_en7523 &&
+++	       qdma == &qdma->eth->qdma[0];
+++}
+++
++ static inline u16 airoha_qdma_get_txq(struct airoha_qdma *qdma, u16 qid)
++ {
++-	return qid % qdma->eth->soc->tx_ring;
+++	qid %= qdma->eth->soc->tx_ring;
+++	if (qid == AIROHA_EN7523_NPU_TXQ && airoha_qdma_npu_owns_txq(qdma))
+++		qid++;
+++
+++	return qid;
++ }
++ 
++ static inline bool airoha_is_lan_gdm_dev(struct airoha_gdm_dev *dev)
++--- a/drivers/net/ethernet/airoha/airoha_eth.c
+++++ b/drivers/net/ethernet/airoha/airoha_eth.c
++@@ -3462,9 +3462,11 @@
++ 		airoha_qdma_irq_enable(&qdma->irq_banks[i], QDMA_INT_REG_IDX3,
++ 				       INT_RX3_MASK(RX_IRQ_BANK_PIN_MASK(i)));
++ 	}
++-	/* setup tx irqs */
+++	/* setup tx irqs, TX IRQ queue 1 stays with the NPU on EN7523 */
++ 	airoha_qdma_irq_enable(&qdma->irq_banks[0], QDMA_INT_REG_IDX0,
++-			       TX_COHERENT_LOW_INT_MASK | INT_TX_MASK);
+++			       TX_COHERENT_LOW_INT_MASK |
+++			       (airoha_qdma_npu_owns_txq(qdma) ?
+++				TX_DONE_INT_MASK(0) : INT_TX_MASK));
++ 	if (!en7580)
++ 		airoha_qdma_irq_enable(&qdma->irq_banks[0], QDMA_INT_REG_IDX4,
++ 				       TX_COHERENT_HIGH_INT_MASK);
+-- 
+2.54.0 (Apple Git-157)
+

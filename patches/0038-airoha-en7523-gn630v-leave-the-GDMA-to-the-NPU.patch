@@ -1,0 +1,38 @@
+From 31d6586a2ebf311ee06f2bbcb5cf12dfbfdf9cc6 Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Wed, 4 Nov 2026 17:01:12 +0800
+Subject: [PATCH 38/40] airoha: en7523: gn630v: leave the GDMA to the NPU
+
+The NPU firmware copies RX frames to the host with GDMA channel 0 and
+never unmasks the channel. The Linux GDMA driver masks every channel at
+probe, so the NPU hangs on the first frame it delivers. Nothing on this
+board uses the GDMA from Linux.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ target/linux/airoha/dts/en7523-skyworth-gn630v.dts | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+index 48942593ba..727db7fcfd 100644
+--- a/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
++++ b/target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+@@ -302,6 +302,15 @@
+ 	};
+ };
+ 
++/*
++ * Note: the NPU firmware copies RX frames to the host with GDMA channel 0
++ * and never unmasks it. The Linux GDMA driver masks every channel at probe,
++ * which hangs the NPU on its first frame, and nothing here uses the GDMA.
++ */
++&gdma {
++	status = "disabled";
++};
++
+ &i2c0 {
+ 	status = "okay";
+ 
+-- 
+2.54.0 (Apple Git-157)
+

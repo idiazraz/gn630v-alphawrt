@@ -1,0 +1,61 @@
+From 4c75aff7441ef221a65d245ab24e240b89476d7f Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Tue, 3 Nov 2026 17:29:23 +0800
+Subject: [PATCH] airoha: wed: use the real WPDMA address on EN7523
+
+WED1 rebased the MT7916 WPDMA base from its BAR (0x220d7000) to
+0x201d7000, inside the PCIe0 window. Keep the BAR address on EN7523,
+as the vendor WHNAT driver does.
+---
+ ...use-the-real-WPDMA-address-on-EN7523.patch | 39 +++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/932-net-airoha-wed-use-the-real-WPDMA-address-on-EN7523.patch
+
+diff --git a/target/linux/airoha/patches-6.18/932-net-airoha-wed-use-the-real-WPDMA-address-on-EN7523.patch b/target/linux/airoha/patches-6.18/932-net-airoha-wed-use-the-real-WPDMA-address-on-EN7523.patch
+new file mode 100644
+index 0000000000..65d43ba8b9
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/932-net-airoha-wed-use-the-real-WPDMA-address-on-EN7523.patch
+@@ -0,0 +1,39 @@
++Subject: [PATCH] net: airoha: wed: use the real WPDMA address on EN7523
++
++airoha_wed_rebase_wpdma() moves the WLAN WPDMA addresses to a fixed
++window per WED (0x20000000, 0x20100000), which fits EN751221/EN7528.
++EN7523 gives each PCIe port its own 32 MiB window, 0x20000000 and
++0x22000000, so on WED1 the WPDMA base became 0x201d7000: inside the
++PCIe0 window, past the BARs of the device there. WED polled and wrote
++WPDMA through that address once started and the SoC reset silently.
++
++Keep the BAR address the CPU uses on EN7523, as the vendor WHNAT driver
++does (pci_resource_start() | 0xd7000).
++---
++--- a/drivers/net/ethernet/airoha/airoha_wed.c
+++++ b/drivers/net/ethernet/airoha/airoha_wed.c
++@@ -94,9 +94,13 @@
++ 	.set_lan_arb = true,
++ };
++ 
+++/*
+++ * No wpdma_base: on EN7523 each PCIe port has its own 32 MiB window
+++ * (0x20000000, 0x22000000) and WED reaches the WLAN registers at the
+++ * BAR address the CPU uses, as the vendor driver programs it.
+++ */
++ static const struct airoha_wed_soc_data en7523_wed_data = {
++ 	.pcie_base = { 0x1fa91000, 0x1fa92000 },
++-	.wpdma_base = { 0x20000000, 0x20100000 },
++ };
++ 
++ static const struct of_device_id airoha_wed_of_match[] = {
++@@ -112,6 +116,9 @@
++ 	u32 old_base = dev->wlan.phy_base;
++ 	u32 new_base = dev->hw->wpdma_base;
++ 
+++	if (!new_base)
+++		return;
+++
++ 	dev->wlan.wpdma_int = new_base + dev->wlan.wpdma_int - old_base;
++ 	dev->wlan.wpdma_mask = new_base + dev->wlan.wpdma_mask - old_base;
++ 	dev->wlan.wpdma_phys = new_base + dev->wlan.wpdma_phys - old_base;
+-- 
+2.54.0 (Apple Git-157)
+
