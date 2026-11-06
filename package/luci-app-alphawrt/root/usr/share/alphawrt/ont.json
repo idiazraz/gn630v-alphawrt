@@ -12,5 +12,20 @@
 			"time"
 		],
 		"source": "registered with these values on a live TIME line, 2026-10-25 (the owner's TIME-supplied unit)"
+	},
+	{
+		"id": "skyworth-gn630v-tm",
+		"name": "Skyworth GN630V (TM-supplied)",
+		"vendor_id": "CWTC",
+		"equipment_id": "GN630V",
+		"hardware_version": "CW1.0",
+		"software_version_0": "V1.0.0.4",
+		"software_version_1": "V1.0.0.4",
+		"omcc_version": "150",
+		"traffic_management_option": "2",
+		"isps": [
+			"unifi"
+		],
+		"source": "what the stock firmware sends in OMCI, captured on a live Unifi line (Nokia OLT), 2026-11-06; the OLT provisioned AlphaWRT with these values. Copy the serial and PLOAM password from the unit TM supplied."
 	}
 ]

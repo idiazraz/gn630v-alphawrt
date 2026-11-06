@@ -225,7 +225,7 @@ const STEPS = {
 					const el = pick('Your provider’s fibre box', 'ont', [ [ '', 'Choose the model' ], ...models.map(t => [ t.id, t.name ]) ]);
 					el.input.addEventListener('change', () => {
 						const t = onts.find(x => x.id == el.input.value);
-						if (t) for (const k of ONT_FIELDS) d[k] = t[k] || '';
+						if (t) { for (const k of ONT_FIELDS) d[k] = t[k] || ''; if (t.omcc_version) d.omcc_version = t.omcc_version; }
 						draw();
 					});
 					return el;

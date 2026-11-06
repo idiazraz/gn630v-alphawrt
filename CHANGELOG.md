@@ -11,7 +11,11 @@ How this file is kept:
 
 ## Unreleased
 
+### Fixed
+- **Unifi (TM) fibre: no internet on a TM-supplied GN630V.** The stock-identity import now copies the model name and hardware version the stock firmware really sends TM (GN630V, CW1.0), not the PT632/RP0201 values in its settings. With those, TM's equipment sets up the line. Confirmed on a live Unifi line.
+
 ### Added
+- **"Skyworth GN630V (TM-supplied)" in Quick Setup's fibre box list** for Unifi, with the values TM expects. You still enter the serial and PLOAM password from your TM unit.
 - **Speed test** page: download, upload, ping and jitter, measured by the box itself against the nearest Speedtest.net servers, or one you pick. Wi-Fi and your own device don’t slow the result.
 - **Light and dark mode switch** in the Simple UI (sidebar, or the top bar on a phone) and in Advanced (LuCI): Auto follows your device, or pick Light or Dark. Both share the choice.
 - **Change the internet login** (PPPoE username and password) from the Network page, without running Quick Setup again.

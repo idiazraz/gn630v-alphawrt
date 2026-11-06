@@ -47,8 +47,15 @@ stock_identity() {
 		# the OLT registered the serial, whose first four characters are the
 		# vendor ID: stock's separate OMCI vendor ID would overwrite them
 		json_add_string vendor_id "$(echo "$serial" | cut -c1-4)"
-		json_add_string equipment_id "$(gpon_attr ONU EquipmentId)"
-		json_add_string hardware_version "$(gpon_attr ONU Version)"
+		# Note: stock's omci doesn't send the romfile's EquipmentId and Version
+		# (PT632, RP0201). It sends the model name and the firmware's hardware
+		# version (CW1.0 on TM-supplied units), and TM's Nokia OLT provisions
+		# nothing when they differ (GitHub: Unifi no internet, 2026-11-06).
+		json_add_string equipment_id GN630V
+		case "$serial" in
+		CWTC*) json_add_string hardware_version CW1.0 ;;
+		*) json_add_string hardware_version "$(gpon_attr ONU Version)" ;;
+		esac
 		# installing AlphaWRT from the stock web UI records "AlphaWRT" as that
 		# slot's version: report the stock version for both slots instead
 		sw0=$(gpon_attr SoftImage0 Version)
