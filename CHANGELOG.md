@@ -12,7 +12,7 @@ How this file is kept:
 ## Unreleased
 
 ### Fixed
-- **Unifi (TM) fibre: no internet on a TM-supplied GN630V.** The stock-identity import now copies the model name and hardware version the stock firmware really sends TM (GN630V, CW1.0), not the PT632/RP0201 values in its settings. With those, TM's equipment sets up the line. Confirmed on a live Unifi line.
+- **Unifi (TM) fibre: no internet on a TM-supplied GN630V.** The stock-identity import now sends what the stock firmware really sends TM: vendor CWTC, model GN630V, hardware version CW1.0 and OMCC 150 (not the SKYW/PT632/RP0201/A0 values in its settings), with the box's own serial and the stock firmware's image versions. With those, TM's equipment sets up the line. Confirmed on a live Unifi line.
 
 ### Added
 - **"Skyworth GN630V (TM-supplied)" in Quick Setup's fibre box list** for Unifi, with the values TM expects. You still enter the serial and PLOAM password from your TM unit.

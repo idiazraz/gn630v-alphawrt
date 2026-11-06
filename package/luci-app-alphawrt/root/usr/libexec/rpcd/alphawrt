@@ -44,18 +44,14 @@ stock_identity() {
 		serial=$(gpon_attr ONU SerialNumber)
 		json_add_string serial "$serial"
 		json_add_string password "$(gpon_attr ONU Password)"
-		# the OLT registered the serial, whose first four characters are the
-		# vendor ID: stock's separate OMCI vendor ID would overwrite them
-		json_add_string vendor_id "$(echo "$serial" | cut -c1-4)"
-		# Note: stock's omci doesn't send the romfile's EquipmentId and Version
-		# (PT632, RP0201). It sends the model name and the firmware's hardware
-		# version (CW1.0 on TM-supplied units), and TM's Nokia OLT provisions
-		# nothing when they differ (GitHub: Unifi no internet, 2026-11-06).
+		# Note: this is a GN630V, and TM-supplied GN630Vs send these in OMCI
+		# whatever the romfile says (its VendorId SKYW, EquipmentId PT632,
+		# Version RP0201 and OMCCVersion A0 are not what goes on the wire):
+		# vendor CWTC, model GN630V, hardware CW1.0, OMCC 150. TM's Nokia OLT
+		# provisions nothing when they differ. The serial is the box's own.
+		json_add_string vendor_id CWTC
 		json_add_string equipment_id GN630V
-		case "$serial" in
-		CWTC*) json_add_string hardware_version CW1.0 ;;
-		*) json_add_string hardware_version "$(gpon_attr ONU Version)" ;;
-		esac
+		json_add_string hardware_version CW1.0
 		# installing AlphaWRT from the stock web UI records "AlphaWRT" as that
 		# slot's version: report the stock version for both slots instead
 		sw0=$(gpon_attr SoftImage0 Version)
@@ -64,12 +60,7 @@ stock_identity() {
 		case "$sw1" in AlphaWRT*) sw1=$sw0 ;; esac
 		json_add_string software_version_0 "$sw0"
 		json_add_string software_version_1 "$sw1"
-		# stock keeps it in hex ("A0"), the OMCI agent takes decimal
-		omcc=$(gpon_attr ONU OMCCVersion)
-		case "$omcc" in
-		[0-9A-Fa-f][0-9A-Fa-f]) omcc=$(printf %d "0x$omcc") ;;
-		*) omcc= ;;
-		esac
+		omcc=150
 		json_add_string omcc_version "$omcc"
 	else
 		json_add_string error "no stock configuration found"
