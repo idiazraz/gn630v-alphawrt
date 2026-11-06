@@ -39,11 +39,11 @@
 
 There are two GN630V models. Go by the model marking on the label, not by the colour alone.
 
-| | GN630V AX3000 | GN630V Combo Box AX3000 **2.5G** |
+| | GN630V AX3000 | GN630V AX3000 **2.5G** |
 |---|:---:|:---:|
 | | ![GN630V AX3000, white](docs/img/gn630v-ax3000.png) | ![GN630V 2.5G, black](docs/img/gn630v-2.5g.png) |
 | Colour | White | Black |
-| Wired ports | 4x 1 Gbps LAN | Has a 2.5 Gbps port |
+| Wired ports | 4x 1 Gbps LAN | 1x 2.5Gbps LAN + 4x 1Gbps LAN |
 | AlphaWRT | **Supported**, tested on a live TIME line | **Work in progress.** No tested build yet, do not flash |
 
 > **Do not flash this firmware on the 2.5G GN630V.** Builds in this repository are made for the AX3000 (white) model. The 2.5G has not been tested with them and may be incompatible.
