@@ -1,33 +1,52 @@
-# AlphaWRT for the Skyworth GN630V
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/alphawrt-lockup-dark.svg">
+    <img src="docs/img/alphawrt-lockup.svg" alt="AlphaWRT" width="320">
+  </picture>
+</p>
 
-OpenWrt for the Skyworth GN630V GPON ONT (AX3000), an Airoha **AN7529CT** (EN7523 family) box. It runs a current OpenWrt kernel (6.18) and LuCI, installs from the **stock web UI**, and keeps the stock firmware in the second flash bank so you can always go back.
+<h3 align="center">OpenWrt for the Skyworth GN630V GPON ONT</h3>
 
-> **Hardware restriction: Do not flash this firmware on the 2.5G GN630V.** Only the AX3000 GN630V variant is covered by this build; the 2.5G variant has not been tested and may be incompatible. Check the full model/variant marking on the device label; do not infer compatibility from appearance.
+<p align="center">
+  Linux 6.18 &middot; LuCI &middot; Wi-Fi 6 &middot; native GPON &middot; installs from the stock web UI, stock firmware kept one reboot away
+</p>
 
-```
-     ___    __      __          _      ______  ______
-    /   |  / /___  / /_  ____ _| |    / / __ \/_  __/
-   / /| | / / __ \/ __ \/ __ `/| | /| / / /_/ / / /
-  / ___ |/ / /_/ / / / / /_/ / | |/ |/ / _, _/ / /
- /_/  |_/_/ .___/_/ /_/\__,_/  |__/|__/_/ |_| /_/
-         /_/                     Skyworth GN630V | AN7529CT | Linux 6.18
-```
+<p align="center">
+  <img alt="status: early test builds" src="https://img.shields.io/badge/status-early%20test%20builds-orange">
+  <img alt="SoC: Airoha AN7529CT" src="https://img.shields.io/badge/SoC-AN7529CT-blue">
+  <img alt="OpenWrt kernel 6.18" src="https://img.shields.io/badge/kernel-6.18-informational">
+  <img alt="license: GPL-2.0" src="https://img.shields.io/badge/license-GPL--2.0-green">
+</p>
 
-> **Status: early test builds.** Verified on hardware: booting from either bank, the persistent overlay, the LAN switch, Wi-Fi 6 on both bands, encrypted DNS, LuCI, installing from the stock web UI, and going back to stock. GPON: the optics (EN7571, with the unit's own calibration) and the PON MAC come up and report loss of signal without fibre.
-> **Test status:** GPON registration has reached O5 on a live line. Stable Internet service over fibre is still under test. Read [Recovery](docs/RECOVERY.md) before flashing.
+<p align="center">
+  <img src="docs/img/home.png" alt="AlphaWRT Home page: internet, fibre, Wi-Fi, devices and ad blocking at a glance" width="860">
+</p>
 
-## Hardware
+<p align="center">
+  <a href="#install">Install</a> &middot;
+  <a href="#supported-hardware">Hardware</a> &middot;
+  <a href="#the-interface">Interface</a> &middot;
+  <a href="#what-you-get">Features</a> &middot;
+  <a href="docs/RECOVERY.md">Recovery</a> &middot;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-### Which GN630V do you have?
-There are two GN630V models. AlphaWRT supports only the white one.
+> **Status: early test builds.** Verified on hardware: booting from either bank, the persistent overlay, the LAN switch, Wi-Fi 6 on both bands, encrypted DNS, LuCI, installing from the stock web UI, and going back to stock. GPON registration has reached O5 on a live line; stable Internet service over fibre is still under test. Read [Recovery](docs/RECOVERY.md) before flashing.
 
-| | GN630V AX3000 | GN630V 2.5G |
-|---|---|---|
+---
+
+## Supported hardware
+
+There are two GN630V models. Go by the model marking on the label, not by the colour alone.
+
+| | GN630V AX3000 | GN630V Combo Box AX3000 **2.5G** |
+|---|:---:|:---:|
+| | ![GN630V AX3000, white](docs/img/gn630v-ax3000.png) | ![GN630V 2.5G, black](docs/img/gn630v-2.5g.png) |
 | Colour | White | Black |
 | Wired ports | 4x 1 Gbps LAN | Has a 2.5 Gbps port |
-| AlphaWRT | **Supported**, tested on a live TIME line | **Not supported.** Untested, do not flash |
+| AlphaWRT | **Supported**, tested on a live TIME line | **Work in progress.** No tested build yet, do not flash |
 
-Go by the model marking on the label, not by the colour alone.
+> **Do not flash this firmware on the 2.5G GN630V.** Builds in this repository are made for the AX3000 (white) model. The 2.5G has not been tested with them and may be incompatible.
 
 ### GN630V AX3000 specifications
 | Part | Details |
@@ -45,6 +64,24 @@ Go by the model marking on the label, not by the colour alone.
 | Console | UART, 115200 8N1, 3.3 V |
 
 The flash map, boot chain and image format are in [docs/HARDWARE.md](docs/HARDWARE.md).
+
+## The interface
+
+Two web interfaces, one login. Switch with the link at the top right.
+
+* **Basic** (default): Home, Fibre, Wi-Fi, Devices, Network, Pi-hole and VPN pages in plain words. Built for phone and laptop, follows the device's light/dark setting.
+* **Advanced**: the full OpenWrt interface (LuCI) with the `luci-theme-alphawrt` theme.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/fibre.png" alt="Fibre page: received light over 24 hours, laser, registration state"><br><sub><b>Fibre</b>: line health, 24 h light and delay charts</sub></td>
+<td width="50%"><img src="docs/img/wifi.png" alt="Wi-Fi page: shared name and password, guest network, per-band settings"><br><sub><b>Wi-Fi</b>: guest network, band steering, auto channel</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/img/pihole.png" alt="Pi-hole page: queries, most blocked domains, block list preset"><br><sub><b>Pi-hole</b>: network-wide ad blocking, Hagezi lists</sub></td>
+<td width="50%" align="center"><img src="docs/img/home-phone.png" alt="Home page on a phone" height="420"><br><sub><b>On your phone</b></sub></td>
+</tr>
+</table>
 
 ## What you get
 * **OpenWrt** (procd, ubus, LuCI, apk, dropbear, firewall4) on Linux 6.18, with a persistent UBIFS overlay.

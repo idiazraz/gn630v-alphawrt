@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -5 312 60" width="312" height="60">
+	<title>AlphaWRT</title>
+	<g transform="translate(0 -5) scale(0.9375)"><path d="M51 12C45 30 39 50 24 50 14 50 9 42 9 33 9 22 16 14 27 14 39 14 45 34 52 47" fill="none" stroke="#ff5a6e" stroke-width="10.5" stroke-linecap="round"/><circle cx="57" cy="55" r="6.5" fill="#5aa2ff"/></g>
+	<g transform="translate(74 0)" fill="none" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+		<g stroke="#f3f4f6"><path d="M3.5 36.75 12.5 3.25 21.5 36.75M7 26H18M31 3.25V36.75M42 13.25V48.75M76 3.25V36.75M76 23C76 16.5 80 13.25 85 13.25 90 13.25 94 16.5 94 22V36.75M128.5 13.25V36.75"/><circle cx="53.75" cy="25" r="11.75"/><circle cx="116.75" cy="25" r="11.75"/></g>
+		<path stroke="#ff5a6e" d="M141 3.25 147.5 36.75 155 12 162.5 36.75 169 3.25M180 36.75V3.25H190C196.5 3.25 200 7 200 12.5 200 18 196.5 21.75 190 21.75H180M191 21.75 201 36.75M209 3.25H233M221 3.25V36.75"/>
+	</g>
+</svg>
