@@ -11,6 +11,8 @@ How this file is kept:
 
 ## Unreleased
 
+## 0.4.2-test (tester build 2026-11-06)
+
 ### Fixed
 - **Unifi (TM) fibre: no internet, the line registers but never gets service.** The box now tells the provider's equipment about every kind of setting the stock firmware supports, so TM's Nokia equipment no longer stops before setting up the internet connection. Not yet confirmed on a Unifi line.
 
