@@ -16,6 +16,7 @@ First bring-up of the SR1041Y. It has not had a tagged release yet: everything b
 ### Added
 - **The SR1041Y as a router.** Internet comes in on **port 1 (WAN)**; the other three ports are the LAN. Wi-Fi 6 on both bands, DSA switch, DHCP, SSH and the web UI.
 - **Wi-Fi taken over from stock on first boot:** the network names, passwords and country, now as WPA2/WPA3, with each band's own MAC.
+- **Quick Setup country step** after the password: pick your country so Wi-Fi uses its legal channels and power. Changing it resets each band to an automatic channel and a width the country allows.
 - **USB tethering as a second WAN:** plug a phone or USB modem into the USB port and the box can use it for internet, as a backup or the main line.
 - **Pi-hole ad blocking** with Hagezi block lists, an optional threat feed, and Pi-hole's own admin page. Lists also work when the internet comes in over USB tethering.
 - **Simple UI:** Home, Wi-Fi, Devices and System pages, with a one-question-per-screen Quick Setup. The full LuCI stays under Advanced, restyled to match.
