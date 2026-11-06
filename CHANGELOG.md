@@ -14,6 +14,9 @@ How this file is kept:
 First bring-up of the SR1041Y. It has not had a tagged release yet: everything below is what a tester sees on the first build. Shared features come from the GN630V project at the versions noted in its own changelog.
 
 ### Added
+- **Speed test** page: download, upload, ping and jitter, measured by the box itself against the nearest Speedtest.net servers, or one you pick. Wi-Fi and your own device don’t slow the result.
+- **Light and dark mode switch** in the Simple UI (sidebar, or the top bar on a phone) and in Advanced (LuCI): Auto follows your device, or pick Light or Dark. Both share the choice.
+- **Change the internet login** (PPPoE username and password) from the Network page, without running Quick Setup again.
 - **The SR1041Y as a router.** Internet comes in on **port 1 (WAN)**; the other three ports are the LAN. Wi-Fi 6 on both bands, DSA switch, DHCP, SSH and the web UI.
 - **Wi-Fi taken over from stock on first boot:** the network names, passwords and country, now as WPA2/WPA3, with each band's own MAC.
 - **Quick Setup country step** after the password: pick your country so Wi-Fi uses its legal channels and power. Changing it resets each band to an automatic channel and a width the country allows.

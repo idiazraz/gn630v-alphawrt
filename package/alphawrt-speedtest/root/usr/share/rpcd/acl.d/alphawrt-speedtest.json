@@ -1,0 +1,15 @@
+{
+	"alphawrt-speedtest": {
+		"description": "Internet speed test (Simple UI Speed test page)",
+		"read": {
+			"ubus": {
+				"alphawrt-speedtest": [ "servers", "status" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"alphawrt-speedtest": [ "start", "stop" ]
+			}
+		}
+	}
+}

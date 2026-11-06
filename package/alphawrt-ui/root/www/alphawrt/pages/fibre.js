@@ -5,7 +5,7 @@
  * number, PLOAM password or MAC address). Port of luci-app-alphawrt's
  * alphawrt/fibre.js.
  */
-import { h, alert, rows, card, fmtTime, portName } from '../lib/ui.js';
+import { h, icon, alert, rows, card, fmtTime, portName } from '../lib/ui.js';
 import { maybe, uci } from '../lib/rpc.js';
 import line from '../lib/line.js';
 import { topology } from '../lib/topology.js';
@@ -82,7 +82,7 @@ export default {
 	title: 'Fibre',
 
 	async render(main) {
-		const [ board ] = await Promise.all([ maybe('system', 'board'), uci.load('alphawrt', 'network') ]);
+		const [ board ] = await Promise.all([ maybe('system', 'board'), uci.load('alphawrt', 'network', 'omci', 'xpon') ]);
 		const body = h('div', { class: 'space-y-4' });
 		let last = null;
 		main.append(h('div', { class: 'flex items-center justify-between gap-4' },
@@ -138,8 +138,16 @@ export default {
 	},
 
 	registration(st, pon) {
+		/* the identity this box gives the ISP (GN630V: omci, SK-G7220: xpon); the password stays hidden until asked */
+		const conf = uci.get('xpon', 'main') ? 'xpon' : 'omci', sn = uci.get(conf, 'main', 'serial'), pw = uci.get(conf, 'main', 'password');
+		const flip = ev => { this.showPw = !this.showPw; ev.currentTarget.closest('section').replaceWith(this.registration(st, pon)); };
+		const secret = pw ? h('span', { class: 'inline-flex items-center justify-end gap-1' },
+			h('span', { class: 'font-mono whitespace-nowrap' }, this.showPw ? pw : '••••••••'),
+			h('button', { type: 'button', class: 'btn btn-ghost btn-xs btn-square', title: this.showPw ? 'Hide' : 'Show', 'aria-label': this.showPw ? 'Hide the PLOAM password' : 'Show the PLOAM password', onclick: flip }, icon('eye', 'size-4'))) : 'not set';
 		return card('box', 'Registration', null, rows([
 			[ 'State', PON_STATES[st.state] || PON_STATES[0] ],
+			[ 'Serial number', sn ? h('span', { class: 'font-mono' }, sn) : 'not set' ],
+			[ 'PLOAM password', secret ],
 			[ 'ONU ID', st.state == 5 && st.onu_id != null ? String(st.onu_id) : '—' ],
 			[ 'Internet VLAN from the ISP', pon.vlan ? String(pon.vlan) : 'not provisioned yet' ]
 		]));

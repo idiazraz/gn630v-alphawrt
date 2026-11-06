@@ -25,10 +25,12 @@
 			<script>
 				var mediaQuery = window.matchMedia('(prefers-color-scheme: dark)'),
 				    rootElement = document.querySelector(':root'),
-				    setDarkMode = function(match) { rootElement.setAttribute('data-darkmode', match.matches) };
+				    /* the Simple UI's light/dark choice (same key); none = follow the system */
+				    pref = function() { try { return localStorage.getItem('alphawrt-theme'); } catch (e) { return null; } },
+				    setDarkMode = function() { var p = pref(); rootElement.setAttribute('data-darkmode', p ? p == 'dark' : mediaQuery.matches) };
 
 				mediaQuery.addEventListener('change', setDarkMode);
-				setDarkMode(mediaQuery);
+				setDarkMode();
 			</script>
 		{% endif %}
 		<meta name="viewport" content="width=device-width, initial-scale=1">
@@ -59,6 +61,7 @@
 			</a>
 			<ul class="nav" id="topmenu" style="display:none"></ul>
 			<div id="indicators" class="pull-right"></div>
+			{% if (!darkpref): %}<button class="theme-toggle" type="button" title="{{ _('Light or dark') }}" aria-label="{{ _('Light or dark') }}"></button>{% endif %}
 			<a class="to-simple" href="/"><span>{{ _('Simple') }}</span></a>
 			<button class="nav-toggle" type="button" aria-expanded="false" aria-controls="topmenu"><span>{{ _('Menu') }}</span></button>
 		</header>

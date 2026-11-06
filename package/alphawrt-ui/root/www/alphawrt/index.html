@@ -7,6 +7,10 @@
 <meta name="color-scheme" content="light dark">
 <title>AlphaWRT</title>
 <link rel="icon" href="/alphawrt/favicon.svg" type="image/svg+xml">
+<script>
+/* light/dark choice, shared with LuCI (app.js theme button); none = follow the system */
+try { const t = localStorage.getItem('alphawrt-theme'); if (t) document.documentElement.dataset.theme = t == 'dark' ? 'alphawrt-dark' : 'alphawrt'; } catch (e) {}
+</script>
 <script type="module">
 /* each build answers under its own URL (b/<id> links back here), so browsers
  * can't keep running old pages after an update */
