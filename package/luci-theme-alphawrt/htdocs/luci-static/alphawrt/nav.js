@@ -25,9 +25,27 @@
 		t.setAttribute('aria-expanded', String(open));
 	}
 
+	/* light/dark: Auto -> Light -> Dark, shared with the Simple UI (same key) */
+	const NEXT = { '': 'light', light: 'dark', dark: '' };
+	function pref() { try { return localStorage.getItem('alphawrt-theme') || ''; } catch (e) { return ''; } }
+	function showTheme() {
+		const b = document.querySelector('.theme-toggle'), p = pref();
+		if (b)
+			b.setAttribute('data-mode', p || 'auto');
+		document.documentElement.setAttribute('data-darkmode', p ? p == 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+	}
+	document.addEventListener('DOMContentLoaded', function() { if (document.querySelector('.theme-toggle')) showTheme(); });
+
 	document.addEventListener('click', function(ev) {
 		if (!header())
 			return;
+
+		if (ev.target.closest('.theme-toggle')) {
+			const t = NEXT[pref()];
+			try { t ? localStorage.setItem('alphawrt-theme', t) : localStorage.removeItem('alphawrt-theme'); } catch (e) {}
+			showTheme();
+			return;
+		}
 
 		if (ev.target.closest('.nav-toggle')) {
 			setMenu(!header().classList.contains('nav-open'));

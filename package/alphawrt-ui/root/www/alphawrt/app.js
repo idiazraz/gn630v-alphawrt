@@ -14,6 +14,7 @@ const NAV = [
 	[ 'wifi', 'Wi-Fi', 'wifi' ],
 	[ 'devices', 'Devices', 'devices' ],
 	[ 'network', 'Network', 'globe' ],
+	[ 'speedtest', 'Speed test', 'speed' ],
 	[ 'pihole', 'Pi-hole', 'block' ],
 	[ 'vpn', 'VPN', 'vpn' ],
 	[ 'phone', 'Phone', 'phone' ],
@@ -21,13 +22,31 @@ const NAV = [
 	[ 'homelab', 'Home lab', 'box' ]
 ];
 const DOCK = [ 'home', 'wifi', 'devices', 'more' ];
-const PAGES = [ 'home', 'fibre', 'wifi', 'devices', 'network', 'system', 'homelab', 'vpn', 'phone', 'pihole', 'setup' ];
+const PAGES = [ 'home', 'fibre', 'wifi', 'devices', 'network', 'system', 'homelab', 'vpn', 'phone', 'pihole', 'speedtest', 'setup' ];
 
 const app = document.getElementById('app');
 let timer = null;
 
 /* the Phone page only on boards with a TEL port (alphawrt-voice sets alphawrt.board.voice) */
 const nav = () => NAV.filter(n => n[0] != 'phone' || uci.get('alphawrt', 'board', 'voice') == '1');
+
+/* light/dark: Auto (follow the system), Light, Dark; stored per browser and
+ * shared with LuCI's header button (same key, same origin) */
+const THEMES = { '': [ 'Auto', 'auto' ], light: [ 'Light', 'sun' ], dark: [ 'Dark', 'moon' ] }, NEXT = { '': 'light', light: 'dark', dark: '' };
+const getTheme = () => { try { return localStorage.getItem('alphawrt-theme') || ''; } catch (e) { return ''; } };
+function themeButton(cls) {
+	const draw = b => b.replaceChildren(icon(THEMES[getTheme()][1]), h('span', { class: cls ? null : 'sr-only' }, `Theme: ${THEMES[getTheme()][0]}`));
+	const b = h('button', { type: 'button', 'data-theme-button': '', class: cls || 'btn btn-ghost btn-sm btn-square', title: 'Light or dark', onclick: () => {
+		const t = NEXT[getTheme()];
+		try { t ? localStorage.setItem('alphawrt-theme', t) : localStorage.removeItem('alphawrt-theme'); } catch (e) {}
+		if (t) document.documentElement.dataset.theme = t == 'dark' ? 'alphawrt-dark' : 'alphawrt';
+		else delete document.documentElement.dataset.theme;
+		document.querySelectorAll('[data-theme-button]').forEach(x => x.dispatchEvent(new Event('redraw')));
+	} });
+	b.addEventListener('redraw', () => draw(b));
+	draw(b);
+	return b;
+}
 
 function route() { return (location.hash.match(/^#\/([\w-]+)/) || [])[1] || 'home'; }
 
@@ -38,12 +57,14 @@ function shell(page, main) {
 			h('a', { href: '#/home', class: 'px-3 mb-6' }, logo('h-9 w-auto')),
 			h('ul', { class: 'menu w-full gap-1 p-0 text-base' }, nav().map(n => h('li', {}, link(n, n[0] == page ? 'menu-active' : null)))),
 			h('ul', { class: 'menu w-full gap-1 p-0 mt-auto text-base' },
+				h('li', {}, themeButton('w-full')),
 				h('li', {}, h('a', { href: LUCI }, icon('external'), 'Advanced (LuCI)')),
 				h('li', {}, h('a', { href: '#/logout' }, icon('logout'), 'Log out')))),
 		h('div', { class: 'flex-1 min-w-0' },
 			h('header', { class: 'lg:hidden sticky top-0 z-10 flex items-center h-14 px-4 bg-base-100 border-b border-base-300' },
 				h('a', { href: '#/home' }, logo('h-7 w-auto')),
-				h('a', { href: '#/setup', class: 'btn btn-ghost btn-sm ml-auto -mr-2 text-primary' }, icon('wand'), 'Quick Setup')),
+				h('a', { href: '#/setup', class: 'btn btn-ghost btn-sm ml-auto text-primary' }, icon('wand'), 'Quick Setup'),
+				h('span', { class: '-mr-2' }, themeButton())),
 			main),
 		h('nav', { class: 'dock lg:hidden bg-base-100 border-t border-base-300', 'aria-label': 'Main' }, DOCK.map(id => {
 			const [ , label, ic ] = NAV.find(n => n[0] == id) || [ 'more', 'More', 'more' ];

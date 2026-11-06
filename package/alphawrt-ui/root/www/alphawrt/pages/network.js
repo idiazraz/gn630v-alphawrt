@@ -27,6 +27,7 @@ export default {
 		main.append(h('h1', { class: 'text-2xl font-bold' }, 'Network'),
 			h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
 				this.lan(),
+				this.login(bridge),
 				this.dns(),
 				this.ipv6(bridge, ifaces),
 				this.names(bridge),
@@ -86,6 +87,30 @@ export default {
 			ip,
 			h('p', { class: 'text-sm font-medium mt-3' }, 'Addresses given to devices (DHCP)'),
 			h('div', { class: 'flex items-end gap-2' }, pre, first, h('span', { class: 'pb-3' }, 'to'), last),
+			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
+	},
+
+	/* the provider's PPPoE login (network.wan username/password); other connection types are set in Quick Setup */
+	login(bridge) {
+		if (bridge) return card('key', 'Internet login', null, ROUTER_ONLY());
+		if (uci.get('network', 'wan', 'proto') != 'pppoe')
+			return card('key', 'Internet login', null, h('div', {},
+				h('p', { class: 'text-sm opacity-70' }, 'This connection doesn’t use a login (it isn’t PPPoE). To change the connection type, run Quick Setup.'),
+				h('div', { class: 'card-actions justify-end mt-3' }, h('a', { href: '#/setup', class: 'btn btn-ghost btn-sm text-primary' }, 'Open Quick Setup', icon('chevron', 'size-4')))));
+		const user = field('Username', { value: uci.get('network', 'wan', 'username') || '', placeholder: 'e.g. name@unifi', autocomplete: 'off',
+			hint: 'From your provider’s welcome email or self-care portal.' });
+		const pass = field('Password', { password: true, value: uci.get('network', 'wan', 'password') || '', autocomplete: 'new-password' });
+		const go = async () => {
+			const u = user.input.value.trim(), p = pass.input.value;
+			if (!u || /\s/.test(u)) return toast('warn', 'Enter the username your provider gave you, without spaces.');
+			if (!p) return toast('warn', 'Enter the password your provider gave you.');
+			if (!await modal('Change the internet login?', h('p', { class: 'text-sm' }, 'The internet drops for a few seconds while the box logs in again. If the login is wrong, the internet stays down until you fix it here.'),
+				[ [ 'Cancel', 'btn-ghost', false ], [ 'Save and reconnect', 'btn-primary', true ] ])) return;
+			await this.apply([ [ 'set', 'network', 'wan', { username: u, password: p } ] ], 'Internet login saved. Reconnecting…');
+		};
+		return card('key', 'Internet login', null, h('div', {},
+			h('p', { class: 'text-sm opacity-80' }, 'Your PPPoE username and password from the internet provider.'),
+			user, pass,
 			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
 	},
 
