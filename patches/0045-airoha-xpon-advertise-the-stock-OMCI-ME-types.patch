@@ -1,0 +1,83 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Fri, 6 Nov 2026 17:00:00 +0800
+Subject: [PATCH] airoha: xpon: advertise the stock OMCI ME types
+
+Patch 9992: in permissive mode, the ME 287 type table also lists the
+classes the stock GN630V firmware advertises. TM Unifi's Nokia OLT read
+our 30-class table and then provisioned nothing, so PPPoE never started.
+---
+ ...on-omci-advertise-the-stock-ME-types.patch | 61 +++++++++++++++++++
+ 1 file changed, 61 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/9992-net-xpon-omci-advertise-the-stock-ME-types.patch
+
+diff --git a/target/linux/airoha/patches-6.18/9992-net-xpon-omci-advertise-the-stock-ME-types.patch b/target/linux/airoha/patches-6.18/9992-net-xpon-omci-advertise-the-stock-ME-types.patch
+new file mode 100644
+index 0000000..6703e79
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9992-net-xpon-omci-advertise-the-stock-ME-types.patch
+@@ -0,0 +1,61 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: xpon: omci: advertise the stock ME types in permissive mode
++
++The ME 287 type table only listed classes the agent parses plus classes
++present in the MIB: 30 on the GN630V. Permissive mode already accepts any
++standard class as a shadow ME, but the table didn't say so. TM Unifi's
++Nokia OLT reads the table after the MIB upload and then provisions
++nothing (no T-CONT, no GEM), so PPPoE never starts.
++
++In permissive or fake mode, also list the classes the stock GN630V
++firmware advertises (vendor-specific and XG-PON classes left out).
++
++---
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -2006,6 +2006,20 @@
++ 	agent->table_snapshot_mask = mask;
++ }
++ 
+++/*
+++ * The ME classes the stock GN630V firmware (Econet omci) advertises in its
+++ * ME type table, vendor-specific and XG-PON classes left out.
+++ */
+++static const u16 omci_stock_me_types[] = {
+++	2, 5, 6, 7, 11, 24, 45, 46, 47, 48, 49, 50, 51, 52, 53, 58, 78, 79,
+++	82, 84, 89, 90, 130, 131, 133, 134, 135, 136, 137, 138, 139, 140,
+++	141, 142, 143, 144, 145, 146, 148, 150, 151, 152, 153, 155, 157, 158,
+++	171, 256, 257, 262, 263, 264, 266, 267, 268, 272, 273, 274, 276, 277,
+++	278, 280, 281, 287, 288, 289, 296, 297, 298, 299, 300, 307, 308, 309,
+++	310, 311, 312, 318, 321, 322, 329, 330, 332, 334, 335, 336, 340, 341,
+++	342, 343, 425, 426,
+++};
+++
++ static int omci_agent_build_me_type_table_locked(struct omci_device *odev,
++ 						 u8 **table,
++ 						 size_t *table_len)
++@@ -2016,6 +2030,7 @@
++ 	unsigned long *classes;
++ 	unsigned long class_id;
++ 	unsigned long index;
+++	unsigned int i;
++ 	u32 next = 0;
++ 	size_t count;
++ 	u8 *data;
++@@ -2044,6 +2059,16 @@
++ 	set_bit(OMCI_CLASS_MAC_BRIDGE_CONFIG_DATA, classes);
++ 	set_bit(OMCI_CLASS_GAL_ETHERNET_PROFILE, classes);
++ 	set_bit(OMCI_CLASS_OMCI, classes);
+++	/*
+++	 * Permissive mode accepts any standard class as a shadow ME, so the
+++	 * table says so. A Nokia OLT (TM Unifi) reads it after the MIB upload
+++	 * and provisions nothing when classes its service profile needs are
+++	 * missing, leaving the ONU in O5 with no GEM or T-CONT.
+++	 */
+++	if (agent->permissive || agent->fake_omci)
+++		for (i = 0; i < ARRAY_SIZE(omci_stock_me_types); i++)
+++			if (omci_me_active(agent, omci_stock_me_types[i]))
+++				set_bit(omci_stock_me_types[i], classes);
++ 
++ 	count = bitmap_weight(classes, U16_MAX + 1);
++ 	data = kmalloc_array(count, sizeof(u16), GFP_KERNEL);
+-- 
+2.54.0 (Apple Git-157)
+
