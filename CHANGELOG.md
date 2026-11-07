@@ -12,6 +12,7 @@ How this file is kept:
 ## Unreleased
 
 ### Fixed
+- **2.4 GHz Wi-Fi could stay off after a restart:** on Auto channel, the box could pick channel 14, which Wi-Fi 4/5/6/7 can't use, and 2.4 GHz didn't start. Auto now picks from channels 1-13.
 - **Unifi (TM) fibre: no internet on a TM-supplied GN630V.** The stock-identity import now sends what the stock firmware really sends TM: vendor CWTC, model GN630V, hardware version CW1.0 and OMCC 150 (not the SKYW/PT632/RP0201/A0 values in its settings), with the box's own serial and the stock firmware's image versions. With those, TM's equipment sets up the line. Confirmed on a live Unifi line.
 
 ### Added
