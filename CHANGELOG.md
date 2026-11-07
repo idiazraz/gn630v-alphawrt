@@ -41,6 +41,7 @@ First bring-up of the SR1041Y. It has not had a tagged release yet: everything b
 - **Wi-Fi page** points printers and older devices to WPA2 only.
 
 ### Fixed
+- **2.4 GHz Wi-Fi could stay off after a restart:** on Auto channel, the box could pick channel 14, which Wi-Fi 4/5/6/7 can't use, and 2.4 GHz didn't start. Auto now picks from channels 1-13.
 - **Network page could show only "Something went wrong"** after an upgrade, when a port forward had been made in Advanced (LuCI). The page now opens and lists that forward.
 - **Guest Wi-Fi had no internet:** guest devices joined but got no address, and with Pi-hole on, no DNS server either.
 - **Renaming many devices stopped the internet** until a reboot: the DNS and DHCP service gave up restarting. It now always comes back.

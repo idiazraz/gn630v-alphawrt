@@ -1,0 +1,18 @@
+#!/bin/sh
+# Automatic channel on 2.4 GHz picks from 1-13, once per box (new installs and
+# upgrades). wireless-regdb allows channel 14 in some countries (MY among
+# them), ACS may choose it, and hostapd can't start an 802.11g/n/ax/be AP
+# there: 2.4 GHz then stays off. A channel list the user set is left alone.
+
+[ "$ACTION" = add ] || exit 0
+[ "$(uci -q get wireless.alphawrt.ch2g)" = 1 ] && exit 0
+uci -q show wireless | grep -q "=wifi-device$" || exit 0
+
+for radio in $(uci show wireless | sed -n "s/^wireless\.\([^.=]*\)=wifi-device$/\1/p"); do
+	[ "$(uci -q get wireless.$radio.band)" = 2g ] || continue
+	[ -n "$(uci -q get wireless.$radio.channels)" ] || uci set wireless.$radio.channels=1-13
+done
+
+uci -q get wireless.alphawrt >/dev/null || uci set wireless.alphawrt=alphawrt
+uci set wireless.alphawrt.ch2g=1
+uci commit wireless
