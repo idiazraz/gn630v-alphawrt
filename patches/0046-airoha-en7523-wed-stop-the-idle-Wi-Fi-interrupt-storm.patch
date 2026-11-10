@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 12:00:00 +0800
+Subject: [PATCH] airoha: en7523: wed: stop the idle Wi-Fi interrupt storm
+
+Patch 9991: build WED's core interrupt mask only from the bits mt76
+asks for. The done bits of the NPU-owned RX rings stayed enabled, so
+IRQ 50 fired about 115,000 times a second at idle and kept one CPU
+core busy in ksoftirqd (GitHub #6).
+---
+ ...ly-the-IRQs-the-WLAN-driver-asks-for.patch | 27 +++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/9991-net-airoha-wed-enable-only-the-IRQs-the-WLAN-driver-asks-for.patch
+
+diff --git a/target/linux/airoha/patches-6.18/9991-net-airoha-wed-enable-only-the-IRQs-the-WLAN-driver-asks-for.patch b/target/linux/airoha/patches-6.18/9991-net-airoha-wed-enable-only-the-IRQs-the-WLAN-driver-asks-for.patch
+new file mode 100644
+index 0000000..bd1d6c3
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/9991-net-airoha-wed-enable-only-the-IRQs-the-WLAN-driver-asks-for.patch
+@@ -0,0 +1,27 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: [PATCH] net: airoha: wed: enable only the IRQs the WLAN driver asks for
++
++When the NPU owns the MT7916 RX rings, mt7915 drops their done bits
++(18 and 23) from its mask, but only after mtk_wed_start() stored the
++full mask in hw->irq_mask. irq_set_mask() ORed hw->irq_mask back in, so
++both bits stayed enabled in MTK_WED_INT_MASK. Nothing on the host clears
++the ring-done state of an NPU-owned ring, so the line refired as soon as
++the tasklet unmasked it: IRQ 50 at about 115,000/s with no traffic, and
++one CPU core busy in ksoftirqd.
++
++Build the core mask from the mask mt76 passes, as upstream mtk_wed does.
++The EXT mask keeps hw->irq_mask.
++---
++--- a/drivers/net/ethernet/airoha/airoha_wed.c
+++++ b/drivers/net/ethernet/airoha/airoha_wed.c
++@@ -1398,5 +1398,9 @@ mtk_wed_irq_set_mask(struct mtk_wed_device *dev, u32 mask)
++ {
++ 	u32 active_mask = mask | dev->hw->irq_mask;
++-	u32 core_mask = mask ? mtk_wed_core_irq_mask(dev, active_mask) : 0;
+++	/* Only what mt76 asks for: it leaves out the done bits of rings the
+++	 * NPU owns, and nothing on the host clears those, so enabling them
+++	 * makes the line fire nonstop.
+++	 */
+++	u32 core_mask = mask ? mtk_wed_core_irq_mask(dev, mask) : 0;
++ 
++ 	airoha_wed_info(dev, "irq_set_mask: mask=%08x old_mask=%08x\n",
+-- 
+2.54.0 (Apple Git-157)
+
