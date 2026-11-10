@@ -11,6 +11,8 @@ How this file is kept:
 
 ## Unreleased
 
+## 0.4.3-test (tester build 2026-11-10)
+
 ### Fixed
 - **One CPU core busy even with nothing happening:** the Wi-Fi interrupt fired about 115,000 times a second at idle, keeping `ksoftirqd/0` busy ([#6](https://github.com/idiazraz/gn630v-alphawrt/issues/6)). It now only fires for real Wi-Fi work. Speeds were never affected, only spare CPU.
 - **2.4 GHz Wi-Fi could stay off after a restart:** on Auto channel, the box could pick channel 14, which Wi-Fi 4/5/6/7 can't use, and 2.4 GHz didn't start. Auto now picks from channels 1-13.

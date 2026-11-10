@@ -47,6 +47,12 @@ cp "$HERE/config/feeds.conf" feeds.conf
 ./scripts/feeds update -a
 mkdir -p feeds/packages/libs/giflib/patches
 cp "$HERE/giflib-990-target-is-linux.patch" feeds/packages/libs/giflib/patches/
+# Note: on macOS the host glib2 tools don't link without libiconv named
+if [ "$(uname)" = Darwin ] && ! grep -q liconv feeds/packages/libs/glib2/Makefile; then
+	sed -i '/^MESON_HOST_ARGS += \$(COMP_ARGS)/a\
+HOST_LDFLAGS += -liconv\
+MESON_HOST_ARGS += -Dobjc_link_args="-L$(STAGING_DIR_HOSTPKG)/lib -liconv"' feeds/packages/libs/glib2/Makefile
+fi
 # every feed package gn630v.config selects, or defconfig silently drops it
 ./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode usteer luci-app-usteer \
 	prometheus-node-exporter-lua iperf3 etherwake miniupnpd luci-app-upnp \
