@@ -141,8 +141,9 @@ export default {
 	},
 
 	/*
-	 * Internet side: PPPoE asks for IPv6 itself (wan.ipv6, unset means auto);
-	 * DHCP and static use the wan6 DHCPv6 interface, as Quick Setup writes it.
+	 * Internet side: the wan6 DHCPv6 client on @wan, for every protocol, as
+	 * Quick Setup writes it. PPPoE also needs wan.ipv6=1 (IPv6CP), not auto:
+	 * auto's own wan_6 gets no IPv6 on Unifi (issue 0035).
 	 * Home side: odhcpd hands out addresses (SLAAC and DHCPv6) from the
 	 * provider's prefix, network.lan ip6assign.
 	 */
@@ -160,8 +161,8 @@ export default {
 
 		const go = async () => {
 			const ops = [];
-			if (pppoe) { if (!wan.input.checked) ops.push([ 'set', 'network', 'wan', { ipv6: '0' } ]); else if (!wanOn) ops.push([ 'set', 'network', 'wan', { ipv6: 'auto' } ]); }
-			else if (wan.input.checked) {
+			if (pppoe) ops.push([ 'set', 'network', 'wan', { ipv6: wan.input.checked ? '1' : '0' } ]);
+			if (wan.input.checked) {
 				ops.push(w6 ? [ 'set', 'network', 'wan6', { proto: 'dhcpv6', device: '@wan' } ] : [ 'add', 'network', 'interface', { proto: 'dhcpv6', device: '@wan' }, 'wan6' ]);
 				if (w6?.disabled) ops.push([ 'unset', 'network', 'wan6', 'disabled' ]);
 			}

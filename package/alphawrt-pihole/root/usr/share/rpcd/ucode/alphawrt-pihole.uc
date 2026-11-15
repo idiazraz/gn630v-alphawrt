@@ -18,6 +18,7 @@ import { cursor } from 'uci';
 
 const DB = '/tmp/pihole/gravity.db';
 const FTL = '/usr/bin/pihole-FTL';
+const TOML = '/etc/pihole/pihole.toml';
 const PIHOLE = '/usr/local/bin/pihole';
 const BYPASS = 'AlphaWRT bypass';
 
@@ -135,7 +136,9 @@ const methods = {
 				domains: access(DB) ? info('gravity_count') : 0,
 				last_update: access(DB) ? info('updated') : 0,
 				updating: access(DB + '.new') == true,
-				password_set: sh(`${FTL} --config webserver.api.pwhash 2>/dev/null`) != '',
+				// no pihole.toml until Pi-hole first runs: FTL would log a
+				// missing-config error on every poll (issue 0036)
+				password_set: access(TOML) == true && sh(`${FTL} --config webserver.api.pwhash 2>/dev/null`) != '',
 				admin_port: 8080,
 				admin_path: '/admin/',
 				web_installed: access('/usr/share/pihole/www/admin/index.lp') == true

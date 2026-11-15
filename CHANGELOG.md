@@ -41,6 +41,8 @@ First bring-up of the SR1041Y. It has not had a tagged release yet: everything b
 - **Wi-Fi page** points printers and older devices to WPA2 only.
 
 ### Fixed
+- **IPv6 on Unifi (TM) and other PPPoE lines:** turning on IPv6 now asks the provider through a separate DHCPv6 client, which Unifi answers, instead of PPPoE's built-in way, which got no IPv6 on Unifi. Turn IPv6 off and on again on the Network page, or rerun Quick Setup, to switch an existing box over.
+- **System log filled with Pi-hole config errors** while the built-in Pi-hole was off and had never been turned on (for example when you use your own Pi-hole server). The status check no longer asks Pi-hole for its settings before it has any.
 - **2.4 GHz Wi-Fi could stay off after a restart:** on Auto channel, the box could pick channel 14, which Wi-Fi 4/5/6/7 can't use, and 2.4 GHz didn't start. Auto now picks from channels 1-13.
 - **Network page could show only "Something went wrong"** after an upgrade, when a port forward had been made in Advanced (LuCI). The page now opens and lists that forward.
 - **Guest Wi-Fi had no internet:** guest devices joined but got no address, and with Pi-hole on, no DNS server either.

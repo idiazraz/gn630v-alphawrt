@@ -466,15 +466,15 @@ function networkOps() {
 	}
 
 	const wv = { device: (wanPort() ? 'wan' : d.mode == 'router' ? d.port : 'pon0') + (vlan ? `.${vlan}` : ''), proto: d.proto || 'dhcp' };
-	if (d.proto == 'pppoe') Object.assign(wv, { username: d.username, password: d.ppp_password, ipv6: 'auto' });
+	/* IPv6 from the wan6 DHCPv6 client for every protocol; PPPoE adds IPv6CP
+	 * only (ipv6=1): its auto wan_6 gets no IPv6 on Unifi (issue 0035) */
+	if (d.proto == 'pppoe') Object.assign(wv, { username: d.username, password: d.ppp_password, ipv6: '1' });
 	setOrAdd('network', 'wan', 'interface', wv);
 	ops.push([ 'unset', 'network', 'wan', 'disabled' ]);
-	if (d.proto == 'pppoe') { if (has('wan6')) ops.push([ 'remove', 'network', 'wan6' ]); }
-	else {
+	if (d.proto != 'pppoe')
 		for (const o of [ 'username', 'password', 'ipv6' ]) ops.push([ 'unset', 'network', 'wan', o ]);
-		setOrAdd('network', 'wan6', 'interface', { proto: 'dhcpv6', device: '@wan' });
-		ops.push([ 'unset', 'network', 'wan6', 'disabled' ]);
-	}
+	setOrAdd('network', 'wan6', 'interface', { proto: 'dhcpv6', device: '@wan' });
+	ops.push([ 'unset', 'network', 'wan6', 'disabled' ]);
 	return ops;
 }
 
