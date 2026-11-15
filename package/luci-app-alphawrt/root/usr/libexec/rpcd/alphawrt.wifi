@@ -147,7 +147,7 @@ add_clients() {
 }
 
 status() {
-	local mode band radio iface ifn gifn ch htmode w disabled count guest_count=0 aps=
+	local mode band radio iface ifn gifn ch htmode w info lw disabled count guest_count=0 aps=
 	local ssid0 key0 ssid1 key1 interval gen=0 gssid gkey gsec genabled=0
 
 	mode=$(uci -q get alphawrt.setup.mode)
@@ -210,8 +210,13 @@ status() {
 		json_add_int width_mhz "$w"
 		json_add_string htmode "$htmode"
 		json_add_boolean dfs $([ $band = 5g ] && [ -n "$ch" ] && dfs "$ch" "$w" && echo 1 || echo 0)
-		[ -n "$ifn" ] && json_add_int txpower_dbm \
-			"$(ubus call iwinfo info "{\"device\":\"$ifn\"}" | jsonfilter -e @.txpower)"
+		if [ -n "$ifn" ]; then
+			info=$(ubus call iwinfo info "{\"device\":\"$ifn\"}")
+			json_add_int txpower_dbm "$(echo "$info" | jsonfilter -e @.txpower)"
+			# the width it runs at: 2.4 GHz drops 40 to 20 MHz when other networks are near
+			lw=$(echo "$info" | jsonfilter -e @.htmode)
+			[ -n "$lw" ] && json_add_int live_width_mhz "$(width_of "$lw")"
+		fi
 		json_add_int clients "$(stations "$ifn" | wc -l)"
 		aps="$aps $ifn:$band:0"
 		json_close_object

@@ -62,11 +62,14 @@ export default {
 				for (const o of p.width.input.options) o.disabled = changed && !ok.includes(+o.value);
 				if (changed && p.width.input.selectedOptions[0]?.disabled) p.width.input.value = String(Math.max(...ok));
 				const a = b.auto, sw = a?.last_switch;
+				/* the saved width, unless the radio runs narrower (2.4 GHz falls back to 20 MHz near other networks) */
+				const lw = !changed && b.live_width_mhz < b.width_mhz && ` Running at ${b.live_width_mhz} MHz now${b.band == '2g'
+					? ': other Wi-Fi networks nearby, so 40 MHz would step on them' : ''}.`;
 				p.info.replaceChildren(h('p', { class: 'text-xs opacity-70 mt-1' }, auto
 					? [ 'Picks a quiet channel and moves if it gets crowded, never while you’re using it.',
 						a?.busy_pct != null && b.channel != null && ` Now: channel ${b.channel}, ${a.busy_pct}% busy.`,
-						sw && ` Last moved ${fmtTime(Date.now() / 1000 - sw.time)} ago, ${sw.from} → ${sw.to}: ${sw.reason}.` ]
-					: c?.dfs ? 'Radar channel: Wi-Fi starts after a 1-minute radar check.' : ''));
+						sw && ` Last moved ${fmtTime(Date.now() / 1000 - sw.time)} ago, ${sw.from} → ${sw.to}: ${sw.reason}.`, lw ]
+					: [ c?.dfs ? 'Radar channel: Wi-Fi starts after a 1-minute radar check.' : '', lw ]));
 			};
 			p.chan.input.addEventListener('change', () => fit(true));
 			fit(false);

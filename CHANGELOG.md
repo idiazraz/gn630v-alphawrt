@@ -11,6 +11,9 @@ How this file is kept:
 
 ## Unreleased
 
+### Fixed
+- **Wi-Fi page showed 2.4 GHz at 40 MHz while it ran at 20 MHz.** With other Wi-Fi networks nearby, 2.4 GHz steps down to 20 MHz so it doesn't step on them. The page now says so under the Width setting.
+
 ## 0.4.3-test (tester build 2026-11-10)
 
 ### Fixed
