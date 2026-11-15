@@ -12,11 +12,15 @@ How this file is kept:
 ## Unreleased
 
 ### Added
+- **Phone on the TEL port.** Plug in a normal home phone and set your provider's SIP line on the new Phone page: lift the handset for a dial tone, dial out, and incoming calls ring the phone. Calls use G.711 over plain SIP (UDP).
 - **Internet over this box's Wi-Fi in bridge mode.** If you keep the box's Wi-Fi on in Quick Setup and give your router's 192.168.100.x address, Wi-Fi devices (and LAN 2-4) reach the internet through your router. Your router needs that second address on its Internet port and must forward the box's traffic, as for Pi-hole. Rerunning Quick Setup in bridge mode no longer switches the box's Wi-Fi off.
 
 ### Fixed
 - **Fibre could stay down for hours after a short drop:** after a 1-second loss of signal, some OLTs keep rejecting the box each time it registers again. After two quick rejections in a row, the box now keeps its laser off for a minute before trying again, as a restart does.
 - **Wi-Fi page showed 2.4 GHz at 40 MHz while it ran at 20 MHz.** With other Wi-Fi networks nearby, 2.4 GHz steps down to 20 MHz so it doesn't step on them. The page now says so under the Width setting.
+
+### Known issues
+- **Phone line:** tested on our unit with calls between the box and a test line, not yet with a provider's line (Unifi's voice VLAN included). There is no echo canceller, so on some phones you may hear a faint echo of your own voice. SIP over TLS and encrypted calls (SRTP) aren't supported.
 
 ## 0.4.3-test (tester build 2026-11-10)
 

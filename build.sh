@@ -23,7 +23,8 @@ DIR=${1:-openwrt}
 [ -d "$DIR/.git" ] || git clone "$TREE" "$DIR"
 cd "$DIR"
 git cat-file -e "$BASE^{commit}" 2>/dev/null || git fetch -q "$TREE" "$BASE"
-git checkout -q -B alphawrt "$BASE"
+# -f: a previous run leaves the voice nodes appended to the board dts
+git checkout -q -f -B alphawrt "$BASE"
 # Same patches give the same commits, so the same SOURCE_DATE_EPOCH (the
 # last commit's date) and revision on every machine
 git -c user.name=AlphaWRT -c user.email=build@alphawrt.invalid \
@@ -53,12 +54,33 @@ if [ "$(uname)" = Darwin ] && ! grep -q liconv feeds/packages/libs/glib2/Makefil
 HOST_LDFLAGS += -liconv\
 MESON_HOST_ARGS += -Dobjc_link_args="-L$(STAGING_DIR_HOSTPKG)/lib -liconv"' feeds/packages/libs/glib2/Makefile
 fi
+# Phone (TEL port) SIP stack: libre and baresip on mbedtls, which the image
+# already carries, instead of OpenSSL, and baresip without its WAV sounds
+# (the SLIC makes the line tones). Saves ~2.5 MB of flash.
+grep -q USE_MBEDTLS=ON feeds/telephony/libs/re/Makefile || sed -i \
+	-e 's/DEPENDS:=+libopenssl +zlib/DEPENDS:=+libmbedtls +zlib/' \
+	-e '/^define Package\/libre$/i CMAKE_OPTIONS += -DUSE_OPENSSL=OFF -DUSE_MBEDTLS=ON' \
+	-e '/^define Package\/libre$/i TARGET_LDFLAGS += -lmbedcrypto' feeds/telephony/libs/re/Makefile
+grep -q USE_MBEDTLS=ON feeds/telephony/net/baresip/Makefile || sed -i \
+	-e '/share\/baresip/d' \
+	-e '/^CMAKE_OPTIONS += -DMODULES/i CMAKE_OPTIONS += -DUSE_OPENSSL=OFF -DUSE_MBEDTLS=ON' feeds/telephony/net/baresip/Makefile
 # every feed package gn630v.config selects, or defconfig silently drops it
 ./scripts/feeds install luci dnsproxy luci-proto-wireguard pbr qrencode usteer luci-app-usteer \
 	prometheus-node-exporter-lua iperf3 etherwake miniupnpd luci-app-upnp \
-	ddns-scripts luci-app-ddns htop cgi-io
+	ddns-scripts luci-app-ddns htop cgi-io baresip
 
 cp "$HERE/config/gn630v.config" .config
+# The TEL port's FXS driver (airoha_voip with the Silicon Labs ProSLIC API)
+# is proprietary: official images may carry it, but it is not distributed. Put its
+# checkout at voip/airoha_voip and the board's voice nodes at
+# voip/gn630v-voice.dtsi; without them the build works, and the Phone page
+# says the port isn't ready.
+if [ -d "$HERE/voip/airoha_voip" ] && [ -f "$HERE/voip/gn630v-voice.dtsi" ]; then
+	sh "$HERE/voip/airoha_voip/tools/install-openwrt.sh" .
+	rm -rf package/network/services/asterisk-chan-en75xx package/utils/en75xx-fxs-bench-test
+	cat "$HERE/voip/gn630v-voice.dtsi" >> target/linux/airoha/dts/en7523-skyworth-gn630v.dts
+	printf 'CONFIG_PACKAGE_%s=y\n' kmod-en75xx-slic-si3219x en75xx-proslic-firmware >> .config
+fi
 # bridger's BPF program is built with the host clang/llc: on macOS that is
 # Homebrew's llvm, which isn't on PATH (on Linux, the distribution's clang
 # and llvm packages are)

@@ -375,6 +375,17 @@ static void event_handler(enum ua_event ev, struct bevent *event, void *arg)
 	(void)arg;
 
 	switch (ev) {
+	case UA_EVENT_SIPSESS_CONN: {
+		/* baresip 3.x leaves accepting a new session to an app module */
+		const struct sip_msg *msg = bevent_get_msg(event);
+		if (fxs.offhook) {
+			(void)sip_treply(NULL, uag_sip(), msg, 486, "Busy Here");
+			bevent_stop(event);
+		} else if (ua_accept(uag_find_msg(msg), msg)) {
+			warning("fxs: could not accept the incoming call\n");
+		}
+		break;
+	}
 	case UA_EVENT_CALL_INCOMING:
 		if (fxs.offhook)   /* handset already up: one line, so busy */
 			ua_hangup(call_get_ua(call), call, 486, "Busy Here");

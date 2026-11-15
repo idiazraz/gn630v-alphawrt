@@ -25,6 +25,7 @@ start_service() {
 		echo "sip_listen 0.0.0.0:5060"
 		# the voice VLAN's device, so SIP and RTP leave through it
 		[ -n "$vlan" ] && echo "net_interface $(uci -q get network.voice.device)"
+		echo "module_app account.so"
 		echo "module g711.so"
 		echo "module ctrl_tcp.so"
 		echo "ctrl_tcp_listen 127.0.0.1:4444"
