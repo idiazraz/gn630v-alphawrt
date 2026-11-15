@@ -1,0 +1,102 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 13:09:12 +0800
+Subject: [PATCH] airoha: xpon: back off after repeated Deactivate_ONU-ID
+
+After a 1 s fibre drop, an OLT can range the ONU and send
+Deactivate_ONU-ID right after O5, over and over, while the driver
+re-ranges every ~30 s; the line stayed down for hours. A cold boot,
+which keeps upstream dark for ~45 s first, recovered at once.
+
+After the second Deactivate in a row within 60 s of O5, keep upstream
+off for 60 s before ranging again. Same patch as the SK-G7220 build.
+---
+ ...-back-off-after-repeated-deactivates.patch | 79 +++++++++++++++++++
+ 1 file changed, 79 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/99991-net-airoha-xpon-back-off-after-repeated-deactivates.patch
+
+diff --git a/target/linux/airoha/patches-6.18/99991-net-airoha-xpon-back-off-after-repeated-deactivates.patch b/target/linux/airoha/patches-6.18/99991-net-airoha-xpon-back-off-after-repeated-deactivates.patch
+new file mode 100644
+index 0000000..cb5eb61
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/99991-net-airoha-xpon-back-off-after-repeated-deactivates.patch
+@@ -0,0 +1,79 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: net: airoha: xpon: back off after repeated Deactivate_ONU-ID
++
++After a 1 s loss of signal the OLT ranged the ONU and sent Deactivate_ONU-ID
++0.3 s after O5, 647 times over 5 h, while the driver re-ranged every ~30 s.
++A cold boot, which keeps upstream dark for ~45 s first, recovered at once.
++
++When a Deactivate arrives within 60 s of O5 for the second time in a row,
++stop the MAC and keep upstream off for 60 s before ranging again.
++
++---
++diff -ru a/drivers/net/ethernet/airoha/airoha_xpon.c b/drivers/net/ethernet/airoha/airoha_xpon.c
++--- a/drivers/net/ethernet/airoha/airoha_xpon.c	2026-11-11 17:37:21.905733574 +0800
+++++ b/drivers/net/ethernet/airoha/airoha_xpon.c	2026-11-11 17:39:16.299873020 +0800
++@@ -2327,6 +2327,7 @@
++ 				  jiffies +
++ 				  msecs_to_jiffies(priv->ber_interval_ms));
++ 		priv->to1_failures = 0;
+++		priv->o5_since = jiffies;
++ 		dev_info(priv->dev, "GPON O5: operational, ONU-ID=%u\n",
++ 			 ploam_get_onu_id(priv->ploam));
++ 		break;
++@@ -2997,7 +2998,27 @@
++ 	} else if (ploam_get_state(priv->ploam) != GPON_O1_INITIAL) {
++ 		dev_warn(priv->dev,
++ 			 "restarting GPON after Deactivate_ONU-ID from the OLT\n");
+++		if (priv->o5_since &&
+++		    time_before(jiffies, priv->o5_since +
+++				msecs_to_jiffies(GPON_QUICK_DEACTIVATE_MS)))
+++			priv->quick_deactivates++;
+++		else
+++			priv->quick_deactivates = 0;
++ 		gpon_disable(priv);
+++		if (priv->quick_deactivates >= GPON_QUICK_DEACTIVATE_LIMIT) {
+++			/*
+++			 * Note: the MAC is stopped and ranging state cleared,
+++			 * so the requeued run goes straight to gpon_enable().
+++			 */
+++			dev_warn(priv->dev,
+++				 "Deactivate %u times within %u s of O5: keeping upstream off for %u s\n",
+++				 priv->quick_deactivates,
+++				 GPON_QUICK_DEACTIVATE_MS / 1000,
+++				 GPON_DEACTIVATE_BACKOFF_MS / 1000);
+++			mod_delayed_work(priv->fsm_wq, &priv->restart_work,
+++					 msecs_to_jiffies(GPON_DEACTIVATE_BACKOFF_MS));
+++			return;
+++		}
++ 		stopped = true;
++ 	}
++ 
++diff -ru a/drivers/net/ethernet/airoha/airoha_xpon.h b/drivers/net/ethernet/airoha/airoha_xpon.h
++--- a/drivers/net/ethernet/airoha/airoha_xpon.h	2026-11-11 17:37:21.906043865 +0800
+++++ b/drivers/net/ethernet/airoha/airoha_xpon.h	2026-11-11 17:39:16.299497145 +0800
++@@ -326,6 +326,15 @@
++ #define GPON_TO2_MS		100
++ /* Restart delay after an OLT Deactivate_ONU-ID request. */
++ #define GPON_DEACTIVATE_RESTART_MS	500
+++/*
+++ * Back-off after repeated Deactivate_ONU-ID within GPON_QUICK_DEACTIVATE_MS
+++ * of reaching O5. Re-ranging every few seconds can keep an OLT rejecting the
+++ * ONU (seen: 647 cycles over 5 h after a 1 s LOS; a cold boot recovered).
+++ * Keeping the transmitter dark for a minute matches what a cold boot does.
+++ */
+++#define GPON_QUICK_DEACTIVATE_MS	60000
+++#define GPON_QUICK_DEACTIVATE_LIMIT	2
+++#define GPON_DEACTIVATE_BACKOFF_MS	60000
++ /* Coalesce a net/omci apply batch into one complete MAC/PHY restart. */
++ #define GPON_CONFIG_RESTART_DEBOUNCE_MS	250
++ /*
++@@ -494,6 +503,9 @@
++ 
++ 	/* Consecutive TO1 expiries; cleared on O5. */
++ 	unsigned int		to1_failures;
+++	/* jiffies at the last O5 entry, and Deactivates soon after it in a row. */
+++	unsigned long		o5_since;
+++	unsigned int		quick_deactivates;
++ 
++ };
++ 
