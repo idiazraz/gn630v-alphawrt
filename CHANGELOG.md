@@ -11,6 +11,8 @@ How this file is kept:
 
 ## Unreleased
 
+## 0.5.0 (2026-11-15)
+
 ### Added
 - **Phone on the TEL port.** Plug in a normal home phone and set your provider's SIP line on the new Phone page: lift the handset for a dial tone, dial out, and incoming calls ring the phone. Calls use G.711 over plain SIP (UDP).
 - **Internet over this box's Wi-Fi in bridge mode.** If you keep the box's Wi-Fi on in Quick Setup and give your router's 192.168.100.x address, Wi-Fi devices (and LAN 2-4) reach the internet through your router. Your router needs that second address on its Internet port and must forward the box's traffic, as for Pi-hole. Rerunning Quick Setup in bridge mode no longer switches the box's Wi-Fi off.

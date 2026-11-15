@@ -77,9 +77,9 @@ cp "$HERE/config/gn630v.config" .config
 # says the port isn't ready.
 if [ -d "$HERE/voip/airoha_voip" ] && [ -f "$HERE/voip/gn630v-voice.dtsi" ]; then
 	sh "$HERE/voip/airoha_voip/tools/install-openwrt.sh" .
-	rm -rf package/network/services/asterisk-chan-en75xx package/utils/en75xx-fxs-bench-test
+	rm -rf package/network/services/asterisk-chan-en75xx
 	cat "$HERE/voip/gn630v-voice.dtsi" >> target/linux/airoha/dts/en7523-skyworth-gn630v.dts
-	printf 'CONFIG_PACKAGE_%s=y\n' kmod-en75xx-slic-si3219x en75xx-proslic-firmware >> .config
+	printf 'CONFIG_PACKAGE_%s=y\n' kmod-en75xx-slic-si3219x en75xx-proslic-firmware en75xx-fxs-bench-test >> .config
 fi
 # bridger's BPF program is built with the host clang/llc: on macOS that is
 # Homebrew's llvm, which isn't on PATH (on Linux, the distribution's clang
