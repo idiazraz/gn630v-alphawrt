@@ -5,6 +5,11 @@
 #    again for pon0, which has no segmentation offload (about +20% upload).
 #  - Frames for the box itself that arrive from the fibre side are dropped,
 #    so the management address (192.168.100.1) answers only the router.
+#  - TCP between the box's own network (Wi-Fi, LAN 2-4) and the router, which
+#    Quick Setup NATs to 192.168.100.1 when the box's Wi-Fi stays on, is
+#    clamped to MSS 1452. The router's PPPoE link (MTU 1492) is past a 1500
+#    LAN and drops bigger packets without an ICMP reply, so a route-MTU
+#    clamp can't see it. Without this, downloads over Wi-Fi ran at half speed.
 
 [ "$INTERFACE" = gnmgmt ] || [ "$INTERFACE" = ontbridge ] || exit 0
 
@@ -25,12 +30,24 @@ table bridge alphawrt_guard {
 	}
 }
 EOF
+	nft -f - 2>/dev/null <<EOF
+table inet alphawrt_mss
+delete table inet alphawrt_mss
+table inet alphawrt_mss {
+	chain forward {
+		type filter hook forward priority mangle; policy accept;
+		oifname "br-wan" tcp flags & (syn | rst) == syn tcp option maxseg size > 1452 tcp option maxseg size set 1452
+		iifname "br-wan" tcp flags & (syn | rst) == syn tcp option maxseg size > 1452 tcp option maxseg size set 1452
+	}
+}
+EOF
 	;;
 ifdown)
 	for p in lan1 lan2 lan3 lan4; do
 		ethtool -K "$p" gro on 2>/dev/null
 	done
 	nft delete table bridge alphawrt_guard 2>/dev/null
+	nft delete table inet alphawrt_mss 2>/dev/null
 	;;
 esac
 

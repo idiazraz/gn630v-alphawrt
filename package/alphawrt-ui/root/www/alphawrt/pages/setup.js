@@ -53,6 +53,8 @@ const preset = () => presets.find(p => p.id == d.isp);
 /* bridge mode: the main router's address next to the box's 192.168.100.1 (issues/0008) */
 const gwError = v => /^192\.168\.100\.(\d{1,3})$/.test(v) && +v.split('.')[3] > 1 && +v.split('.')[3] < 255 ? null
 	: 'Enter your router’s address on the 192.168.100.x network (2 to 254), for example 192.168.100.2.';
+/* bridge mode with the box's Wi-Fi kept on: its devices reach the internet through the router (issues/0033) */
+const wifiPath = () => d.mode == 'bridge' && d.wifi_keep && !!d.pihole_gw && !gwError(d.pihole_gw);
 
 /* --- form pieces bound to d --- */
 function bound(el, key, redraw) {
@@ -300,12 +302,16 @@ const STEPS = {
 			];
 			if (d.mode != 'bridge') return fields;
 			return [
-				sw('Keep this box’s Wi-Fi on', 'wifi_keep', 'Normally your own router does Wi-Fi. If you keep it on, it serves this box’s own network on LAN 2–4 (192.168.1.x, no Internet unless you connect one of those ports to your router’s LAN), not your router’s.'),
-				d.wifi_keep && h('div', { class: 'mt-3' }, fields)
+				sw('Keep this box’s Wi-Fi on', 'wifi_keep', 'Normally your own router does Wi-Fi. If you keep it on, it serves this box’s own network on LAN 2–4 (192.168.1.x), not your router’s.'),
+				d.wifi_keep && h('div', { class: 'mt-3' }, fields),
+				d.wifi_keep && h('div', { class: 'mt-4' },
+					text('Your router’s address', 'pihole_gw', { placeholder: '192.168.100.2',
+						hint: 'Wi-Fi devices reach the internet through your router at this 192.168.100.x address. Give your router’s Internet (WAN) port this second address and let it forward this box’s traffic. Leave it empty for Wi-Fi with no internet.' }))
 			];
 		},
 		check() {
 			if (d.mode == 'bridge' && !d.wifi_keep) return;
+			if (d.mode == 'bridge' && d.pihole_gw && gwError(d.pihole_gw)) return gwError(d.pihole_gw);
 			const keys = d.same ? [ d.key0 ] : [ d.key0, d.key1 ];
 			if (keys.some(k => k && !/^[\x20-\x7e]{8,63}$/.test(k) && !/^[0-9a-fA-F]{64}$/.test(k))) return 'Wi-Fi passwords need 8 to 63 characters.';
 			if ((d.same ? [ d.ssid0 ] : [ d.ssid0, d.ssid1 ]).some(s => s && new TextEncoder().encode(s).length > 32)) return 'A Wi-Fi name is at most 32 characters.';
@@ -337,7 +343,8 @@ const STEPS = {
 		title: 'Check and finish',
 		body() {
 			const p = preset();
-			const wifi = d.mode == 'bridge' && !d.wifi_keep ? 'Off (your router does Wi-Fi)' : d.same ? (d.ssid0 || '—') : `${d.ssid0 || '—'} / ${d.ssid1 || '—'}`;
+			const wifi = d.mode == 'bridge' && !d.wifi_keep ? 'Off (your router does Wi-Fi)' : (d.same ? (d.ssid0 || '—') : `${d.ssid0 || '—'} / ${d.ssid1 || '—'}`)
+				+ (d.mode != 'bridge' ? '' : wifiPath() ? ', internet through your router' : ', no internet');
 			return [
 				h('div', { class: 'card bg-base-100 border border-base-300' }, h('div', { class: 'card-body p-5' }, rows([
 					[ 'Use', MODES[d.mode] ],
@@ -426,6 +433,10 @@ function networkOps() {
 		if (br) ops.push([ 'remove', 'network', br['.name'] ]);
 		for (const z of uci.sections('firewall', 'zone').filter(z => z.name == 'gnmgmt')) ops.push([ 'remove', 'firewall', z['.name'] ]);
 	}
+	/* Wi-Fi to the router in bridge mode: lan -> gnmgmt, NATed to 192.168.100.1 (MSS clamp: 30-alphawrt-bridge) */
+	const fwd = uci.sections('firewall', 'forwarding').filter(f => f.src == 'lan' && f.dest == 'gnmgmt');
+	if (wifiPath() && !fwd.length) ops.push([ 'add', 'firewall', 'forwarding', { src: 'lan', dest: 'gnmgmt' } ]);
+	if (!wifiPath()) for (const f of fwd) ops.push([ 'remove', 'firewall', f['.name'] ]);
 
 	/* combo mode's IPTV port, with no address on the box (no IPv6 link-local either) */
 	const tv = devices.find(s => s.name == 'br-iptv');
@@ -450,8 +461,11 @@ function networkOps() {
 		setOrAdd('network', 'ontbridge', 'interface', { proto: 'none', device: 'br-wan' });
 		/* reachable from the router's side, like an ISP ONT: 192.168.100.1 */
 		setOrAdd('network', 'gnmgmt', 'interface', { proto: 'static', device: 'br-wan', ipaddr: '192.168.100.1', netmask: '255.255.255.0',
-			...(d.pihole == '1' && d.pihole_gw ? { gateway: d.pihole_gw } : {}) });
-		const zone = uci.sections('firewall', 'zone').find(z => z.name == 'gnmgmt'), zv = { name: 'gnmgmt', network: [ 'gnmgmt' ], input: 'ACCEPT', output: 'ACCEPT', forward: 'REJECT' };
+			...((d.pihole == '1' || wifiPath()) && d.pihole_gw ? { gateway: d.pihole_gw } : {}),
+			/* the router answers the Wi-Fi devices' names, as an ISP's DNS would */
+			...(wifiPath() ? { dns: [ d.pihole_gw ] } : {}) });
+		if (!wifiPath() && uci.get('network', 'gnmgmt', 'dns')) ops.push([ 'unset', 'network', 'gnmgmt', 'dns' ]);
+		const zone = uci.sections('firewall', 'zone').find(z => z.name == 'gnmgmt'), zv = { name: 'gnmgmt', network: [ 'gnmgmt' ], input: 'ACCEPT', output: 'ACCEPT', forward: 'REJECT', masq: wifiPath() ? '1' : '0' };
 		ops.push(zone ? [ 'set', 'firewall', zone['.name'], zv ] : [ 'add', 'firewall', 'zone', zv ]);
 		setOrAdd('network', 'wan', 'interface', { device: 'pon0', disabled: '1' });
 		if (has('wan6')) ops.push([ 'set', 'network', 'wan6', { disabled: '1' } ]);
@@ -625,7 +639,7 @@ export default {
 			username: uci.get('network', 'wan', 'username') || '', ppp_password: uci.get('network', 'wan', 'password') || '',
 			country_saved: wifiRadios().find(r => r.country && r.country != '00')?.country,
 			country: wifiRadios().find(r => r.country && r.country != '00')?.country || 'MY',
-			wifi_keep: false, tz: true, pw1: '', pw2: '', root_password: '',
+			wifi_keep: mode == 'bridge' && uci.get('wireless', 'default_radio0', 'disabled') != '1', tz: true, pw1: '', pw2: '', root_password: '',
 			pihole: first ? '1' : (piholeOn ? '1' : '0'),
 			pihole_preset: uci.get('pihole', 'main', 'preset') || 'multi',
 			pihole_tif: uci.get('pihole', 'main', 'tif') == '1',

@@ -28,7 +28,7 @@ export default {
 	title: 'Wi-Fi',
 
 	async render(main) {
-		const [ st ] = await Promise.all([ maybe('alphawrt.wifi', 'status', {}, null), uci.load('usteer') ]);
+		const [ st ] = await Promise.all([ maybe('alphawrt.wifi', 'status', {}, null), uci.load('usteer', 'firewall', 'network') ]);
 		main.append(h('h1', { class: 'text-2xl font-bold' }, 'Wi-Fi'));
 		if (!st || !st.bands)
 			return main.append(card('wifi', 'Wi-Fi', badge('off', 'Unavailable'),
@@ -36,9 +36,13 @@ export default {
 		const bands = st.bands;
 		if (!bands.length)
 			return main.append(h('p', {}, 'No Wi-Fi radios found.'));
+		/* Quick Setup's path from this box's Wi-Fi to the router (lan -> gnmgmt, NAT) */
+		const viaRouter = uci.sections('firewall', 'forwarding').some(f => f.src == 'lan' && f.dest == 'gnmgmt') && uci.get('network', 'gnmgmt', 'gateway');
 		if (st.mode == 'bridge')
 			main.append(h('div', { role: 'status', class: 'alert alert-soft alert-info text-sm items-start' }, icon('info', 'size-5 shrink-0'),
-				'In bridge mode your own router normally does Wi-Fi. If you switch this box’s Wi-Fi on, it serves the devices on LAN 2–4, not your router’s network.'));
+				'In bridge mode your own router normally does Wi-Fi. If you switch this box’s Wi-Fi on, it serves the devices on LAN 2–4, not your router’s network. ',
+				viaRouter ? `They reach the internet through your router at ${viaRouter}.`
+					: 'They have no internet: to give them internet through your router, run Quick Setup again and keep this box’s Wi-Fi on.'));
 
 		const together = toggle('Same name and password on both bands', st.same_name, 'Phones and laptops pick the faster band by themselves.');
 		const pw = (label, value, sec) => field(label, { value: value || '', password: true, autocomplete: 'new-password',
