@@ -11,6 +11,8 @@ How this file is kept:
 
 ## Unreleased
 
+## 0.5.1 (2026-11-16)
+
 ### Changed
 - **Both CPU cores now share the LAN traffic.** All wired receive work used to run on the first core while the second sat mostly idle. Now it goes to the second core, which leaves the first free for the web interface and SSH under heavy load. In the built-in Speed test on a 1 Gbit link this gave about 20% more download and up to 50% more upload (GitHub #6).
 
