@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 21:30:00 +0800
+Subject: [PATCH] airoha: en7523: gn630v: steer LAN receive work to the second
+ core
+
+OpenWrt's packet steering places RPS by NAPI thread. airoha_eth has
+none, so every Ethernet RX queue (eth0 and pon0) was steered to CPU0,
+where the LAN interrupt already runs; CPU1 did almost no packet work.
+
+A platform packet-steering.sh runs the stock script, then points the
+eth0 queues at CPU1. pon0 keeps CPU0, since its interrupt is on CPU1
+(gn630v-irq). Only with packet_steering=1 and on the GN630V.
+
+On the dev board, router-local speed test over 1 Gbit, two runs each:
+CPU0 softirq 88-92% -> 13-14%, CPU1 6-7% -> 85%, download 441/471 ->
+544/557 Mbit/s, upload 357/329 -> 593/427 Mbit/s.
+---
+ .../usr/libexec/platform/packet-steering.sh     | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+ create mode 100755 target/linux/airoha/en7523/base-files/usr/libexec/platform/packet-steering.sh
+
+diff --git a/target/linux/airoha/en7523/base-files/usr/libexec/platform/packet-steering.sh b/target/linux/airoha/en7523/base-files/usr/libexec/platform/packet-steering.sh
+new file mode 100755
+index 0000000..2d4469c
+--- /dev/null
++++ b/target/linux/airoha/en7523/base-files/usr/libexec/platform/packet-steering.sh
+@@ -0,0 +1,17 @@
++#!/bin/sh
++# Note: OpenWrt's packet-steering.uc places RPS by NAPI thread. airoha_eth has
++# none, so it steers every Ethernet RX queue to CPU0, where the LAN interrupt
++# already runs, and CPU1 sits idle. On the GN630V send the LAN receive work to
++# CPU1; the WAN (pon0) interrupt runs on CPU1 (gn630v-irq) and stays steered
++# to CPU0.
++
++/usr/libexec/network/packet-steering.uc "$@"
++
++[ "$1" = 1 ] || exit 0
++. /lib/functions.sh
++[ "$(board_name)" = "skyworth,gn630v" ] || exit 0
++
++for q in /sys/class/net/eth0/queues/rx-*/rps_cpus; do
++	[ -e "$q" ] && echo 2 > "$q"
++done
++exit 0
+-- 
+2.54.0 (Apple Git-157)
+
