@@ -121,10 +121,27 @@ kernel() {
 		/dying-gasp interrupt/ { print t, u, "gasp" }'
 }
 
+# pado <epoch>: PPPoE discovery timeouts (no PADO: nobody answered) since then
+pado() {
+	logread -t -e 'Timeout waiting for PADO' 2>/dev/null | awk -v s=$1 'int(substr($6, 2)) > s { n++ } END { print n + 0 }'
+}
+
+# One full fibre restart that keeps the configuration: the xpon driver
+# folds OMCI config changes within 250 ms into one restart, so the forced
+# OLT profile goes to another value and straight back.
+restart_pon() {
+	local f o
+	f=$(ubus call omci.agent status '{"device":0}' 2>/dev/null | jsonfilter -e @.status.olt_profile_forced_name)
+	[ -n "$f" ] || return
+	o=$([ "$f" = generic ] && echo unspecified || echo generic)
+	ubus call omci.agent config_set "{\"device\":0,\"key\":\"olt-profile-force\",\"value\":\"$o\"}" >/dev/null 2>&1
+	ubus call omci.agent config_set "{\"device\":0,\"key\":\"olt-profile-force\",\"value\":\"$f\"}" >/dev/null 2>&1
+}
+
 # a fresh boot reports the boot's own driver lines too; a restarted
 # monitor only new ones
 [ -s $EVENTS ] && kt=$(cut -d' ' -f1 /proc/uptime) || kt=0
-state=x wan=x errs= weak= sdf=0 o5at=0 n=0
+state=x wan=x errs= weak= sdf=0 o5at=0 n=0 kick= kicks=0
 set -- $(anig)
 sf=$1 sd=$2 lo=$3 hi=$4
 echo "$sf $sd $lo $hi" > $THR
@@ -191,6 +208,17 @@ while :; do
 	r=$(logread -e "Remote message:" 2>/dev/null | tail -n 1 | sed 's/.*Remote message: //')
 	[ "$w" != true ] && [ -n "$r" ] && [ "$r" != "$rmsg" ] && ev "ISP says: $r"
 	rmsg=$r
+
+	# Some OLTs (Unifi on ZTE, GitHub #8) leave the data path dead after the
+	# first provisioning since power-up: registered, but PPPoE gets no answer
+	# at all. A fibre restart brings it up. Once per registration, 3 per boot.
+	if [ "$st" = 5 ] && [ "$w" != true ] && [ $o5at -gt 0 ] && [ "$kick" != $o5at ] && [ $kicks -lt 3 ] &&
+		[ $(($(date +%s) - o5at)) -ge 60 ] && [ "$(uci -q get network.wan.proto)" = pppoe ] &&
+		[ $(pado $o5at) -ge 2 ]; then
+		kick=$o5at kicks=$((kicks + 1))
+		ev "internet: no answer from the ISP since the fibre registered; restarting the fibre link"
+		restart_pon
+	fi
 
 	# below -28 dBm (the 28 dB loss TM accepts this box at) counts as no light
 	dark=$(awk -v p=$rx 'BEGIN { print (p < 1585) ? 1 : 0 }')

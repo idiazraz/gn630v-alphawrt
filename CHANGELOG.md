@@ -11,6 +11,9 @@ How this file is kept:
 
 ## Unreleased
 
+### Fixed
+- **Internet comes up after a reboot on Unifi lines that needed the OLT profile switched by hand.** When the fibre registers but the provider doesn't answer the internet login (PPPoE) within a minute, the box restarts the fibre link once by itself ([#8](https://github.com/idiazraz/gn630v-alphawrt/issues/8)).
+
 ## 0.5.1 (2026-11-16)
 
 ### Changed
