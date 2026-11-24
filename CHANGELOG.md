@@ -51,6 +51,7 @@ First bring-up of the SR1041Y. It has not had a tagged release yet: everything b
 - **WireGuard could never be set up:** the VPN page sent you back to the login screen. If the box undoes a change because it wasn't confirmed, the page now says so instead of doing nothing.
 - **Pages stayed stale after an update**, and Wi-Fi client counts were wrong.
 - **Saving a value that was already set** no longer shows as an error.
+- **A VLAN the fibre provider tags with a priority now passes traffic.** Some OLTs list a VLAN with a priority attached even when they only check the VLAN number; ordinary traffic on it was dropped, so a voice VLAN never got an address ([#7](https://github.com/idiazraz/gn630v-alphawrt/issues/7)).
 
 ### Known issues
 - **Early bring-up.** The first install needs the UART (serial console) and takes about 27 minutes; installing from the stock web UI is still being worked out.
