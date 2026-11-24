@@ -1,0 +1,105 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 12:00:00 +0800
+Subject: [PATCH] airoha: xpon: omci: only match priority when the VLAN filter
+ asks for it
+
+The VLAN tagging filter (ME 84) staging gave every TCI entry an exact
+priority match, whatever the filter's forward operation. Most operations
+check the VID only (G.988 table 9.3.11-1), and an OLT may list a VLAN with
+a nonzero priority in its TCI, for example VLAN 400 as 0xa190. Frames on
+that VLAN with priority 0 then matched no upstream service and were
+dropped, so a DHCP client on it never got an offer (Unifi voice, GitHub
+#7) while VLAN 500 with priority 0 in its TCI worked.
+
+Match the priority only for the operations that look at it; for the
+others the staged service matches on the VID alone.
+---
+ ...h-priority-when-the-VLAN-filter-asks.patch | 75 +++++++++++++++++++
+ 1 file changed, 75 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/99992-net-xpon-omci-only-match-priority-when-the-VLAN-filter-asks.patch
+
+diff --git a/target/linux/airoha/patches-6.18/99992-net-xpon-omci-only-match-priority-when-the-VLAN-filter-asks.patch b/target/linux/airoha/patches-6.18/99992-net-xpon-omci-only-match-priority-when-the-VLAN-filter-asks.patch
+new file mode 100644
+index 0000000..adea18f
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/99992-net-xpon-omci-only-match-priority-when-the-VLAN-filter-asks.patch
+@@ -0,0 +1,75 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: net: xpon: omci: only match priority when the VLAN filter asks for it
++
++The VLAN tagging filter (ME 84) staging gave every TCI entry an exact
++priority match, whatever the filter's forward operation. Most operations
++check the VID only (G.988 table 9.3.11-1), and an OLT may list a VLAN with
++a nonzero priority in its TCI, for example VLAN 400 as 0xa190. Frames on
++that VLAN with priority 0 then matched no upstream service and were
++dropped, so a DHCP client on it never got an offer (Unifi voice, GitHub
++#7) while VLAN 500 with priority 0 in its TCI worked.
++
++Match the priority only for the operations that look at it; for the
++others the staged service matches on the VID alone.
++---
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -2957,6 +2957,19 @@
++ 	return vid > 0 && vid < VLAN_VID_MASK;
++ }
++ 
+++/*
+++ * G.988 table 9.3.11-1: the VLAN tagging filter forward operations that look
+++ * at the priority bits (user priority or whole-TCI investigation).  Every
+++ * other operation checks the VID only, or nothing, and the priority bits in
+++ * its TCI list mean nothing: an OLT may list VLAN 400 as TCI 0xa190 with
+++ * operation 0x10 and still pass priority 0 frames.
+++ */
+++static bool omci_vlan_filter_checks_pbit(u8 op)
+++{
+++	return (op >= 0x07 && op <= 0x0e) || (op >= 0x11 && op <= 0x14) ||
+++	       (op >= 0x18 && op <= 0x1b) || (op >= 0x1e && op <= 0x21);
+++}
+++
++ static bool omci_agent_has_olt_gem_ctp_locked(struct omci_agent *agent)
++ {
++ 	struct omci_mib_object *object;
++@@ -3046,9 +3059,12 @@
++ 		service.vlan_id = filter->vid;
++ 		service.vlan_valid =
++ 			omci_agent_service_vlan_valid(filter->vid);
++-		service.pcp = filter->pbit;
++-		service.pcp_valid = true;
++-		service.queue = filter->pbit;
+++		/* pbit > 7: the forward operation ignores the priority */
+++		if (filter->pbit <= 7) {
+++			service.pcp = filter->pbit;
+++			service.pcp_valid = true;
+++			service.queue = filter->pbit;
+++		}
++ 	}
++ 	if (ext_rule) {
++ 		struct omci_extended_vlan_rule rule = *ext_rule;
++@@ -3217,14 +3233,20 @@
++ 		if (object->class_id == OMCI_CLASS_VLAN_TAGGING_FILTER_DATA &&
++ 		    object->vlan_filter.valid) {
++ 			for (i = 0; i < object->vlan_filter.num_entries; i++) {
+++				struct omci_vlan_filter_entry entry =
+++					object->vlan_filter.entries[i];
+++
++ 				if (object != wan_filter &&
++ 				    !omci_agent_wan_vlan_admits(wan_filter,
++-					object->vlan_filter.entries[i].vid))
+++								entry.vid))
++ 					continue;
+++				if (!omci_vlan_filter_checks_pbit(
+++					    object->vlan_filter.forward_operation))
+++					entry.pbit = 0xff;
++ 				ret = omci_agent_stage_service_rule_locked(
++ 					odev, services, lan_port->entity_id,
++ 					uni_entity, gem_iwtp_entity, pcp, pcp_valid,
++-					&object->vlan_filter.entries[i], NULL,
+++					&entry, NULL,
++ 					selector + i + 1, default_installed,
++ 					multicast, ani_entity_id, ani_valid);
++ 				if (ret == -EOPNOTSUPP)
+-- 
+2.54.0 (Apple Git-157)
+

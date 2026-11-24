@@ -26,6 +26,8 @@ start_service() {
 		# the voice VLAN's device, so SIP and RTP leave through it
 		[ -n "$vlan" ] && echo "net_interface $(uci -q get network.voice.device)"
 		echo "module_app account.so"
+		# menu answers ctrl_tcp's reginfo, which the Phone page reads
+		echo "module_app menu.so"
 		echo "module g711.so"
 		echo "module ctrl_tcp.so"
 		echo "ctrl_tcp_listen 127.0.0.1:4444"
@@ -60,4 +62,6 @@ start_service() {
 
 service_triggers() {
 	procd_add_reload_trigger voice
+	# the voice VLAN gets its address after boot: start again once it has one
+	procd_add_interface_trigger "interface.*.up" voice /etc/init.d/alphawrt-voice restart
 }

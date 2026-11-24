@@ -13,6 +13,8 @@ How this file is kept:
 
 ### Fixed
 - **Internet comes up after a reboot on Unifi lines that needed the OLT profile switched by hand.** When the fibre registers but the provider doesn't answer the internet login (PPPoE) within a minute, the box restarts the fibre link once by itself ([#8](https://github.com/idiazraz/gn630v-alphawrt/issues/8)).
+- **A VLAN the fibre provider tags with a priority now passes traffic.** Some OLTs list a VLAN with a priority attached even when they only check the VLAN number; untagged-priority traffic on it was dropped, so a voice VLAN never got an address ([#7](https://github.com/idiazraz/gn630v-alphawrt/issues/7)).
+- **Phone: registers once the voice VLAN gets its address.** The phone service started before the voice VLAN had an address and never tried again; it now restarts when the address arrives. The Phone page also shows the real registration state again ([#7](https://github.com/idiazraz/gn630v-alphawrt/issues/7)).
 
 ## 0.5.1 (2026-11-16)
 
