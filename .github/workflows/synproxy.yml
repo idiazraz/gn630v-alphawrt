@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# alphawrt-synproxy: which port forwards it covers, on an OpenWrt root
+# filesystem (tools/test-synproxy-config.sh), and its nftables table on a
+# real kernel SYN proxy: DNAT port forwards behind an fw4-like firewall, a
+# spoofed SYN flood, auto and always modes, NAT reflection and the box's own
+# connections (tools/test-synproxy.sh). The WSL2 kernel has no nft_synproxy;
+# GitHub's Ubuntu runners do. Runs on pushes to any branch, so a fix can be
+# tested before it reaches main and starts a firmware build.
+name: synproxy
+
+on:
+  push:
+    paths:
+      - 'package/alphawrt-synproxy/**'
+      - 'tools/test-synproxy*.sh'
+      - '.github/workflows/synproxy.yml'
+  pull_request:
+    paths:
+      - 'package/alphawrt-synproxy/**'
+      - 'tools/test-synproxy*.sh'
+      - '.github/workflows/synproxy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables hping3 shellcheck
+
+      # SC3043: busybox ash, OpenWrt's /bin/sh, has "local"
+      - name: Lint
+        run: |
+          shellcheck -s sh -S warning -e SC3043 \
+            package/alphawrt-synproxy/root/usr/libexec/alphawrt/synproxy \
+            package/alphawrt-synproxy/root/usr/libexec/rpcd/alphawrt-synproxy \
+            package/alphawrt-synproxy/root/etc/uci-defaults/94_alphawrt_synproxy \
+            tools/test-synproxy.sh tools/test-synproxy-config.sh
+
+      - name: Port forwards it covers, on OpenWrt
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" openwrt/rootfs:x86-64-v25.12.6 \
+            /bin/sh /repo/tools/test-synproxy-config.sh
+
+      - name: SYN proxy on a real kernel
+        run: sudo REQUIRE_SYNPROXY=1 sh tools/test-synproxy.sh

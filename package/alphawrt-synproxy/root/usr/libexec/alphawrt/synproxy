@@ -1,0 +1,511 @@
+#!/bin/sh
+# AlphaWRT flood protection for port forwards (SYN proxy).
+#
+# fw4's syn_flood limit only guards the box's own input chain. SYNs to a port
+# forward are DNATed and forwarded, so a SYN flood against a forwarded port
+# reaches the LAN server untouched and can fill its backlog. This table keeps
+# such floods on the box: SYNs to a forwarded port are answered here with
+# syncookies (nft synproxy), and only clients that complete the handshake get
+# a connection to the server, which still sees their own address.
+#
+# Modes, uci alphawrt.synproxy.mode:
+#   auto    (default) nothing changes until SYNs to the forwarded ports go
+#           over `rate` per second after a `burst`. Then every new connection
+#           to them goes through the SYN proxy until no excess SYN has been
+#           seen for `hold` seconds. The switch happens in the kernel.
+#   always  every new connection to a forwarded port goes through it.
+#   off     no table.
+# Other options: wscale (window scale offered to clients, default 7; keep it
+# at or below the servers' own), mss (default: from the WAN and LAN MTUs).
+#
+# Covered: IPv4 TCP port forwards (DNAT) from the wan zone to a LAN address,
+# keeping the port or moving one port to another. IPv6 is never touched:
+# with no DNAT behind it, a proxied IPv6 connection would end at the box's
+# own services.
+#
+# A proxied connection reaches the server from the box itself, so fw4's
+# checks on new forwarded connections never see it. Forwards fw4 limits are
+# therefore left to fw4, skipped and logged: limits on source, schedule,
+# mark, helper or rate, a drop/reject rule from wan that could match them,
+# a forward to the box itself, a port range move, and any later forward on
+# the same ports.
+#
+# A proxied handshake's final ACK has no conntrack entry. It must stay
+# invalid for the synproxy rule to see it, so nf_conntrack_tcp_loose is 0
+# while the table is loaded (conntrack stops picking up mid-stream TCP).
+# In auto mode that is all the time, not only during a flood.
+#
+# fw4 runs /usr/share/alphawrt/synproxy.fw4 after every start and reload,
+# which runs this, so the table follows the port forwards and the WAN device
+# (fw4 reloads when the WAN comes up). Never call fw4 from here: it holds its
+# lock while it runs includes.
+#
+#   synproxy [apply]  build the table from uci and load it, or remove it
+#   synproxy stop     remove the table and restore tcp_loose
+#   synproxy status   JSON for rpcd (alphawrt-synproxy status)
+#   synproxy plan     print which forwards it would cover and why it skips
+#                     the others, from /etc/config/firewall (tests)
+#   synproxy render   print the table from environment variables (tests):
+#                     MODE RATE BURST HOLD MSS WSCALE, WAN="dev ...",
+#                     SAME="port[-port]=ip ...", MOVED="port=ip:port ..."
+
+TABLE=alphawrt_synproxy
+LOOSE=/proc/sys/net/netfilter/nf_conntrack_tcp_loose
+RUN=/var/run/alphawrt-synproxy
+ZONE=wan
+
+log() { logger -t alphawrt-synproxy "$*"; }
+
+# num <value> <default> <min> <max>
+num() {
+	case "$1" in
+	''|*[!0-9]*) echo "$2" ;;
+	*) if [ "$1" -lt "$3" ]; then echo "$3"; elif [ "$1" -gt "$4" ]; then echo "$4"; else echo "$1"; fi ;;
+	esac
+}
+
+join() { # <separator> <words...>
+	local sep="$1" out="" w
+	shift
+	for w in "$@"; do out="${out:+$out$sep}$w"; done
+	echo "$out"
+}
+
+render() {
+	local p to wan="" ports="" same="" moved=""
+
+	for p in $WAN; do wan="${wan:+$wan, }\"$p\""; done
+	for p in $SAME; do
+		ports="${ports:+$ports, }${p%%=*}"
+		same="${same:+$same, }${p%%=*} : ${p#*=}"
+	done
+	for p in $MOVED; do
+		to="${p#*=}"
+		ports="${ports:+$ports, }${p%%=*}"
+		moved="${moved:+$moved, }${p%%=*} : ${to%:*} . ${to##*:}"
+	done
+
+	cat <<EOF
+table inet $TABLE
+delete table inet $TABLE
+table inet $TABLE {
+	set wan {
+		type ifname
+		elements = { $wan }
+	}
+
+	# public ports of the covered port forwards
+	set ports {
+		type inet_service
+		flags interval
+		elements = { $ports }
+	}
+EOF
+	[ -n "$same" ] && cat <<EOF
+
+	# forwards that keep the port: public port(s) -> LAN address
+	map same {
+		type inet_service : ipv4_addr
+		flags interval
+		elements = { $same }
+	}
+EOF
+	[ -n "$moved" ] && cat <<EOF
+
+	# forwards that move the port: public port -> LAN address . port
+	map moved {
+		type inet_service : ipv4_addr . inet_service
+		elements = { $moved }
+	}
+EOF
+	cat <<EOF
+
+	# one element (tcp) while a flood is on; its timeout is the hold time
+	set flood {
+		type inet_proto
+		flags timeout
+	}
+
+	counter syns {
+	}
+
+	counter proxied {
+	}
+
+	chain prerouting {
+		type filter hook prerouting priority raw; policy accept;
+		meta nfproto ipv4 iifname @wan fib daddr type local tcp dport @ports tcp flags & (fin | syn | rst | ack) == syn jump syn
+	}
+
+	# synproxy answers an untracked SYN with a SYN-ACK of its own. Conntrack
+	# would call that SYN-ACK invalid, and fw4 drops invalid packets to a
+	# masqueraded zone ("Prevent NAT leakage"), so leave it untracked too.
+	chain output_raw {
+		type filter hook output priority raw; policy accept;
+		meta nfproto ipv4 oifname @wan tcp sport @ports tcp flags & (fin | syn | rst | ack) == syn | ack notrack
+	}
+
+	# untracked SYNs skip DNAT and reach the synproxy rule in input
+	chain syn {
+		counter name syns
+EOF
+	if [ "$MODE" = always ]; then
+		cat <<EOF
+		counter name proxied notrack
+	}
+EOF
+	else
+		cat <<EOF
+		limit rate over $RATE/second burst $BURST packets jump flood
+		meta l4proto @flood counter name proxied notrack
+	}
+
+	chain flood {
+		meta l4proto != @flood log prefix "alphawrt-synproxy: SYN flood, proxying: " level notice
+		update @flood { meta l4proto timeout ${HOLD}s }
+	}
+EOF
+	fi
+	cat <<EOF
+
+	chain input {
+		type filter hook input priority filter - 10; policy accept;
+		meta nfproto ipv4 iifname @wan tcp dport @ports ct state invalid,untracked synproxy mss $MSS wscale $WSCALE timestamp sack-perm
+		# a proxied connection whose server SYN was not redirected below
+		# would reach a local service through lo, which fw4 accepts
+		meta nfproto ipv4 iif "lo" fib saddr type != local tcp dport @ports counter drop
+	}
+
+	# synproxy opens the server side with a SYN of its own, sent from the box
+	# with the client's address to the public port: redirect it like the
+	# port forward does. Only packets with a foreign source match, so the
+	# box's own connections to its public address are left alone.
+	chain output {
+		type nat hook output priority -100; policy accept;
+		meta nfproto ipv4 fib saddr type != local fib daddr type local tcp dport @ports jump to_server
+	}
+
+	chain to_server {
+EOF
+	[ -n "$same" ] && echo "		dnat ip to tcp dport map @same"
+	[ -n "$moved" ] && echo "		dnat ip to tcp dport map @moved"
+	cat <<EOF
+	}
+}
+EOF
+}
+
+ip4() {
+	echo "$1" | grep -qE '^(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}$'
+}
+
+# port <p>: a port or a range a-b (a:b), prints "lo hi" or fails
+port() {
+	local p lo hi
+	p=$(echo "$1" | tr ':' '-')
+	case "$p" in
+	''|*[!0-9-]*|-*|*-|*-*-*) return 1 ;;
+	esac
+	lo=${p%-*} hi=${p#*-}
+	# fw4 reads 0443 as 443; nft would read it as octal
+	lo=${lo#"${lo%%[!0]*}"} hi=${hi#"${hi%%[!0]*}"}
+	[ -n "$lo" ] && [ -n "$hi" ] && [ ${#lo} -le 5 ] && [ ${#hi} -le 5 ] || return 1
+	[ "$lo" -le "$hi" ] && [ "$hi" -le 65535 ] || return 1
+	echo "$lo $hi"
+}
+
+# on <value>: fw4's idea of an enabled section (it skips anything else)
+on() { case "$1" in 1|on|true|yes) return 0 ;; *) return 1 ;; esac; }
+
+# taken <lo> <hi>: overlaps the ports of an earlier forward, covered or not
+taken() {
+	local r
+	for r in $USED $RESERVED; do
+		[ "$1" -le "${r#*-}" ] && [ "$2" -ge "${r%-*}" ] && return 0
+	done
+	return 1
+}
+
+local_ip() { ip -4 route get "$1" 2>/dev/null | grep -q '^local '; }
+
+# blocker <rule>: a fw4 rule that drops or rejects TCP forwarded from the
+# wan zone. fw4 checks it on a forwarded connection's first packet, which a
+# proxied connection never sends through the forward chain, so forwards it
+# could match are left to fw4 (see blocked).
+blocker() {
+	local s="$1" v ips ports
+	config_get v "$s" enabled 1
+	on "$v" || return
+	config_get v "$s" target
+	case "$v" in DROP|drop|REJECT|reject) ;; *) return ;; esac
+	config_get v "$s" src
+	case "$v" in "$ZONE"|'*') ;; *) return ;; esac
+	config_get v "$s" dest
+	[ -n "$v" ] || return
+	config_get v "$s" family
+	case "$v" in ipv6|6) return ;; esac
+	config_get v "$s" proto
+	case " ${v:-tcpudp} " in *" tcp "*|*" tcpudp "*|*" all "*|*" any "*|*" 6 "*|*!*) ;; *) return ;; esac
+	config_get ips "$s" dest_ip
+	config_get ports "$s" dest_port
+	# shellcheck disable=SC2086 # word splitting turns lists into a,b
+	ips=$(echo $ips | tr ' ' ',') ports=$(echo $ports | tr ' ' ',')
+	BLOCKS="$BLOCKS ${ips:-any}|${ports:-any}"
+}
+
+# blocked <ip> <lo> <hi>: a blocker could match traffic to ip:lo-hi. Anything
+# not plainly a different address or port (a subnet, a name, an inverted
+# match, an address set) counts as a match.
+blocked() {
+	local b ips ports v r hit
+	for b in $BLOCKS; do
+		ips=${b%%|*} ports=${b#*|} hit=1
+		if [ "$ips" != any ]; then
+			hit=0
+			for v in $(echo "$ips" | tr ',' ' '); do
+				case "$v" in "$1"|*[!0-9.]*) hit=1 ;; esac
+			done
+		fi
+		[ $hit = 1 ] || continue
+		[ "$ports" = any ] && return 0
+		for v in $(echo "$ports" | tr ',' ' '); do
+			r=$(port "$v") || return 0
+			[ "$2" -le "${r#* }" ] && [ "$3" -ge "${r% *}" ] && return 0
+		done
+	done
+	return 1
+}
+
+forward() {
+	local s="$1" v name proto sport dport dip r lo hi dlo dhi why=""
+
+	config_get name "$s" name "$s"
+	config_get v "$s" enabled 1
+	on "$v" || return
+	config_get v "$s" target DNAT
+	case "$v" in DNAT|dnat) ;; *) return ;; esac
+	config_get v "$s" src
+	[ "$v" = "$ZONE" ] || return
+	config_get v "$s" family
+	case "$v" in ''|any|ipv4|4) ;; *) return ;; esac
+	config_get proto "$s" proto "tcp udp"
+	case " $proto " in *" tcp "*|*" tcpudp "*|*" all "*) ;; *) return ;; esac
+
+	config_get sport "$s" src_dport
+	case "$sport" in
+	''|'!'*)
+		# every port, or every port but some: later forwards are shadowed
+		log "skipping port forward '$name': not one port or range"
+		RESERVED="$RESERVED 1-65535" SKIPPED=$((SKIPPED + 1))
+		return ;;
+	esac
+	r=$(port "$sport") || return	# fw4 skips a section it can't parse
+	lo=${r% *} hi=${r#* }
+
+	for v in src_ip src_mac src_dip src_port ipset helper mark limit \
+		start_date stop_date start_time stop_time weekdays monthdays extra; do
+		config_get r "$s" "$v"
+		[ -n "$r" ] && { why="limited by $v"; break; }
+	done
+	config_get dip "$s" dest_ip
+	config_get dport "$s" dest_port "$sport"
+	if [ -n "$why" ]; then :
+	elif ! ip4 "$dip"; then why="device address '$dip'"
+	elif local_ip "$dip"; then why="forwards to the box itself"
+	elif ! r=$(port "$dport"); then why="device port '$dport'"
+	elif taken "$lo" "$hi"; then why="port $sport is in an earlier forward"
+	else
+		dlo=${r% *} dhi=${r#* }
+		if blocked "$dip" "$dlo" "$dhi"; then
+			why="a drop or reject rule from $ZONE may match it"
+		elif [ "$lo" = "$dlo" ] && [ "$hi" = "$dhi" ]; then
+			[ "$lo" = "$hi" ] && SAME="$SAME $lo=$dip" || SAME="$SAME $lo-$hi=$dip"
+		elif [ "$lo" = "$hi" ] && [ "$dlo" = "$dhi" ]; then
+			MOVED="$MOVED $lo=$dip:$dlo"
+		else
+			why="moves a port range"
+		fi
+	fi
+	if [ -n "$why" ]; then
+		log "skipping port forward '$name': $why"
+		RESERVED="$RESERVED $lo-$hi" SKIPPED=$((SKIPPED + 1))
+		return
+	fi
+	USED="$USED $lo-$hi"
+	TARGETS="$TARGETS $dip"
+}
+
+# parse: fill SAME, MOVED, USED and TARGETS from /etc/config/firewall
+parse() {
+	SAME="" MOVED="" USED="" RESERVED="" TARGETS="" BLOCKS="" SKIPPED=0
+	config_load firewall
+	config_foreach blocker rule
+	config_foreach forward redirect
+}
+
+zone_devices() {
+	local s="$1" v n d
+	config_get v "$s" name
+	[ "$v" = "$ZONE" ] || return
+	config_get v "$s" network
+	for n in $v; do
+		network_get_device d "$n" && WAN="$WAN $d"
+	done
+	config_get v "$s" device
+	for d in $v; do
+		case "$d" in *+*|*\**) ;; *) WAN="$WAN $d" ;; esac
+	done
+}
+
+mtu() { cat "/sys/class/net/$1/mtu" 2>/dev/null; }
+
+auto_mss() {
+	local d m mss=1460 ip
+	for d in $WAN; do
+		m=$(mtu "$d")
+		[ -n "$m" ] && [ $((m - 40)) -lt $mss ] && mss=$((m - 40))
+	done
+	for ip in $TARGETS; do
+		d=$(ip -4 route get "$ip" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+		m=$(mtu "$d")
+		[ -n "$m" ] && [ $((m - 40)) -lt $mss ] && mss=$((m - 40))
+	done
+	[ $mss -lt 536 ] && mss=536
+	echo $mss
+}
+
+loaded() { nft list table inet $TABLE >/dev/null 2>&1; }
+
+installed() {
+	grep -q '^nft_synproxy ' /proc/modules 2>/dev/null || modprobe nft_synproxy 2>/dev/null
+}
+
+# state <reason> [ports]: what status reports
+state() {
+	mkdir -p $RUN
+	printf 'REASON=%s\nPORTS="%s"\n' "$1" "$2" > $RUN/state
+}
+
+remove() {
+	loaded && nft delete table inet $TABLE
+	# put tcp_loose back only if this script took it away
+	[ -f $RUN/loose ] && { cat $RUN/loose > $LOOSE; rm -f $RUN/loose; }
+	state "$1"
+}
+
+apply() {
+	local v ports
+
+	. /lib/functions.sh
+	. /lib/functions/network.sh
+
+	MODE=$(uci -q get alphawrt.synproxy.mode)
+	case "$MODE" in auto|always|off) ;; *) MODE=auto ;; esac
+	[ "$MODE" = off ] && { remove off; return 0; }
+
+	RATE=$(num "$(uci -q get alphawrt.synproxy.rate)" 10 1 100000)
+	BURST=$(num "$(uci -q get alphawrt.synproxy.burst)" 50 1 100000)
+	HOLD=$(num "$(uci -q get alphawrt.synproxy.hold)" 600 30 86400)
+	WSCALE=$(num "$(uci -q get alphawrt.synproxy.wscale)" 7 0 14)
+
+	installed || { log "kmod-nft-synproxy is missing, port forwards are not protected"; remove no-kmod; return 0; }
+
+	parse
+	if [ -z "$SAME$MOVED" ]; then
+		if [ "$SKIPPED" -gt 0 ]; then remove skipped; else remove no-forwards; fi
+		return 0
+	fi
+
+	WAN=""
+	network_flush_cache
+	config_foreach zone_devices zone
+	WAN=$(for v in $WAN; do echo "$v"; done | sort -u | tr '\n' ' ')
+	# without the WAN device the rules can't tell the internet from the LAN;
+	# fw4 reloads, and runs this again, when the WAN comes up
+	[ -n "$WAN" ] || { remove no-wan; return 0; }
+
+	MSS=$(num "$(uci -q get alphawrt.synproxy.mss)" "$(auto_mss)" 536 1460)
+	ports=$(for v in $USED; do [ "${v%-*}" = "${v#*-}" ] && echo "${v%-*}" || echo "$v"; done | tr '\n' ' ')
+
+	if ! render | nft -f - 2>$RUN.err; then
+		log "could not load the table: $(head -n 3 $RUN.err | tr '\n' ' ')"
+		remove error
+		return 1
+	fi
+	rm -f $RUN.err
+
+	if [ "$(cat $LOOSE 2>/dev/null)" != 0 ]; then
+		mkdir -p $RUN
+		[ -f $RUN/loose ] || cat $LOOSE > $RUN/loose
+		echo 0 > $LOOSE
+	fi
+	state on "${ports% }"
+}
+
+# sum <column>: total of one /proc/net/stat/synproxy column over all CPUs
+sum() {
+	local total=0 v
+	for v in $(awk -v c="$1" 'NR > 1 { print $c }' /proc/net/stat/synproxy 2>/dev/null); do
+		total=$((total + 0x$v))
+	done
+	echo $total
+}
+
+counter() {
+	nft -j list counter inet $TABLE "$1" 2>/dev/null | jsonfilter -q -e '@.nftables[*].counter.packets'
+}
+
+status() {
+	local mode REASON=off PORTS="" p expires
+
+	. /usr/share/libubox/jshn.sh
+	mode=$(uci -q get alphawrt.synproxy.mode)
+	case "$mode" in auto|always|off) ;; *) mode=auto ;; esac
+	[ -f $RUN/state ] && . $RUN/state
+
+	json_init
+	json_add_string mode "$mode"
+	installed && json_add_boolean installed 1 || json_add_boolean installed 0
+	loaded || REASON=${REASON#on}
+	json_add_string state "${REASON:-off}"
+	json_add_array ports
+	for p in $PORTS; do json_add_string "" "$p"; done
+	json_close_array
+
+	if loaded; then
+		expires=$(nft -j list set inet $TABLE flood 2>/dev/null | jsonfilter -q -e '@.nftables[*].set.elem[*].elem.expires')
+		if [ "$mode" = always ] || [ -n "$expires" ]; then
+			json_add_boolean active 1
+		else
+			json_add_boolean active 0
+		fi
+		json_add_int expires "${expires:-0}"
+		json_add_int syns "$(counter syns)"
+		json_add_int proxied "$(counter proxied)"
+	else
+		json_add_boolean active 0
+	fi
+	# syncookies answered and handshakes completed since boot
+	json_add_int answered "$(sum 2)"
+	json_add_int completed "$(sum 4)"
+	json_dump
+}
+
+case "${1:-apply}" in
+apply|stop)
+	mkdir -p $RUN
+	exec 9>$RUN.lock
+	flock -x 9
+	if [ "$1" = stop ]; then remove off; else apply; fi
+	;;
+status) status ;;
+plan)
+	. /lib/functions.sh
+	log() { echo "skip: $*"; }
+	parse
+	echo "same:$SAME"
+	echo "moved:$MOVED"
+	;;
+render) render ;;
+*) echo "usage: $0 [apply|stop|status|plan|render]" >&2; exit 1 ;;
+esac

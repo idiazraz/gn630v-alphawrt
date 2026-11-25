@@ -48,6 +48,9 @@
 				"alphawrt-homelab": [
 					"status"
 				],
+				"alphawrt-synproxy": [
+					"status"
+				],
 				"alphawrt.fibre": [
 					"topology"
 				],
@@ -149,6 +152,9 @@
 					"set_service",
 					"set_ssh",
 					"wol"
+				],
+				"alphawrt-synproxy": [
+					"set"
 				],
 				"alphawrt-pihole": [
 					"set",

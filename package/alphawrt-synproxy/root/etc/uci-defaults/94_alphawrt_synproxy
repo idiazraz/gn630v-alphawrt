@@ -1,0 +1,20 @@
+#!/bin/sh
+# AlphaWRT: flood protection for port forwards (SYN proxy), automatic by
+# default. fw4 runs it after every start and reload through an include.
+
+[ -f /etc/config/alphawrt ] || touch /etc/config/alphawrt
+uci -q get alphawrt.synproxy >/dev/null || {
+	uci set alphawrt.synproxy=synproxy
+	uci set alphawrt.synproxy.mode=auto
+	uci commit alphawrt
+}
+
+uci -q get firewall.alphawrt_synproxy >/dev/null || {
+	uci set firewall.alphawrt_synproxy=include
+	uci set firewall.alphawrt_synproxy.type=script
+	uci set firewall.alphawrt_synproxy.path=/usr/share/alphawrt/synproxy.fw4
+	uci set firewall.alphawrt_synproxy.fw4_compatible=1
+	uci commit firewall
+}
+
+exit 0

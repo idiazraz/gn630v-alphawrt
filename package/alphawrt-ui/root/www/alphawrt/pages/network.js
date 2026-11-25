@@ -4,8 +4,8 @@
  * IPv6, local names and port forwards. Moved here from Devices, System and
  * Home lab.
  */
-import { h, icon, card, field, choice, toggle, modal, busy, toast, redraw } from '../lib/ui.js';
-import { uci, list, maybe } from '../lib/rpc.js';
+import { h, icon, card, badge, field, choice, toggle, modal, busy, toast, redraw, fmtTime } from '../lib/ui.js';
+import { uci, list, call, maybe } from '../lib/rpc.js';
 import { save } from '../lib/apply.js';
 
 const IP4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
@@ -24,6 +24,7 @@ export default {
 		await uci.load('network', 'dhcp', 'dnsproxy', 'firewall', 'alphawrt');
 		const bridge = uci.get('alphawrt', 'setup', 'mode') == 'bridge';
 		const ifaces = bridge ? [] : (await maybe('network.interface', 'dump')).interface || [];
+		const flood = bridge ? null : await maybe('alphawrt-synproxy', 'status', {}, null);
 		main.append(h('h1', { class: 'text-2xl font-bold' }, 'Network'),
 			h('div', { class: 'grid gap-4 lg:grid-cols-2 items-start' },
 				this.lan(),
@@ -31,7 +32,7 @@ export default {
 				this.dns(),
 				this.ipv6(bridge, ifaces),
 				this.names(bridge),
-				this.forwards(bridge)));
+				this.forwards(bridge, flood)));
 	},
 
 	/*
@@ -180,7 +181,7 @@ export default {
 			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
 	},
 
-	forwards(bridge) {
+	forwards(bridge, flood) {
 		if (bridge) return card('globe', 'Port forwards', null, ROUTER_ONLY());
 		const fwds = uci.sections('firewall', 'redirect').filter(r => (r.target || 'DNAT') == 'DNAT' && (r.src || 'wan') == 'wan');
 		const add = async () => {
@@ -198,7 +199,46 @@ export default {
 			h('div', { role: 'status', class: 'alert alert-soft alert-warning text-sm' }, icon('warn'),
 				'Needs a public IPv4 address. TIME home plans are behind CGNAT unless you ask TIME for a public IP; Unifi usually gives one.'),
 			this.listOf(fwds, r => `${r.name || 'Forward'}`, r => `${(list(r.proto).join('+') || 'tcp+udp').toUpperCase()} ${r.src_dport} → ${r.dest_ip}:${r.dest_port || r.src_dport}`, 'firewall', 'port forward'),
-			h('div', { class: 'card-actions justify-end' }, h('button', { class: 'btn btn-sm btn-primary', onclick: add }, 'Add'))));
+			h('div', { class: 'card-actions justify-end' }, h('button', { class: 'btn btn-sm btn-primary', onclick: add }, 'Add')),
+			this.flood(flood)));
+	},
+
+	/*
+	 * SYN flood protection for the TCP forwards above (alphawrt-synproxy):
+	 * during a flood, or always, the box answers new connections itself with
+	 * syncookies and passes only completed handshakes to the device. Hidden on
+	 * builds without the package.
+	 */
+	flood(st) {
+		if (!st?.mode) return null;
+		const p = st.ports || [], n = v => Number(v || 0).toLocaleString();
+		const ports = `${p.length > 1 ? 'ports' : 'port'} ${p.join(', ')}`, Ports = ports[0].toUpperCase() + ports.slice(1);
+		const [ level, word, text ] =
+			st.mode == 'off' ? [ 'off', 'Off', 'A flood of fake connection attempts against a forwarded port goes straight to your device.' ]
+			: !st.installed ? [ 'warn', 'Unavailable', 'This build lacks the kernel module for it. Port forwards work, without flood protection.' ]
+			: st.state == 'no-forwards' ? [ 'off', 'Nothing to guard', 'It covers TCP port forwards, and there are none yet.' ]
+			: st.state == 'skipped' ? [ 'off', 'Left to the firewall', 'Your TCP port forwards are limited by source, schedule or a block rule, so the firewall handles them as before. The system log says which.' ]
+			: st.state == 'no-wan' ? [ 'off', 'Waiting', 'It starts once the internet connection is up.' ]
+			: st.state != 'on' ? [ 'bad', 'Not running', 'Its rules didn’t load; the system log says why. Port forwards still work.' ]
+			: st.mode == 'auto' && st.active ? [ 'warn', 'Flood', `A SYN flood is hitting ${ports}. The box answers new connections itself, so only real clients reach your device. Back to normal ${fmtTime(st.expires)} after it stops.` ]
+			: st.mode == 'auto' ? [ 'ok', 'Watching', `${Ports}: if a flood of fake connection attempts starts, the box answers new connections itself and only real clients reach your device.` ]
+			: [ 'ok', 'On', `${Ports}: the box answers every new connection itself and only real clients reach your device.` ];
+		/* applies on change, like the Home lab switches: the card already has its primary button */
+		const mode = choice('Mode', [ [ 'auto', 'Automatic (recommended)' ], [ 'always', 'Always on' ], [ 'off', 'Off' ] ], st.mode);
+		mode.input.addEventListener('change', async () => {
+			mode.input.disabled = true;
+			const r = await call('alphawrt-synproxy', 'set', { mode: mode.input.value }).catch(e => ({ error: e.message }));
+			mode.input.disabled = false;
+			if (r.error) { mode.input.value = st.mode; return toast('bad', r.error); }
+			toast('ok', `Flood protection: ${mode.input.selectedOptions[0].textContent.replace(/ \(.*\)$/, '').toLowerCase()}.`);
+			redraw();
+		});
+		return h('div', { class: 'space-y-2 border-t border-base-300 pt-4' },
+			h('div', { class: 'flex items-center gap-2' }, h('span', { class: 'font-medium flex-1' }, 'Flood protection'), badge(level, word)),
+			h('p', { class: 'text-sm opacity-80' }, text),
+			st.answered > 0 && h('p', { class: 'text-sm opacity-70' }, `Since the box started: ${n(st.answered)} connection attempts answered, ${n(st.completed)} completed by real clients.`),
+			mode,
+			h('p', { class: 'text-sm opacity-70' }, 'Automatic turns on within a second of a flood and off after 10 quiet minutes. Always on also covers that first second, but those connections skip hardware offload, and Windows browsers may download a little slower through it.'));
 	},
 
 	names(bridge) {

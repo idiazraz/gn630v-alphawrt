@@ -90,6 +90,7 @@ Two web interfaces, one login. Switch with the link at the top right.
 * **Real board support**, not a generic EN7523 build: GN630V partition map, MAC from the bootloader env, MT7916 calibration from flash, MT7530 switch, LEDs, and the FORESEE SPI-NAND driver backported from mainline.
 * **Wi-Fi that keeps working.** On first boot AlphaWRT reuses the network names, passwords and country from the stock settings, now as WPA2/WPA3. Each band gets its stock MAC, and 5 GHz runs at 160 MHz.
 * **Encrypted DNS by default.** dnsmasq serves the LAN and forwards to [dnsproxy](https://github.com/AdguardTeam/dnsproxy): DNS-over-QUIC and DNS-over-HTTPS (HTTP/3) upstreams, DNS-over-TLS fallback. To go back to the ISP's DNS, see the commands at the top of `/etc/uci-defaults/95_alphawrt_dns`.
+* **Flood protection for port forwards.** During a SYN flood on a forwarded port, the box answers connection attempts itself (SYN cookies) and passes only real clients to your device. Automatic by default; see [docs/FLOOD-PROTECTION.md](docs/FLOOD-PROTECTION.md).
 * **Two web interfaces.** Switch between them with the link at the top right.
   * **Basic** (the default): Home, Wi-Fi, Devices and System pages, like the stock firmware's.
   * **Advanced**: the full OpenWrt interface (LuCI).
