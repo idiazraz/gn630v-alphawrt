@@ -1,0 +1,61 @@
+From e5ddc9501d0541c6ab14d3a13bb8625894b955ba Mon Sep 17 00:00:00 2001
+From: AlphaWRT <build@alphawrt.invalid>
+Date: Wed, 25 Nov 2026 11:03:46 +0300
+Subject: [PATCH] kernel: netfilter: add kmod-nft-synproxy
+
+Package the nf_tables SYNPROXY expression (nft_synproxy) with its core
+(nf_synproxy_core). The statement answers TCP SYNs with syncookies and
+opens the connection to the server only after the client completes the
+handshake, so a SYN flood against a port forward stays on the router
+instead of filling the LAN server's backlog. fw4's syn_flood limit only
+covers the input chain, never DNAT-forwarded traffic.
+
+kmod-nf-conntrack already sets NETFILTER_ADVANCED, which NFT_SYNPROXY
+depends on; SYN_COOKIES is on in the generic config.
+---
+ include/netfilter.mk                      |  3 +++
+ package/kernel/linux/modules/netfilter.mk | 17 +++++++++++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/include/netfilter.mk b/include/netfilter.mk
+index c38fb79..c71f55d 100644
+--- a/include/netfilter.mk
++++ b/include/netfilter.mk
+@@ -333,6 +333,9 @@ $(eval $(if $(NF_KMOD),$(call nf_add,NFT_XFRM,CONFIG_NFT_XFRM, $(P_XT)nft_xfrm),
+ 
+ $(eval $(if $(NF_KMOD),$(call nf_add,NFT_CONNLIMIT,CONFIG_NFT_CONNLIMIT, $(P_XT)nft_connlimit),))
+ 
++$(eval $(if $(NF_KMOD),$(call nf_add,NFT_SYNPROXY,CONFIG_NETFILTER_SYNPROXY, $(P_XT)nf_synproxy_core),))
++$(eval $(if $(NF_KMOD),$(call nf_add,NFT_SYNPROXY,CONFIG_NFT_SYNPROXY, $(P_XT)nft_synproxy),))
++
+ # userland only
+ IPT_BUILTIN += $(NF_IPT-y) $(NF_IPT-m)
+ IPT_BUILTIN += $(IPT_CORE-y) $(IPT_CORE-m)
+diff --git a/package/kernel/linux/modules/netfilter.mk b/package/kernel/linux/modules/netfilter.mk
+index 0134e81..99c2791 100644
+--- a/package/kernel/linux/modules/netfilter.mk
++++ b/package/kernel/linux/modules/netfilter.mk
+@@ -1492,3 +1492,20 @@ define KernelPackage/nft-connlimit
+ endef
+ 
+ $(eval $(call KernelPackage,nft-connlimit))
++
++define KernelPackage/nft-synproxy
++  SUBMENU:=$(NF_MENU)
++  TITLE:=Netfilter nf_tables SYNPROXY support
++  DEPENDS:=+kmod-nft-core +kmod-nf-conntrack
++  FILES:=$(foreach mod,$(NFT_SYNPROXY-m),$(LINUX_DIR)/net/$(mod).ko)
++  AUTOLOAD:=$(call AutoProbe,$(notdir $(NFT_SYNPROXY-m)))
++  KCONFIG:=$(KCONFIG_NFT_SYNPROXY)
++endef
++
++define KernelPackage/nft-synproxy/description
++ Kernel module for the nftables "synproxy" statement: answers TCP SYNs
++ with syncookies and opens the connection to the server only once the
++ client has completed the handshake, so SYN floods stay on the router.
++endef
++
++$(eval $(call KernelPackage,nft-synproxy))
+-- 
+2.49.0.windows.1
+

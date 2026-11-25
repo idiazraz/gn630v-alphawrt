@@ -1,0 +1,4 @@
+# fw4 sources this after every start and reload (firewall include
+# 'alphawrt_synproxy'). The real script runs in its own process, away from
+# fw4's config() guard for sourced includes.
+exec /usr/libexec/alphawrt/synproxy apply

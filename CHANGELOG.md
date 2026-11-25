@@ -13,8 +13,10 @@ How this file is kept:
 
 ### Added
 - **Half-bridge mode** in Quick Setup ("Fibre and your router"): the box does the internet login (PPPoE) and hands the public IP address to your own router (UniFi, MikroTik…) on the LAN port you pick, over DHCP. No double NAT, and you don't lose the box: IPTV, voice, Wi-Fi and its other ports keep working. Your router also gets an IPv6 prefix. When the provider gives a new address, the box restarts that port so your router picks it up.
+- **Flood protection for port forwards.** A flood of fake connection attempts (a SYN flood) on a port you forward could fill up the device behind it, and the box's own flood guard only covered the box itself. Now, when a flood hits a forwarded port, the box answers the connection attempts itself and only lets real clients through to your device. It turns on by itself within a second and turns off 10 minutes after the flood stops; normal traffic keeps the usual fast path. Its state and counts are on the Network page, under Port forwards, where you can also set it to always on or off. It covers IPv4 TCP forwards. See [docs/FLOOD-PROTECTION.md](docs/FLOOD-PROTECTION.md).
 
 ### Changed
+- **While flood protection is on, a connection that stays silent for over 2 hours ends.** This applies to connections through the box with no keepalives, such as an idle SSH session; they reconnect. Set flood protection to Off to go back to the old behaviour.
 - **Quick Setup is now one page.** After the first-time setup, Quick Setup shows every setting together with one Save, instead of walking through screen by screen. It no longer asks for a password: first-time setup asks only while the box has none.
 
 ### Fixed

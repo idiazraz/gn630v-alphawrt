@@ -1,0 +1,45 @@
+#!/bin/sh
+# rpcd backend for the Simple UI's flood protection (Network > Port forwards).
+#   status  mode, covered ports, whether the SYN proxy is on right now and
+#           its counters (see /usr/libexec/alphawrt/synproxy)
+#   set     {"mode": "auto"|"always"|"off"}: saves it and applies it at once
+
+. /usr/share/libubox/jshn.sh
+
+SYNPROXY=/usr/libexec/alphawrt/synproxy
+
+fail() {
+	json_init
+	json_add_string error "$1"
+	json_dump
+	exit 0
+}
+
+set_mode() {
+	local mode
+
+	json_load "$(cat)"
+	json_get_var mode mode
+	case "$mode" in
+	auto|always|off) ;;
+	*) fail "mode must be auto, always or off" ;;
+	esac
+	[ -f /etc/config/alphawrt ] || touch /etc/config/alphawrt
+	uci -q get alphawrt.synproxy >/dev/null || uci set alphawrt.synproxy=synproxy
+	uci set alphawrt.synproxy.mode="$mode"
+	uci commit alphawrt
+	$SYNPROXY apply >/dev/null 2>&1
+	$SYNPROXY status
+}
+
+case "$1" in
+list)
+	echo '{ "status": {}, "set": { "mode": "" } }'
+	;;
+call)
+	case "$2" in
+	status) $SYNPROXY status ;;
+	set) set_mode ;;
+	esac
+	;;
+esac
