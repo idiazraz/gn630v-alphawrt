@@ -1,6 +1,6 @@
 /*
  * Quick Setup, one question per screen (the layout of ui-draft/setup.html):
- *   welcome -> password -> country -> how you'll use it -> provider -> fibre identity
+ *   welcome -> password (only while there is none) -> country -> how you'll use it -> provider -> fibre identity
  *   -> Internet login / your router -> Wi-Fi -> plug in the fibre -> review.
  * Port of luci-app-alphawrt's alphawrt/quicksetup.js: the same uci writes,
  * the password and fibre identity applied at their own steps (Finish saves
@@ -17,11 +17,15 @@ import line from '../lib/line.js';
 const IDENTITY = [ 'serial', 'password', 'equipment_id', 'hardware_version', 'software_version_0', 'software_version_1', 'omcc_version', 'traffic_management_option' ];
 /* fields an ONT-model preset fills; serial and PLOAM password always come from the user */
 const ONT_FIELDS = [ 'equipment_id', 'hardware_version', 'software_version_0', 'software_version_1', 'traffic_management_option' ];
-const LAN_PORTS = [ 'lan1', 'lan2', 'lan3', 'lan4' ];
-const PORTS = LAN_PORTS.map(p => [ p, p.replace(/^lan/, 'LAN ') ]);
+/* the board's LAN ports, read from its devices at load (the SK-G7220 Black has lan1-lan5) */
+let LAN_PORTS = [ 'lan1', 'lan2', 'lan3', 'lan4' ];
+const PORT_LABEL = p => [ p, p.replace(/^lan/, 'LAN ') ];
+let PORTS = LAN_PORTS.map(PORT_LABEL);
 /* combo mode can give this port to the ISP's IPTV box (br-iptv), as stock does for Unifi */
 const IPTV_PORT = 'lan4';
-const MODES = { combo: 'Fibre and router (combo)', bridge: 'Fibre only (bridge)', router: 'Router only' };
+const MODES = { combo: 'Fibre and router (combo)', halfbridge: 'Fibre and your router (half-bridge)', bridge: 'Fibre only (bridge)', router: 'Router only' };
+/* the modes where this box dials the Internet over the fibre */
+const routed = () => d.mode == 'combo' || d.mode == 'halfbridge';
 /* boards with a WAN port on the fibre's SerDes: Router only uses that port, after a restart */
 const wanPort = () => d.mode == 'router' && wanSwitch.supported;
 /* the countries in wireless-regdb, which sets the channels and power Wi-Fi may use */
@@ -47,7 +51,7 @@ function normalizeSerial(v) {
 }
 
 let wanSwitch = {};
-let d, presets, onts, phStatus, phPresets, first, cur, err, fibre, root;
+let d, presets, onts, phStatus, phPresets, first, noPassword, cur, err, fibre, root;
 
 const preset = () => presets.find(p => p.id == d.isp);
 /* bridge mode: the main router's address next to the box's 192.168.100.1 (issues/0008) */
@@ -103,15 +107,15 @@ const STEPS = {
 
 	password: {
 		rail: 'Password',
+		/* only while the box has no password: never ask again once one is set */
+		skip: () => !noPassword,
 		title: 'Set a password for this box',
-		lead: () => first ? 'It protects these pages, Advanced settings and SSH (user “root”). Right now anyone on your network could change things.'
-			: 'Leave both empty to keep the current password.',
+		lead: () => 'It protects these pages, Advanced settings and SSH (user “root”). Right now anyone on your network could change things.',
 		body: () => [
 			text('New password', 'pw1', { password: true, autocomplete: 'new-password', hint: 'At least 8 characters.' }),
 			text('Type it again', 'pw2', { password: true, autocomplete: 'new-password' })
 		],
 		async check() {
-			if (!d.pw1 && !first) return;
 			if ((d.pw1 || '').length < 8) return 'The password needs at least 8 characters.';
 			if (d.pw1 != d.pw2) return 'The two passwords don’t match.';
 			const r = await call('luci', 'setPassword', { username: 'root', password: d.pw1 }).catch(() => ({}));
@@ -137,6 +141,7 @@ const STEPS = {
 		body: () => h('div', { class: 'space-y-3' },
 			card('mode', 'combo', MODES.combo, 'The fibre goes into this box and it does everything: Internet login, Wi-Fi and your home network. It replaces your provider’s box.',
 				h('span', { class: 'badge badge-soft badge-primary badge-sm' }, 'Most people'), modeVlan),
+			card('mode', 'halfbridge', MODES.halfbridge, 'This box does the Internet login, then hands the public IP address to your own router (UniFi, MikroTik…) on a LAN port. Your router gets the real address with no double NAT; this box keeps fibre, IPTV, voice and its own Wi-Fi.', null, modeVlan),
 			card('mode', 'bridge', MODES.bridge, 'This box only converts the fibre. Your own router (ASUS, TP-Link, Deco…) plugs into a LAN port and does the Internet login and Wi-Fi.', null, modeVlan),
 			card('mode', 'router', MODES.router, wanSwitch.supported
 				? 'Keep your provider’s fibre box. Plug it into the 2.5G WAN port, and this box works as your router. It restarts when setup finishes, and the fibre port is off in this mode.'
@@ -267,6 +272,8 @@ const STEPS = {
 					note('alert-info', 'info', 'Your router does the Internet login (PPPoE) with the username and password from your provider.')
 				];
 			return [
+				d.mode == 'halfbridge' && [ pick('Plug your router’s WAN port into', 'port', PORTS),
+					h('p', { class: 'text-xs opacity-70 mt-1 mb-3' }, 'Not the port your computer is on. Set your router’s WAN to DHCP: it gets the public address, and gets a new one by itself when the address changes.') ],
 				d.mode == 'router' && !wanPort() && [ pick('Plug your provider’s fibre box into', 'port', PORTS),
 					h('p', { class: 'text-xs opacity-70 mt-1 mb-3' }, 'Not the port your computer is on.') ],
 				!line.fibre() && h('p', { class: 'text-sm opacity-70 mb-3' }, 'Your provider’s fibre box or modem goes into the WAN port.'),
@@ -275,7 +282,7 @@ const STEPS = {
 					text('PPPoE username', 'username', { placeholder: 'name@unifi', autocomplete: 'username', hint: 'From your provider’s welcome email or self-care portal.' }),
 					text('PPPoE password', 'ppp_password', { password: true, autocomplete: 'current-password', hint: 'Capital letters matter.' })
 				],
-				d.mode == 'combo' && d.iptv_vlan && h('div', { class: 'mt-4' }, sw('IPTV box on LAN 4', 'iptv',
+				routed() && d.iptv_vlan && h('div', { class: 'mt-4' }, sw('IPTV box on LAN 4', 'iptv',
 					`For a TV box. LAN 4 then carries the provider’s IPTV VLAN (${d.iptv_vlan}) only; the other ports and Wi-Fi stay on the Internet. Leave off if you have no TV box.`)),
 				h('details', { class: 'collapse collapse-arrow bg-base-100 border border-base-300 mt-4' },
 					h('summary', { class: 'collapse-title text-sm font-medium' }, `VLAN: ${d.vlan || 'none'}${p.vlan && d.vlan == String(p.vlan) ? ` (from ${p.name})` : ''}`),
@@ -290,6 +297,8 @@ const STEPS = {
 			const v = +d.vlan || 0;
 			if (d.vlan && !(v >= 1 && v <= 4094)) return 'The VLAN is a number from 1 to 4094, or empty.';
 			if (d.mode != 'bridge' && d.proto == 'pppoe' && !d.username) return 'Enter the PPPoE username.';
+			if (d.mode == 'halfbridge' && d.proto != 'pppoe') return 'Half-bridge needs the PPPoE login.';
+			if (d.mode == 'halfbridge' && d.iptv && d.iptv_vlan && d.port == IPTV_PORT) return 'LAN 4 is the IPTV port. Pick another port for your router.';
 		}
 	},
 
@@ -350,8 +359,8 @@ const STEPS = {
 					line.fibre() && [ 'Use', MODES[d.mode] ],
 					[ 'Provider', p?.name || '—' ],
 					d.mode != 'router' && [ 'Serial number', d.serial || '—' ],
-					wanPort() ? [ 'Provider’s box on', '2.5G WAN port (restarts when you finish)' ] : d.mode != 'combo' && [ d.mode == 'bridge' ? 'Your router on' : 'Provider’s box on', portName(d.port) ],
-					d.mode == 'combo' && d.iptv && [ 'IPTV', `LAN 4 · VLAN ${d.iptv_vlan}` ],
+					wanPort() ? [ 'Provider’s box on', '2.5G WAN port (restarts when you finish)' ] : d.mode != 'combo' && [ d.mode == 'router' ? 'Provider’s box on' : 'Your router on', portName(d.port) ],
+					routed() && d.iptv && [ 'IPTV', `LAN 4 · VLAN ${d.iptv_vlan}` ],
 					d.mode != 'bridge' && [ 'Internet', d.proto == 'pppoe' ? `PPPoE as ${d.username}` : 'Automatic' ],
 					[ 'VLAN', d.mode == 'bridge' && d.trunk ? 'All, passed to your router' : d.vlan || 'none' ],
 					wifiRadios().length && [ 'Country', countryName(d.country) ],
@@ -420,7 +429,7 @@ function pollFibre() {
 
 /* --- writing the configuration (quicksetup.js writeNetwork / apply) --- */
 function networkOps() {
-	const ops = [], vlan = +d.vlan || 0, iptv = d.mode == 'combo' && d.iptv && +d.iptv_vlan;
+	const ops = [], vlan = +d.vlan || 0, iptv = routed() && d.iptv && +d.iptv_vlan;
 	const devices = uci.sections('network', 'device'), has = s => !!uci.get('network', s);
 	const setOrAdd = (config, section, type, values) => ops.push(uci.get(config, section) ? [ 'set', config, section, values ] : [ 'add', config, type, values, section ]);
 
@@ -448,7 +457,7 @@ function networkOps() {
 
 	/* LAN bridge: every port except the one this mode takes */
 	const lanBr = devices.find(s => s.name == 'br-lan');
-	if (lanBr) ops.push([ 'set', 'network', lanBr['.name'], { ports: LAN_PORTS.filter(p => d.mode == 'combo' ? !(iptv && p == IPTV_PORT) : wanPort() || p != d.port) } ]);
+	if (lanBr) ops.push([ 'set', 'network', lanBr['.name'], { ports: LAN_PORTS.filter(p => !(iptv && p == IPTV_PORT) && (d.mode == 'combo' || wanPort() || p != d.port)) } ]);
 
 	if (d.mode == 'bridge') {
 		/* trunk: pon0 itself passes every ISP VLAN tagged; else only the Internet VLAN, untagged */
@@ -475,6 +484,33 @@ function networkOps() {
 		for (const o of [ 'username', 'password', 'ipv6' ]) ops.push([ 'unset', 'network', 'wan', o ]);
 	setOrAdd('network', 'wan6', 'interface', { proto: 'dhcpv6', device: '@wan' });
 	ops.push([ 'unset', 'network', 'wan6', 'disabled' ]);
+
+	/* half-bridge: the router's port. 32-alphawrt-halfbridge gives it the PPPoE
+	 * address over DHCP and SNATs the box's own traffic, so the wan zone's
+	 * masquerade is off. IPv6: a /64 on the port, and odhcpd delegates what is
+	 * left of the provider's prefix to the router (DHCPv6-PD). */
+	const hbZone = uci.sections('firewall', 'zone').find(z => z.name == 'halfbridge'), wanZone = uci.sections('firewall', 'zone').find(z => z.name == 'wan');
+	const hbRules = [ ...uci.sections('firewall', 'forwarding').filter(f => f.src == 'halfbridge' && f.dest == 'wan'),
+		...uci.sections('firewall', 'rule').filter(r => r.src == 'wan' && r.dest == 'halfbridge') ];
+	if (d.mode == 'halfbridge') {
+		setOrAdd('network', 'halfbridge', 'interface', { proto: 'static', device: d.port, ip6assign: '64' });
+		setOrAdd('dhcp', 'halfbridge', 'dhcp', { interface: 'halfbridge', dhcpv4: 'disabled', dhcpv6: 'server', ra: 'server' });
+		const zv = { name: 'halfbridge', network: [ 'halfbridge' ], input: 'ACCEPT', output: 'ACCEPT', forward: 'REJECT' };
+		ops.push(hbZone ? [ 'set', 'firewall', hbZone['.name'], zv ] : [ 'add', 'firewall', 'zone', zv ]);
+		if (!hbRules.length) {
+			ops.push([ 'add', 'firewall', 'forwarding', { src: 'halfbridge', dest: 'wan' } ]);
+			/* the router is the firewall for its address and prefix */
+			ops.push([ 'add', 'firewall', 'rule', { name: 'Allow-Halfbridge-Router', src: 'wan', dest: 'halfbridge', target: 'ACCEPT' } ]);
+		}
+		if (wanZone) ops.push([ 'set', 'firewall', wanZone['.name'], { masq: '0' } ]);
+	}
+	else {
+		if (has('halfbridge')) ops.push([ 'remove', 'network', 'halfbridge' ]);
+		if (uci.get('dhcp', 'halfbridge')) ops.push([ 'remove', 'dhcp', 'halfbridge' ]);
+		if (hbZone) ops.push([ 'remove', 'firewall', hbZone['.name'] ]);
+		for (const x of hbRules) ops.push([ 'remove', 'firewall', x['.name'] ]);
+		if (hbZone && wanZone) ops.push([ 'set', 'firewall', wanZone['.name'], { masq: '1' } ]);
+	}
 	return ops;
 }
 
@@ -555,8 +591,52 @@ async function finish() {
 }
 
 /* --- drawing --- */
+/* Quick Setup (setup already done): every section on one page, one Save.
+ * First-time setup walks the same sections one screen at a time. */
+const PAGE_SKIP = [ 'welcome', 'password', 'fibre', 'finish' ];
+const sections = () => visible().filter(id => !PAGE_SKIP.includes(id));
+
+function drawPage() {
+	root.replaceChildren(h('div', { class: 'space-y-6' },
+		h('div', {},
+			h('h1', { class: 'text-2xl font-bold leading-tight' }, 'Quick Setup'),
+			h('p', { class: 'mt-2 opacity-80' }, 'Change what you need, then save. Everything is applied together.')),
+		sections().map(id => {
+			const s = STEPS[id];
+			return h('section', { id: `setup-${id}`, class: 'card bg-base-100 border border-base-300' }, h('div', { class: 'card-body p-5' },
+				h('h2', { class: 'text-lg font-semibold' }, val(s.title)),
+				val(s.lead) && h('p', { class: 'opacity-80' }, val(s.lead)),
+				h('div', {}, s.body()),
+				err && cur == id && h('div', { role: 'alert', class: 'alert alert-soft alert-error text-sm mt-2' }, icon('bad', 'size-5'), err)));
+		}),
+		d.country == 'MY' && sw('Malaysian time zone (UTC+8)', 'tz'),
+		note('alert-info', 'info', `Saving applies everything with a safety net: if this page can’t reach the box afterwards, the old settings come back by themselves within ${SETUP_TIMEOUT} seconds.`),
+		h('div', { class: 'sticky bottom-16 lg:bottom-0 lg:static -mx-4 px-4 py-3 bg-base-200 lg:bg-transparent lg:mx-0 lg:px-0 flex lg:justify-end' },
+			h('button', { type: 'button', class: 'btn btn-primary flex-1 lg:flex-none lg:px-8', onclick: savePage }, 'Save and apply'))));
+}
+
+async function savePage(ev) {
+	const btn = ev.currentTarget;
+	btn.disabled = true;
+	err = null;
+	for (const id of sections()) {
+		err = (await STEPS[id].check?.()) || null;
+		if (err) {
+			cur = id;
+			btn.disabled = false;
+			draw();
+			return document.getElementById(`setup-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		}
+	}
+	err = (await STEPS.finish.check?.()) || null;
+	btn.disabled = false;
+	if (err) return draw();
+	finish();
+}
+
 function draw() {
 	if (!root?.isConnected) return;
+	if (!first && cur != 'done') return drawPage();
 	if (cur == 'done')
 		return root.replaceChildren(h('div', { class: 'text-center py-12' },
 			h('span', { class: 'inline-grid place-items-center size-20 rounded-full bg-base-100 text-success' }, icon('ok', 'size-10')),
@@ -571,7 +651,7 @@ function draw() {
 	root.replaceChildren(h('div', {},
 		h('div', { class: 'flex items-center gap-3 mb-6' },
 			h('progress', { class: 'progress progress-primary flex-1', value: i, max: n }),
-			h('span', { class: 'text-sm opacity-70 whitespace-nowrap' }, i ? `Step ${i} of ${n} · ${val(s.rail)}` : 'Quick Setup')),
+			h('span', { class: 'text-sm opacity-70 whitespace-nowrap' }, i ? `Step ${i} of ${n} · ${val(s.rail)}` : 'First-time setup')),
 		s.title && h('h1', { class: 'text-2xl font-bold leading-tight' }, val(s.title)),
 		val(s.lead) && h('p', { class: 'mt-2 mb-4 opacity-80' }, val(s.lead)),
 		h('div', { class: s.title ? 'mt-2' : '' }, s.body()),
@@ -598,7 +678,7 @@ async function go(delta, ev) {
 
 /* first run only: mark setup done without changing anything else */
 async function skip() {
-	if (!await modal('Skip Quick Setup?', h('p', {}, 'The box keeps its current settings. You can run Quick Setup any time from the top of Home.'),
+	if (!await modal('Skip setup?', h('p', {}, 'The box keeps its current settings. You can change anything later in Quick Setup, at the top of Home.'),
 		[ [ 'Cancel', 'btn-ghost', false ], [ 'Skip', 'btn-primary', true ] ])) return;
 	if (await save([ [ 'set', 'alphawrt', 'setup', { done: '1' } ] ], { what: 'Saving' })) location.hash = '#/home';
 }
@@ -612,7 +692,12 @@ export default {
 			maybe('alphawrt-pihole', 'status', {}, null),
 			maybe('alphawrt-pihole', 'presets', {}, { presets: [] }),
 			maybe('alphawrt', 'wan_mode'),
-			uci.load('alphawrt', 'firewall', 'network', 'omci', 'xpon', 'system', 'wireless', 'pihole')
+			maybe('luci-rpc', 'getNetworkDevices').then(devs => {
+				const lan = Object.keys(devs || {}).filter(n => /^lan\d+$/.test(n)).sort((a, b) => a.slice(3) - b.slice(3));
+				if (lan.length) LAN_PORTS = lan;
+				PORTS = LAN_PORTS.map(PORT_LABEL);
+			}),
+			uci.load('alphawrt', 'dhcp', 'firewall', 'network', 'omci', 'xpon', 'system', 'wireless', 'pihole')
 		]);
 		wanSwitch = ws;
 		presets = pr.presets || [];
@@ -620,6 +705,10 @@ export default {
 		phStatus = phSt || null;
 		phPresets = phPr.presets || [];
 		first = uci.get('alphawrt', 'setup', 'done') != '1';
+		/* an empty-password login only works while root has no password */
+		const probe = await call('session', 'login', { username: 'root', password: '' }, '00000000000000000000000000000000').catch(() => null);
+		noPassword = !!probe?.ubus_rpc_session;
+		if (noPassword) call('session', 'destroy', {}, probe.ubus_rpc_session).catch(() => {});
 		const [ mode, port ] = line.mode(), wan = uci.get('network', 'wan', 'device') || '', m = /^(pon0|wan|lan\d)(?:\.(\d+))?$/.exec(wan);
 
 		/* each agent reads its own file: omci-agent omci, xpon-agent xpon */
@@ -662,7 +751,7 @@ export default {
 		cur = 'welcome';
 		err = null;
 		fibre = { stage: -1, saved: d.serial ? JSON.stringify(identityArgs()) : null };
-		root = h('div', { class: 'mx-auto max-w-xl' });
+		root = h('div', { class: first ? 'mx-auto max-w-xl' : 'mx-auto max-w-3xl' });
 		main.append(root);
 		draw();
 	}

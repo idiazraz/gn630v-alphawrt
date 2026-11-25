@@ -20,6 +20,7 @@
 				"luci-rpc": [
 					"getDHCPLeases",
 					"getHostHints",
+					"getNetworkDevices",
 					"getWirelessDevices"
 				],
 				"network.device": [

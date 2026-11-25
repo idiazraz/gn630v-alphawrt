@@ -62,6 +62,8 @@ export default {
 		if (!mode)
 			mode = br ? 'bridge' : lan(wan) || wan == 'wan' ? 'router' : 'combo';
 
+		if (mode == 'halfbridge')
+			return [ mode, uci.get('network', 'halfbridge', 'device') || null ];
 		return [ mode, br ? list(br.ports).filter(lan)[0] : lan(wan) || wan == 'wan' ? wan : null ];
 	},
 

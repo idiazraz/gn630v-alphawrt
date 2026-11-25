@@ -39,8 +39,10 @@ First bring-up of the SR1041Y. It has not had a tagged release yet: everything b
 - **Advanced menu** grouped into Status, Network, Wi-Fi and VPN. One login works for both the Simple UI and Advanced.
 - **Home** names the encrypted DNS servers ("AdGuard (no blocking), Cloudflare"), since "AdGuard" read like an ad blocker.
 - **Wi-Fi page** points printers and older devices to WPA2 only.
+- **Quick Setup is now one page.** After the first-time setup, Quick Setup shows every setting together with one Save, instead of walking through screen by screen. It no longer asks for a password: first-time setup asks only while the box has none.
 
 ### Fixed
+- **The web pages open over https:// again.** The box makes its own certificate, so the browser warns once that it is self-signed; http:// still works without the warning.
 - **Internet comes up after a reboot on Unifi lines that needed the OLT profile switched by hand.** When the fibre registers but the provider doesn't answer the internet login (PPPoE) within a minute, the box restarts the fibre link once by itself ([#8](https://github.com/idiazraz/gn630v-alphawrt/issues/8)).
 - **IPv6 on Unifi (TM) and other PPPoE lines:** turning on IPv6 now asks the provider through a separate DHCPv6 client, which Unifi answers, instead of PPPoE's built-in way, which got no IPv6 on Unifi. Turn IPv6 off and on again on the Network page, or rerun Quick Setup, to switch an existing box over.
 - **System log filled with Pi-hole config errors** while the built-in Pi-hole was off and had never been turned on (for example when you use your own Pi-hole server). The status check no longer asks Pi-hole for its settings before it has any.
