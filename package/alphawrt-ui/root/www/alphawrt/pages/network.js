@@ -217,6 +217,7 @@ export default {
 			st.mode == 'off' ? [ 'off', 'Off', 'A flood of fake connection attempts against a forwarded port goes straight to your device.' ]
 			: !st.installed ? [ 'warn', 'Unavailable', 'This build lacks the kernel module for it. Port forwards work, without flood protection.' ]
 			: st.state == 'no-forwards' ? [ 'off', 'Nothing to guard', 'It covers TCP port forwards, and there are none yet.' ]
+			: st.state == 'skipped' ? [ 'off', 'Left to the firewall', 'Your TCP port forwards are limited by source, schedule or a block rule, so the firewall handles them as before. The system log says which.' ]
 			: st.state == 'no-wan' ? [ 'off', 'Waiting', 'It starts once the internet connection is up.' ]
 			: st.state != 'on' ? [ 'bad', 'Not running', 'Its rules didn’t load; the system log says why. Port forwards still work.' ]
 			: st.mode == 'auto' && st.active ? [ 'warn', 'Flood', `A SYN flood is hitting ${ports}. The box answers new connections itself, so only real clients reach your device. Back to normal ${fmtTime(st.expires)} after it stops.` ]

@@ -49,4 +49,15 @@ define Package/alphawrt-synproxy/postinst
 [ -n "$${IPKG_INSTROOT}" ] || { /etc/init.d/rpcd reload; fw4 -q reload; }
 endef
 
+# fw4 never removes a table it didn't make: take it down, give tcp_loose
+# back, and drop the include before the files go
+define Package/alphawrt-synproxy/prerm
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] || {
+	/usr/libexec/alphawrt/synproxy stop
+	uci -q delete firewall.alphawrt_synproxy && uci commit firewall
+}
+exit 0
+endef
+
 $(eval $(call BuildPackage,alphawrt-synproxy))

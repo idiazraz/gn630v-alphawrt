@@ -7,7 +7,8 @@
 #                                                                    +-- lan 192.168.1.50
 #
 # rtr loads an fw4-like ruleset (DNAT 443 and 8443->443 to srv, reflection
-# for the LAN, input/forward policy drop, fw4's input-only syn_flood) plus
+# for the LAN, input/forward policy drop, fw4's input-only syn_flood, its
+# drop of invalid packets out to the masqueraded wan) plus
 # the table `synproxy render` prints, then the client tests the forwards
 # with and without a spoofed SYN flood.
 #
@@ -39,6 +40,7 @@ cookies() { # completed synproxy handshakes, all CPUs (hex columns)
 	X rtr sh -c 'n=0; for v in $(awk "NR > 1 { print \$4 }" /proc/net/stat/synproxy 2>/dev/null); do n=$((n + 0x$v)); done; echo $n'
 }
 flooded() { X rtr nft list set inet alphawrt_synproxy flood | grep -q 'elements'; }
+halfopen() { X srv ss -Htan state syn-recv | wc -l; }
 
 cleanup() {
 	for n in cli rtr srv lan; do ip netns del $n 2>/dev/null; done
@@ -103,6 +105,20 @@ table inet fw4 {
 		limit rate 25/second burst 50 packets return
 		drop
 	}
+	# wan is masqueraded, so fw4 drops invalid packets on their way out to it
+	chain output {
+		type filter hook output priority filter; policy accept;
+		oif "lo" accept
+		ct state vmap { established : accept, related : accept }
+		oifname "w0" jump output_wan
+	}
+	chain output_wan {
+		jump accept_to_wan
+	}
+	chain accept_to_wan {
+		meta nfproto ipv4 oifname "w0" ct state invalid counter drop comment "!fw4: Prevent NAT leakage"
+		oifname "w0" counter accept
+	}
 	chain forward {
 		type filter hook forward priority filter; policy drop;
 		ct state vmap { established : accept, related : accept }
@@ -151,11 +167,14 @@ if [ $PROXY = 1 ]; then
 	flood 12
 	sleep 3
 	flooded && ok "flood switches the SYN proxy on" || no "flood switches the SYN proxy on"
-	c0=$(cookies) s0=$(srv_syns)
+	c0=$(cookies) s0=$(srv_syns) h0=$(halfopen)
 	sleep 3
-	s1=$(srv_syns)
+	s1=$(srv_syns) h1=$(halfopen)
 	[ $((s1 - s0)) -le 2 ] && ok "flood SYNs stay off the server ($((s1 - s0)) in 3 s)" || no "flood SYNs stay off the server ($((s1 - s0)) in 3 s)"
-	[ "$(X srv ss -Htan state syn-recv | wc -l)" = 0 ] && ok "no half-open connections on the server" || no "no half-open connections on the server"
+	# auto mode lets the first burst (BURST=50) through before it switches;
+	# those stay half-open on the server until its SYN-ACK retries run out
+	[ "$h0" -le 60 ] && [ "$h1" -le $((h0 + 2)) ] && ok "half-open connections on the server stop at the first burst ($h0, then $h1)" \
+		|| no "half-open connections on the server stop at the first burst ($h0, then $h1)"
 	[ "$(get cli http://203.0.113.1:443/health)" = 200 ] && ok "real client gets through during the flood" || no "real client gets through during the flood"
 	tail -n 1 "$WWW/log" | grep -q '^203\.0\.113\.10 ' && ok "server still sees the client's own address" || no "server still sees the client's own address"
 	[ "$(cookies)" -gt "$c0" ] && ok "that connection went through the SYN proxy" || no "that connection went through the SYN proxy"
@@ -179,6 +198,9 @@ if [ $PROXY = 1 ]; then
 	[ "$(cnt proxied)" -gt "$p0" ] && [ "$(cookies)" -gt "$c0" ] && ok "every new connection is proxied" || no "every new connection is proxied"
 	X cli curl -s -m 60 -o "$WWW/got.bin" http://203.0.113.1:443/big.bin
 	cmp -s "$WWW/got.bin" "$WWW/big.bin" && ok "20 MB through the proxy intact" || no "20 MB through the proxy intact"
+	leaked=$(X rtr nft list chain inet fw4 accept_to_wan | sed -n 's/.*invalid counter packets \([0-9]*\).*/\1/p')
+	[ "$leaked" = 0 ] && ok "no SYN-ACK of the proxy dropped as invalid on the way out" \
+		|| no "no SYN-ACK of the proxy dropped as invalid on the way out ($leaked)"
 else
 	skip "always-mode proxy tests (no nft_synproxy)"
 fi

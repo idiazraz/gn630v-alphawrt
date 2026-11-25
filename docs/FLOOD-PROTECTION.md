@@ -18,27 +18,45 @@ Busy servers with more than 10 new connections a second will see Automatic turn 
 
 ## What it covers
 
-- IPv4 TCP port forwards from the internet (the `wan` zone) to a LAN device, including forwards to a different port (8443 → 443).
-- Not covered: UDP, IPv6 (the box opens IPv6 ports with traffic rules, not forwards), forwards limited to a source address or MAC, forwards that move a port range, and UPnP/NAT-PMP mappings.
-- NAT reflection (opening your public address from inside the LAN) and the box's own services are not changed.
+- IPv4 TCP port forwards from the internet (the `wan` zone) to a LAN device, including forwards to a different port (8443 → 443) and forwards of a port range to the same range.
+- Not covered: UDP, IPv6 (the box opens IPv6 ports with traffic rules, not forwards), and UPnP/NAT-PMP mappings. NAT reflection (opening your public address from inside the LAN) and the box's own services are not changed.
+
+A proxied connection reaches your device from the box itself, so the firewall's checks on a new forwarded connection never see it. Forwards the firewall limits are therefore left to the firewall, as before, and the system log names each one:
+
+- forwards limited by source address, MAC, source port, schedule, mark, helper or rate limit;
+- forwards that a **drop** or **reject** traffic rule from `wan` could match (for example a rule that blocks one address from reaching your server);
+- forwards to the box's own address, and forwards that move a port range to another range;
+- any later forward on the same ports as one of those.
+
+If none of your forwards can be covered, the Network page says "Left to the firewall".
 
 ## The 2-hour rule
 
-While it's on, the box sets `net.netfilter.nf_conntrack_tcp_loose` to 0, and puts the old value back when it turns off. That makes the box drop packets for a connection it no longer tracks. A connection through the box that stays completely silent for more than 2 hours (no keepalives) ends and has to reconnect. SSH and most apps send keepalives; turn them on where they're off, or set flood protection to Off.
+To answer for your device, the box must drop packets for a connection it doesn't track. So whenever the table is loaded (Automatic or Always on, with at least one covered forward), the box sets `net.netfilter.nf_conntrack_tcp_loose` to 0, all the time and not only during a flood. It puts the old value back when it's turned off or has nothing to cover.
+
+The effect: a connection through the box that stays completely silent for more than 2 hours (no keepalives) ends and has to reconnect. This applies to every connection through the box, not only forwarded ones. SSH and most apps send keepalives; turn them on where they're off, or set flood protection to Off.
+
+## Devices without window scaling
+
+While a connection goes through the proxy, the box tells the client that the device scales its TCP window (`wscale` 7, the usual Linux value). A device that doesn't scale its window at all (some cameras and small embedded web servers) gets slow or stalled transfers through the proxy, in Always on, or in Automatic during a flood. Set flood protection to Off if such a device is behind a forward, or lower `wscale` to match your servers.
 
 ## Checking it from SSH
 
 ```sh
-ubus call alphawrt-synproxy status     # mode, state, ports, counts
-nft list table inet alphawrt_synproxy  # the rules it made
-logread -e alphawrt-synproxy           # when floods started
+ubus call alphawrt-synproxy status            # mode, state, ports, counts
+/usr/libexec/alphawrt/synproxy plan           # which forwards it covers, and why it skips the rest
+nft list table inet alphawrt_synproxy         # the rules it made
+logread -e alphawrt-synproxy                  # skipped forwards, and when floods started
 uci set alphawrt.synproxy.mode=off; uci commit alphawrt; fw4 reload
 ```
 
 In Automatic mode it can also tune `rate` (new connections per second, default 10), `burst` (50), `hold` (seconds to stay on, 600), `mss` (default from the WAN MTU) and `wscale` (7) in the `alphawrt.synproxy` section. Run `fw4 reload` after a change.
 
-The rules are rebuilt on every firewall reload, so changes to port forwards take effect at once. If the kernel module is missing, or the rules fail to load, it stays out of the way and says so on the Network page.
+The rules are rebuilt on every firewall reload, so changes to port forwards and traffic rules take effect at once. If the kernel module is missing, or the rules fail to load, it stays out of the way and says so on the Network page.
 
 ## Tests
 
-`tools/test-synproxy.sh` builds a small lab with network namespaces (client, box, LAN server), loads a firewall like fw4's and floods a forward with spoofed SYNs. It checks that real clients still connect with their real IP, that the server sees almost none of the flood, that large transfers come through intact, that Automatic turns off again, and that NAT reflection and the box's own connections are unchanged. GitHub Actions runs it on a kernel with `nft_synproxy` (`.github/workflows/synproxy.yml`).
+- `tools/test-synproxy.sh` builds a small lab with network namespaces (client, box, LAN server), loads a firewall like fw4's (including its "Prevent NAT leakage" drop on the way out) and floods a forward with spoofed SYNs. It checks that real clients still connect with their real IP, that the server sees almost none of the flood, that large transfers come through intact, that Automatic turns off again, and that NAT reflection and the box's own connections are unchanged.
+- `tools/test-synproxy-config.sh` runs `synproxy plan` on an OpenWrt root filesystem against a firewall config full of edge cases: disabled sections, limits, block rules, forwards to the box, overlapping ports, port numbers with leading zeros.
+
+GitHub Actions runs both, the first on a kernel with `nft_synproxy` (`.github/workflows/synproxy.yml`).
