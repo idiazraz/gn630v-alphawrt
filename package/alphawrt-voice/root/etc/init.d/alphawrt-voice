@@ -12,10 +12,10 @@ MODS=/usr/lib/baresip/modules
 
 start_service() {
 	config_load voice
-	local enabled registrar proxy user auth_user password display transport codecs vlan
+	local enabled registrar proxy user auth_user password display transport codecs vlan useragent
 	config_get_bool enabled main enabled 0
 	[ "$enabled" = 1 ] || return
-	for o in registrar proxy user auth_user password display transport codecs vlan; do config_get $o main $o; done
+	for o in registrar proxy user auth_user password display transport codecs vlan useragent; do config_get $o main $o; done
 	[ -n "$registrar" ] && [ -n "$user" ] || return
 
 	mkdir -p $DIR
@@ -54,6 +54,8 @@ start_service() {
 
 	procd_open_instance
 	procd_set_param command /usr/bin/baresip -f $DIR
+	# some providers (Maxis) only register SIP clients with a known User-Agent
+	[ -n "$useragent" ] && procd_append_param command -a "$useragent"
 	procd_set_param respawn
 	procd_set_param stdout 1
 	procd_set_param stderr 1

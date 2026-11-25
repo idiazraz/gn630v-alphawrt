@@ -1,7 +1,8 @@
 # Phone line on the TEL port, set from the Simple UI's Phone page.
 # preset: unifi or custom. user is the phone number; auth_user only when the
 # provider gives a separate login. vlan: the provider's voice VLAN on the
-# fibre, empty to use the internet connection.
+# fibre, empty to use the internet connection. useragent: the SIP User-Agent,
+# empty for baresip's own (Maxis needs one of its routers').
 config voice 'main'
 	option enabled '0'
 	option preset 'custom'
@@ -14,3 +15,4 @@ config voice 'main'
 	option transport 'udp'
 	option codecs 'PCMA PCMU'
 	option vlan ''
+	option useragent ''

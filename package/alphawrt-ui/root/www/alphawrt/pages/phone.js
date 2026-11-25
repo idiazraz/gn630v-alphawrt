@@ -8,9 +8,12 @@ import { h, icon, badge, card, field, toggle, choice, toast, redraw } from '../l
 import { call, maybe, uci } from '../lib/rpc.js';
 import { save } from '../lib/apply.js';
 
-/* Unifi from the stock firmware's voice settings; others are typed in */
+/* Unifi from the stock firmware's voice settings. Maxis turns away SIP
+ * clients it doesn't know (405), so it gets the user agent of a router it
+ * ships (TP-Link Archer C5V); others are typed in */
 const PRESETS = {
 	unifi: { name: 'Unifi (TM)', registrar: 'ims.tm.com.my', proxy: '10.255.0.1', vlan: '400', transport: 'udp' },
+	maxis: { name: 'Maxis', registrar: 'homesip.maxis.com.my', proxy: 'homegw01.maxis.com.my', vlan: '822', transport: 'udp', useragent: 'TPLINK ARCHER C5V BUILD v1.0_191212-3202049003674' },
 	custom: { name: 'Other provider' }
 };
 const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i;
@@ -71,10 +74,11 @@ export default {
 		const proxy = field('Outbound proxy', { value: v.proxy || '', placeholder: 'Optional' });
 		const vlan = field('Voice VLAN', { type: 'number', value: v.vlan || '', placeholder: 'None', hint: 'The provider’s separate voice network on the fibre. Empty uses your internet connection.' });
 		const transport = choice('Transport', [ [ 'udp', 'UDP' ], [ 'tcp', 'TCP' ] ], v.transport || 'udp');
+		const ua = field('User agent', { value: v.useragent || '', placeholder: 'baresip', hint: 'Some providers (Maxis) only accept the phone software of their own routers.' });
 		const codecs = choice('Voice codec', [ [ 'PCMA PCMU', 'G.711 A-law first (Malaysia, Europe)' ], [ 'PCMU PCMA', 'G.711 µ-law first (US, Japan)' ] ], v.codecs || 'PCMA PCMU');
 		preset.input.addEventListener('change', () => {
 			const p = PRESETS[preset.input.value];
-			if (p.registrar) { reg.input.value = p.registrar; proxy.input.value = p.proxy || ''; vlan.input.value = p.vlan || ''; transport.input.value = p.transport; }
+			if (p.registrar) { reg.input.value = p.registrar; proxy.input.value = p.proxy || ''; vlan.input.value = p.vlan || ''; transport.input.value = p.transport; ua.input.value = p.useragent || ''; }
 		});
 
 		const go = async () => {
@@ -82,13 +86,14 @@ export default {
 				enabled: on.input.checked ? '1' : '0', preset: preset.input.value,
 				user: user.input.value.trim(), password: pass.input.value, auth_user: auth.input.value.trim(), display: disp.input.value.trim().replace(/"/g, ''),
 				registrar: reg.input.value.trim(), proxy: proxy.input.value.trim(), vlan: vlan.input.value.trim(),
-				transport: transport.input.value, codecs: codecs.input.value
+				transport: transport.input.value, codecs: codecs.input.value, useragent: ua.input.value.trim()
 			};
 			if (val.enabled == '1') {
 				if (!/^\+?[0-9A-Za-z._-]+$/.test(val.user)) return toast('warn', 'Enter the phone number your provider gave you.');
 				if (!HOST.test(val.registrar)) return toast('warn', 'Enter the SIP server, like sip.provider.com.');
 				if (val.proxy && !HOST.test(val.proxy)) return toast('warn', 'The outbound proxy is a name or address, like 10.255.0.1.');
 			}
+			if (!/^[\x20-\x7e]*$/.test(val.useragent) || /["\\]/.test(val.useragent)) return toast('warn', 'The user agent is plain text, without quotes.');
 			if (val.vlan && !(+val.vlan >= 1 && +val.vlan <= 4094)) return toast('warn', 'A VLAN is a number from 1 to 4094.');
 
 			const ops = [ [ 'set', 'voice', 'main', val ] ];
@@ -113,7 +118,7 @@ export default {
 			on, preset, user, pass,
 			h('details', { class: 'collapse collapse-arrow bg-base-200 border border-base-300 mt-3' },
 				h('summary', { class: 'collapse-title text-sm font-medium' }, 'Server and network'),
-				h('div', { class: 'collapse-content' }, reg, proxy, auth, disp, vlan, transport, codecs)),
+				h('div', { class: 'collapse-content' }, reg, proxy, auth, disp, vlan, transport, ua, codecs)),
 			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
 	}
 };

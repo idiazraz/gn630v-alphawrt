@@ -12,6 +12,7 @@ How this file is kept:
 ## Unreleased
 
 ### Added
+- **Phone: Maxis preset, and a User agent setting.** Maxis only accepts the phone software of its own routers, so the Maxis preset fills in its SIP server, proxy, voice VLAN 822 and a router user agent it accepts. Other providers can set their own under Server and network.
 - **Half-bridge mode** in Quick Setup ("Fibre and your router"): the box does the internet login (PPPoE) and hands the public IP address to your own router (UniFi, MikroTik…) on the LAN port you pick, over DHCP. No double NAT, and you don't lose the box: IPTV, voice, Wi-Fi and its other ports keep working. Your router also gets an IPv6 prefix. When the provider gives a new address, the box restarts that port so your router picks it up.
 
 ### Changed
