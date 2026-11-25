@@ -1,0 +1,106 @@
+#!/bin/sh
+# Half-bridge mode (Quick Setup "Fibre + your router"): the box dials PPPoE
+# and gives the public IPv4 address to one router on the half-bridge port.
+#
+# On each wan ifup/ifupdate, with the PPPoE address P:
+#  - P leaves pppoe-wan, so packets to P are forwarded to the router instead
+#    of being taken by the box. The default route stays on pppoe-wan.
+#  - The port gets the gateway address G/32 and a route to P/32. DHCP offers
+#    P with the smallest netmask in which P is a host address (/30 mostly),
+#    router G, MTU 1492 and the ISP's DNS. With proxy ARP the router reaches
+#    the other addresses of that subnet through the box.
+#  - The box's own traffic and its LAN/Wi-Fi are SNATed to P (the wan zone's
+#    masquerade is off in this mode: with no address on pppoe-wan it would
+#    pick a private source). The router's flows pass without NAT, so the
+#    flowtable can put them in the PPE.
+#  - When P changes, the port goes down for 3 s so the router asks again.
+# Limit: G is someone else's address in P's subnet; the box and the router
+# can't reach that one host.
+
+[ "$INTERFACE" = wan ] || exit 0
+[ "$(uci -q get alphawrt.setup.mode)" = halfbridge ] || exit 0
+port=$(uci -q get network.halfbridge.device)
+[ -n "$port" ] || exit 0
+
+. /lib/functions/network.sh
+state=/tmp/alphawrt-halfbridge
+conf=alphawrt-halfbridge.conf
+
+ip2n() { local IFS=.; set -- $1; echo $(( ($1 << 24) | ($2 << 16) | ($3 << 8) | $4 )); }
+n2ip() { echo $(( $1 >> 24 & 255 )).$(( $1 >> 16 & 255 )).$(( $1 >> 8 & 255 )).$(( $1 & 255 )); }
+
+# prints "G netmask" for P: the smallest subnet (from /30) where P is neither
+# the network nor the broadcast address, and its first host that isn't P
+halfbridge_net() {
+	local p=$(ip2n "$1") len=30 host h net g
+	while [ $len -ge 8 ]; do
+		host=$(( (1 << (32 - len)) - 1 ))
+		h=$(( p & host ))
+		[ $h -ne 0 ] && [ $h -ne $host ] && break
+		len=$(( len - 1 ))
+	done
+	net=$(( p & ~host & 0xffffffff ))
+	g=$(( net + 1 ))
+	[ $g -eq $p ] && g=$(( net + 2 ))
+	echo "$(n2ip $g) $(n2ip $(( ~host & 0xffffffff )))"
+}
+
+halfbridge_stop() {
+	nft delete table inet alphawrt_hb 2>/dev/null
+	rm -f /tmp/dnsmasq*.d/$conf
+	ip -4 addr flush dev "$port" 2>/dev/null
+	# the state file stays, so a new address after a redial restarts the port
+	[ -s $state ] && ip route del "$(cat $state)/32" dev "$port" 2>/dev/null
+	/etc/init.d/dnsmasq restart
+}
+
+case "$ACTION" in
+ifup|ifupdate)
+	network_get_ipaddr P wan || exit 0
+	network_get_device dev wan || exit 0
+	network_get_dnsserver dns wan
+	set -- $(halfbridge_net "$P")
+	G=$1 mask=$2
+	old=$(cat $state 2>/dev/null)
+
+	ip -4 addr flush dev "$dev"
+	ip route replace default dev "$dev"
+	[ -n "$old" ] && [ "$old" != "$P" ] && ip route del "$old/32" dev "$port" 2>/dev/null
+	ip -4 addr flush dev "$port"
+	ip addr add "$G/32" dev "$port"
+	ip route replace "$P/32" dev "$port"
+	echo 1 > /proc/sys/net/ipv4/conf/$port/proxy_arp
+	echo "$P" > $state
+
+	nft -f - <<EOF
+table inet alphawrt_hb
+delete table inet alphawrt_hb
+table inet alphawrt_hb {
+	chain srcnat {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "$dev" ip saddr != $P snat ip to $P
+	}
+}
+EOF
+	# the range's own netmask makes dnsmasq serve it from the G/32 on the port
+	for d in /tmp/dnsmasq*.d; do
+		[ -d "$d" ] || continue
+		{
+			echo "dhcp-range=set:halfbridge,$P,$P,$mask,10m"
+			echo "dhcp-option=tag:halfbridge,option:mtu,1492"
+			[ -n "$dns" ] && echo "dhcp-option=tag:halfbridge,option:dns-server,$(echo $dns | tr ' ' ,)"
+		} > "$d/$conf"
+	done
+	/etc/init.d/dnsmasq restart
+
+	if [ -n "$old" ] && [ "$old" != "$P" ]; then
+		logger -t alphawrt-halfbridge "address changed $old -> $P: restarting $port"
+		ip link set "$port" down; sleep 3; ip link set "$port" up
+	fi
+	;;
+ifdown)
+	halfbridge_stop
+	;;
+esac
+
+exit 0

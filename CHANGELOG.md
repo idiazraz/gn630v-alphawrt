@@ -11,7 +11,14 @@ How this file is kept:
 
 ## Unreleased
 
+### Added
+- **Half-bridge mode** in Quick Setup ("Fibre and your router"): the box does the internet login (PPPoE) and hands the public IP address to your own router (UniFi, MikroTik…) on the LAN port you pick, over DHCP. No double NAT, and you don't lose the box: IPTV, voice, Wi-Fi and its other ports keep working. Your router also gets an IPv6 prefix. When the provider gives a new address, the box restarts that port so your router picks it up.
+
+### Changed
+- **Quick Setup is now one page.** After the first-time setup, Quick Setup shows every setting together with one Save, instead of walking through screen by screen. It no longer asks for a password: first-time setup asks only while the box has none.
+
 ### Fixed
+- **The web pages open over https:// again.** The box makes its own certificate, so the browser warns once that it is self-signed; http:// still works without the warning.
 - **Internet comes up after a reboot on Unifi lines that needed the OLT profile switched by hand.** When the fibre registers but the provider doesn't answer the internet login (PPPoE) within a minute, the box restarts the fibre link once by itself ([#8](https://github.com/idiazraz/gn630v-alphawrt/issues/8)).
 - **A VLAN the fibre provider tags with a priority now passes traffic.** Some OLTs list a VLAN with a priority attached even when they only check the VLAN number; untagged-priority traffic on it was dropped, so a voice VLAN never got an address ([#7](https://github.com/idiazraz/gn630v-alphawrt/issues/7)).
 - **Phone: registers once the voice VLAN gets its address.** The phone service started before the voice VLAN had an address and never tried again; it now restarts when the address arrives. The Phone page also shows the real registration state again ([#7](https://github.com/idiazraz/gn630v-alphawrt/issues/7)).
