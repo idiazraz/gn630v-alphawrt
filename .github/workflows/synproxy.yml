@@ -34,9 +34,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nftables hping3 shellcheck
 
+      # SC3043: busybox ash, OpenWrt's /bin/sh, has "local"
       - name: Lint
         run: |
-          shellcheck -s sh -S warning \
+          shellcheck -s sh -S warning -e SC3043 \
             package/alphawrt-synproxy/root/usr/libexec/alphawrt/synproxy \
             package/alphawrt-synproxy/root/usr/libexec/rpcd/alphawrt-synproxy \
             package/alphawrt-synproxy/root/etc/uci-defaults/94_alphawrt_synproxy \
