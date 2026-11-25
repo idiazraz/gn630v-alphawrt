@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: idiazraz <100824525+idiazraz@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 22:00:00 +0800
+Subject: [PATCH] airoha: xpon: omci: stage an extended VLAN rule only on the
+ GEM that carries it
+
+A Class 171 (extended VLAN) rule on the UNI side applies to every ANI
+path of the bridge, and the agent staged it on each of them. The VLAN
+tagging filter entries are already checked against the ANI port's own
+filter; the Class 171 rules were not. On a line with four ANI ports
+(Unifi: VLAN 500, 400, 600 and 209 on GEM 168-171) the rule for VLAN 209
+was staged on all four GEMs, and the TX classifier, which takes the first
+match, sent VLAN 209 to whichever GEM was installed first.
+
+Skip a Class 171 rule on an ANI path whose filter does not admit its
+network VLAN. Paths without an ANI filter keep every rule.
+---
+ ...rule-only-on-the-GEM-that-carries-it.patch | 82 +++++++++++++++++++
+ 1 file changed, 82 insertions(+)
+ create mode 100644 target/linux/airoha/patches-6.18/99993-net-xpon-omci-stage-an-extended-VLAN-rule-only-on-the-GEM-that-carries-it.patch
+
+diff --git a/target/linux/airoha/patches-6.18/99993-net-xpon-omci-stage-an-extended-VLAN-rule-only-on-the-GEM-that-carries-it.patch b/target/linux/airoha/patches-6.18/99993-net-xpon-omci-stage-an-extended-VLAN-rule-only-on-the-GEM-that-carries-it.patch
+new file mode 100644
+index 0000000..1a07fb7
+--- /dev/null
++++ b/target/linux/airoha/patches-6.18/99993-net-xpon-omci-stage-an-extended-VLAN-rule-only-on-the-GEM-that-carries-it.patch
+@@ -0,0 +1,82 @@
++From: idiazraz <100824525+idiazraz@users.noreply.github.com>
++Subject: net: xpon: omci: stage an extended VLAN rule only on the GEM that carries it
++
++A Class 171 (extended VLAN) rule on the UNI side applies to every ANI
++path of the bridge, and the agent staged it on each of them. The VLAN
++tagging filter entries are already checked against the ANI port's own
++filter; the Class 171 rules were not. On a line with four ANI ports
++(Unifi: VLAN 500, 400, 600 and 209 on GEM 168-171) the rule for VLAN 209
++was staged on all four GEMs, and the TX classifier, which takes the first
++match, sent VLAN 209 to whichever GEM was installed first.
++
++Skip a Class 171 rule on an ANI path whose filter does not admit its
++network VLAN. Paths without an ANI filter keep every rule.
++---
++--- a/net/xpon/omci/agent.c
+++++ b/net/xpon/omci/agent.c
++@@ -2983,6 +2983,9 @@
++ 	return false;
++ }
++ 
+++static bool
+++omci_agent_wan_vlan_admits(const struct omci_mib_object *wan_filter, u16 vid);
+++
++ static int
++ omci_agent_stage_service_rule_locked(struct omci_device *odev,
++ 				     struct xarray *services,
++@@ -2993,7 +2996,8 @@
++ 				     const struct omci_extended_vlan_rule *ext_rule,
++ 				     u16 selector, bool *default_installed,
++ 				     bool multicast, u16 ani_entity_id,
++-				     bool ani_valid)
+++				     bool ani_valid,
+++				     const struct omci_mib_object *wan_filter)
++ {
++ 	struct omci_agent *agent = &odev->agent;
++ 	struct omci_mib_object *iwtp;
++@@ -3096,6 +3100,16 @@
++ 		}
++ 		service.vlan_valid = network_vlan;
++ 
+++		/*
+++		 * A Class 171 rule on the UNI side reaches every ANI path of the
+++		 * bridge.  Its network VLAN belongs only to the GEM whose ANI
+++		 * filter admits it; staging it on the others maps that VLAN to
+++		 * whichever GEM was installed first.
+++		 */
+++		if (network_vlan &&
+++		    !omci_agent_wan_vlan_admits(wan_filter, service.vlan_id))
+++			return -EOPNOTSUPP;
+++
++ 		if (rule.filter_inner_pbit <= 7) {
++ 			service.pcp = rule.filter_inner_pbit;
++ 			service.pcp_valid = true;
++@@ -3248,7 +3262,8 @@
++ 					uni_entity, gem_iwtp_entity, pcp, pcp_valid,
++ 					&entry, NULL,
++ 					selector + i + 1, default_installed,
++-					multicast, ani_entity_id, ani_valid);
+++					multicast, ani_entity_id, ani_valid,
+++					wan_filter);
++ 				if (ret == -EOPNOTSUPP)
++ 					continue;
++ 				if (ret)
++@@ -3263,7 +3278,8 @@
++ 					uni_entity, gem_iwtp_entity, pcp, pcp_valid,
++ 					NULL, &object->extended_vlan.rules[i],
++ 					selector + i + 0x20, default_installed,
++-					multicast, ani_entity_id, ani_valid);
+++					multicast, ani_entity_id, ani_valid,
+++					wan_filter);
++ 				if (ret == -EOPNOTSUPP)
++ 					continue;
++ 				if (ret)
++@@ -3279,7 +3295,7 @@
++ 	return omci_agent_stage_service_rule_locked(
++ 		odev, services, lan_port->entity_id, uni_entity, gem_iwtp_entity,
++ 		pcp, pcp_valid, NULL, NULL, selector, default_installed,
++-		multicast, ani_entity_id, ani_valid);
+++		multicast, ani_entity_id, ani_valid, wan_filter);
++ }
++ 
++ static int
+-- 
+2.54.0 (Apple Git-157)
+
