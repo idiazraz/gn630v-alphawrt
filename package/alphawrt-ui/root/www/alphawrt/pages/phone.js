@@ -10,10 +10,12 @@ import { save } from '../lib/apply.js';
 
 /* Unifi from the stock firmware's voice settings. Maxis turns away SIP
  * clients it doesn't know (405), so it gets the user agent of a router it
- * ships (TP-Link Archer C5V); others are typed in */
+ * ships (TP-Link Archer C5V); others are typed in. prio: the 802.1p priority
+ * the voice VLAN carries; Malaysian providers (TM, Maxis, TIME) answer voice
+ * DHCP only on priority 4 */
 const PRESETS = {
-	unifi: { name: 'Unifi (TM)', registrar: 'ims.tm.com.my', proxy: '10.255.0.1', vlan: '400', transport: 'udp' },
-	maxis: { name: 'Maxis', registrar: 'homesip.maxis.com.my', proxy: 'homegw01.maxis.com.my', vlan: '822', transport: 'udp', useragent: 'TPLINK ARCHER C5V BUILD v1.0_191212-3202049003674' },
+	unifi: { name: 'Unifi (TM)', registrar: 'ims.tm.com.my', proxy: '10.255.0.1', vlan: '400', prio: '4', transport: 'udp' },
+	maxis: { name: 'Maxis', registrar: 'homesip.maxis.com.my', proxy: 'homegw01.maxis.com.my', vlan: '822', prio: '4', transport: 'udp', useragent: 'TPLINK ARCHER C5V BUILD v1.0_191212-3202049003674' },
 	custom: { name: 'Other provider' }
 };
 const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/i;
@@ -73,19 +75,20 @@ export default {
 		const reg = field('SIP server', { value: v.registrar || '', placeholder: 'sip.provider.com' });
 		const proxy = field('Outbound proxy', { value: v.proxy || '', placeholder: 'Optional' });
 		const vlan = field('Voice VLAN', { type: 'number', value: v.vlan || '', placeholder: 'None', hint: 'The provider’s separate voice network on the fibre. Empty uses your internet connection.' });
+		const prio = field('Voice priority', { type: 'number', value: v.vlan_prio ?? PRESETS[v.preset]?.prio ?? '', placeholder: '0', hint: 'The 802.1p priority on the voice VLAN, 0 to 7. TM, Maxis and TIME need 4.' });
 		const transport = choice('Transport', [ [ 'udp', 'UDP' ], [ 'tcp', 'TCP' ] ], v.transport || 'udp');
 		const ua = field('User agent', { value: v.useragent || '', placeholder: 'baresip', hint: 'Some providers (Maxis) only accept the phone software of their own routers.' });
 		const codecs = choice('Voice codec', [ [ 'PCMA PCMU', 'G.711 A-law first (Malaysia, Europe)' ], [ 'PCMU PCMA', 'G.711 µ-law first (US, Japan)' ] ], v.codecs || 'PCMA PCMU');
 		preset.input.addEventListener('change', () => {
 			const p = PRESETS[preset.input.value];
-			if (p.registrar) { reg.input.value = p.registrar; proxy.input.value = p.proxy || ''; vlan.input.value = p.vlan || ''; transport.input.value = p.transport; ua.input.value = p.useragent || ''; }
+			if (p.registrar) { reg.input.value = p.registrar; proxy.input.value = p.proxy || ''; vlan.input.value = p.vlan || ''; prio.input.value = p.prio || ''; transport.input.value = p.transport; ua.input.value = p.useragent || ''; }
 		});
 
 		const go = async () => {
 			const val = {
 				enabled: on.input.checked ? '1' : '0', preset: preset.input.value,
 				user: user.input.value.trim(), password: pass.input.value, auth_user: auth.input.value.trim(), display: disp.input.value.trim().replace(/"/g, ''),
-				registrar: reg.input.value.trim(), proxy: proxy.input.value.trim(), vlan: vlan.input.value.trim(),
+				registrar: reg.input.value.trim(), proxy: proxy.input.value.trim(), vlan: vlan.input.value.trim(), vlan_prio: prio.input.value.trim(),
 				transport: transport.input.value, codecs: codecs.input.value, useragent: ua.input.value.trim()
 			};
 			if (val.enabled == '1') {
@@ -95,18 +98,25 @@ export default {
 			}
 			if (!/^[\x20-\x7e]*$/.test(val.useragent) || /["\\]/.test(val.useragent)) return toast('warn', 'The user agent is plain text, without quotes.');
 			if (val.vlan && !(+val.vlan >= 1 && +val.vlan <= 4094)) return toast('warn', 'A VLAN is a number from 1 to 4094.');
+			if (val.vlan_prio && !/^[0-7]$/.test(val.vlan_prio)) return toast('warn', 'The voice priority is a number from 0 to 7.');
 
 			const ops = [ [ 'set', 'voice', 'main', val ] ];
-			const iface = uci.get('network', 'voice'), zone = uci.sections('firewall', 'zone').find(z => z.name == 'voice');
+			const iface = uci.get('network', 'voice'), dev = uci.get('network', 'voice_vlan'), zone = uci.sections('firewall', 'zone').find(z => z.name == 'voice');
 			if (val.vlan) {
 				const base = String(uci.get('network', 'wan', 'device') || '').replace(/\.\d+$/, '');
 				if (!base) return toast('warn', 'Set up the internet connection first: the voice VLAN goes on the same fibre.');
 				const net = { proto: 'dhcp', device: `${base}.${val.vlan}`, defaultroute: '0', peerdns: '0' };
 				ops.push(iface ? [ 'set', 'network', 'voice', net ] : [ 'add', 'network', 'interface', net, 'voice' ]);
+				/* the VLAN as its own device, so its frames carry the priority */
+				const vd = { name: net.device, type: '8021q', ifname: base, vid: val.vlan };
+				if (val.vlan_prio > 0) vd.egress_qos_mapping = [ `0:${val.vlan_prio}` ];
+				if (dev) ops.push([ 'remove', 'network', 'voice_vlan' ]);
+				ops.push([ 'add', 'network', 'device', vd, 'voice_vlan' ]);
 				/* the provider's own voice network: let its calls in, nothing out to the LAN */
 				if (!zone) ops.push([ 'add', 'firewall', 'zone', { name: 'voice', network: [ 'voice' ], input: 'ACCEPT', output: 'ACCEPT', forward: 'REJECT' } ]);
 			} else {
 				if (iface) ops.push([ 'remove', 'network', 'voice' ]);
+				if (dev) ops.push([ 'remove', 'network', 'voice_vlan' ]);
 				if (zone) ops.push([ 'remove', 'firewall', zone['.name'] ]);
 			}
 			const ok = await save(ops, { what: 'Saving the phone line' }).catch(e => { toast('bad', e.message); return null; });
@@ -118,7 +128,7 @@ export default {
 			on, preset, user, pass,
 			h('details', { class: 'collapse collapse-arrow bg-base-200 border border-base-300 mt-3' },
 				h('summary', { class: 'collapse-title text-sm font-medium' }, 'Server and network'),
-				h('div', { class: 'collapse-content' }, reg, proxy, auth, disp, vlan, transport, ua, codecs)),
+				h('div', { class: 'collapse-content' }, reg, proxy, auth, disp, vlan, prio, transport, ua, codecs)),
 			h('div', { class: 'card-actions justify-end mt-3' }, h('button', { class: 'btn btn-primary btn-sm', onclick: go }, 'Save'))));
 	}
 };

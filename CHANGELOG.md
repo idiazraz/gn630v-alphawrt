@@ -19,6 +19,7 @@ How this file is kept:
 - **Quick Setup is now one page.** After the first-time setup, Quick Setup shows every setting together with one Save, instead of walking through screen by screen. It no longer asks for a password: first-time setup asks only while the box has none.
 
 ### Fixed
+- **Phone on Unifi, Maxis and other Malaysian fibre: no phone line, the voice network never got an address.** These providers only answer on the voice VLAN when its traffic is marked priority 4. The Phone page now has a Voice priority setting, and the Unifi and Maxis presets set it to 4. If you set up the phone before, open the Phone page and save it again ([#7](https://github.com/idiazraz/gn630v-alphawrt/issues/7)).
 - Fibre: on lines with several services (Unifi carries VLANs 500, 400, 600 and 209), a service set up through extended VLAN rules could be sent on another service's channel. Each one now goes only on its own (#7).
 - **The web pages open over https:// again.** The box makes its own certificate, so the browser warns once that it is self-signed; http:// still works without the warning.
 - **Internet comes up after a reboot on Unifi lines that needed the OLT profile switched by hand.** When the fibre registers but the provider doesn't answer the internet login (PPPoE) within a minute, the box restarts the fibre link once by itself ([#8](https://github.com/idiazraz/gn630v-alphawrt/issues/8)).
