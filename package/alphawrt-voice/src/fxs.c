@@ -317,6 +317,7 @@ static void line_changed(void)
 	if (ioctl(fxs.fd, EN75XX_VOICE_GET_STATE, &s) < 0 || (s.hook == EN75XX_VOICE_OFFHOOK) == fxs.offhook)
 		return;
 	fxs.offhook = s.hook == EN75XX_VOICE_OFFHOOK;
+	info("fxs: handset %s\n", fxs.offhook ? "lifted" : "down");
 	tmr_cancel(&fxs.tmr_dial);
 	fxs.ndigits = 0;
 
@@ -355,6 +356,7 @@ static void got_digit(char d)
 		dial(NULL);
 		return;
 	}
+	info("fxs: digit %c\n", d);
 	if (fxs.ndigits < sizeof(fxs.digits) - 1)
 		fxs.digits[fxs.ndigits++] = d;
 	tmr_start(&fxs.tmr_dial, DIAL_WAIT, dial, NULL);
@@ -387,6 +389,7 @@ static void event_handler(enum ua_event ev, struct bevent *event, void *arg)
 		break;
 	}
 	case UA_EVENT_CALL_INCOMING:
+		info("fxs: incoming call from %s\n", call_peeruri(call));
 		if (fxs.offhook)   /* handset already up: one line, so busy */
 			ua_hangup(call_get_ua(call), call, 486, "Busy Here");
 		else
@@ -400,6 +403,7 @@ static void event_handler(enum ua_event ev, struct bevent *event, void *arg)
 		tone(&TONE_OFF);
 		break;
 	case UA_EVENT_CALL_CLOSED:
+		info("fxs: call ended: %s\n", bevent_get_text(event));
 		ring(false);
 		if (fxs.offhook)
 			tone(&TONE_BUSY);

@@ -1,0 +1,9 @@
+# The voice interface has no default route, and the provider's SIP proxy
+# sits outside its subnet (TM: lease 10.112.x, proxy 10.225.x), so send the
+# provider's private network through the voice gateway.
+# Limit: assumes the provider's voice servers are in 10.0.0.0/8 (true for
+# TM, Maxis and TIME). The route goes when the lease's address does.
+[ "$INTERFACE" = voice ] || return 0
+case "$1" in
+bound|renew) [ -n "$router" ] && ip route replace 10.0.0.0/8 via "${router%% *}" dev "$interface" ;;
+esac

@@ -10,7 +10,9 @@ import { save } from '../lib/apply.js';
 
 /* Unifi from the stock firmware's voice settings. Maxis turns away SIP
  * clients it doesn't know (405), so it gets the user agent of a router it
- * ships (TP-Link Archer C5V); others are typed in. prio: the 802.1p priority
+ * ships (TP-Link Archer C5V); others are typed in. Unifi's outbound proxy is
+ * regional (10.255.0.1 on our box, 10.225.17.22 in the north), so the preset's
+ * is only a start. prio: the 802.1p priority
  * the voice VLAN carries; Malaysian providers (TM, Maxis, TIME) answer voice
  * DHCP only on priority 4 */
 const PRESETS = {
@@ -70,10 +72,10 @@ export default {
 		const preset = choice('Provider', Object.entries(PRESETS).map(([ k, p ]) => [ k, p.name ]), v.preset || 'custom');
 		const user = field('Phone number', { value: v.user || '', placeholder: 'e.g. 0312345678', hint: 'As your provider gave it.' });
 		const pass = field('Password', { password: true, value: v.password || '', autocomplete: 'new-password' });
-		const auth = field('Login name', { value: v.auth_user || '', placeholder: 'Same as the phone number', hint: 'Only if your provider gave a separate login.' });
+		const auth = field('Login name', { value: v.auth_user || '', placeholder: 'Same as the phone number', hint: 'Only if your provider gave a separate login. Unifi: the full +60…@ims.tm.com.my from your old box.' });
 		const disp = field('Caller name', { value: v.display || '', placeholder: 'Optional' });
 		const reg = field('SIP server', { value: v.registrar || '', placeholder: 'sip.provider.com' });
-		const proxy = field('Outbound proxy', { value: v.proxy || '', placeholder: 'Optional' });
+		const proxy = field('Outbound proxy', { value: v.proxy || '', placeholder: 'Optional', hint: 'Unifi’s differs by region: copy it from your old box’s VoIP settings.' });
 		const vlan = field('Voice VLAN', { type: 'number', value: v.vlan || '', placeholder: 'None', hint: 'The provider’s separate voice network on the fibre. Empty uses your internet connection.' });
 		const prio = field('Voice priority', { type: 'number', value: v.vlan_prio ?? PRESETS[v.preset]?.prio ?? '', placeholder: '0', hint: 'The 802.1p priority on the voice VLAN, 0 to 7. TM, Maxis and TIME need 4.' });
 		const transport = choice('Transport', [ [ 'udp', 'UDP' ], [ 'tcp', 'TCP' ] ], v.transport || 'udp');
