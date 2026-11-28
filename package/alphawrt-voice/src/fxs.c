@@ -68,7 +68,8 @@ static struct {
 	struct ausrc_st *src;
 	struct dtmf_dec *dtmf;
 	struct mqueue *mq;
-	struct tmr tmr_dial, tmr_rel, tmr_ring;
+	struct tmr tmr_dial, tmr_rel, tmr_ring, tmr_test;
+	double nz1, nz2;          /* 425 Hz notch state, I/O thread only */
 	bool offhook;
 	char digits[32];
 	size_t ndigits;
@@ -243,9 +244,29 @@ static void on_digit(char digit, void *arg)
 	mqueue_push(fxs.mq, EV_DIGIT, (void *)(intptr_t)digit);
 }
 
+/*
+ * Notch out 425 Hz (our dial, busy and ringback tone) before DTMF
+ * detection. The tone plays until the first digit is heard, and its echo
+ * from the line comes back in the uplink; libre's decoder wants the two
+ * keypad tones to hold ~82% of the energy, so an echo near the keypad
+ * level hid every digit. RBJ biquad, f0 425 Hz, Q 2, at 8 kHz; it only
+ * feeds the decoder, the call audio is untouched.
+ */
+static void notch(const int16_t *in, int16_t *out, size_t n)
+{
+	static const double b0 = 0.924293397, b1 = -1.746555981, a2 = 0.848586794;
+
+	for (size_t i = 0; i < n; i++) {
+		double y = b0 * in[i] + fxs.nz1;
+		fxs.nz1 = b1 * in[i] - b1 * y + fxs.nz2;
+		fxs.nz2 = b0 * in[i] - a2 * y;
+		out[i] = y > 32767 ? 32767 : y < -32768 ? -32768 : (int16_t)y;
+	}
+}
+
 static int io_thread(void *arg)
 {
-	int16_t frame[FRAME];
+	int16_t frame[FRAME], clean[FRAME];
 	(void)arg;
 
 	while (re_atomic_rlx(&fxs.run)) {
@@ -257,7 +278,8 @@ static int io_thread(void *arg)
 		if (!(p.revents & POLLIN) || read(fxs.fd, frame, sizeof(frame)) != sizeof(frame))
 			continue;
 
-		dtmf_dec_probe(fxs.dtmf, frame, FRAME);
+		notch(frame, clean, FRAME);
+		dtmf_dec_probe(fxs.dtmf, clean, FRAME);
 
 		mtx_lock(fxs.lock);
 		struct ausrc_st *st = fxs.src;
@@ -390,6 +412,7 @@ static void event_handler(enum ua_event ev, struct bevent *event, void *arg)
 	}
 	case UA_EVENT_CALL_INCOMING:
 		info("fxs: incoming call from %s\n", call_peeruri(call));
+		tmr_cancel(&fxs.tmr_test);
 		if (fxs.offhook)   /* handset already up: one line, so busy */
 			ua_hangup(call_get_ua(call), call, 486, "Busy Here");
 		else
@@ -412,6 +435,28 @@ static void event_handler(enum ua_event ev, struct bevent *event, void *arg)
 		break;
 	}
 }
+
+static void test_ring_stop(void *arg)
+{
+	(void)arg;
+	ring(false);
+}
+
+/* "fxs_ring" over ctrl_tcp: the Phone page's Ring button. While baresip
+ * runs it holds the port, so the bench tool can't ring it */
+static int cmd_ring(struct re_printf *pf, void *arg)
+{
+	(void)arg;
+	if (fxs.offhook)
+		return re_hprintf(pf, "handset is up\n");
+	ring(true);
+	tmr_start(&fxs.tmr_test, 4000, test_ring_stop, NULL);
+	return re_hprintf(pf, "ringing\n");
+}
+
+static const struct cmd cmdv[] = {
+	{ "fxs_ring", 0, 0, "Ring the TEL port for 4 s", cmd_ring },
+};
 
 /* --- module --- */
 
@@ -441,12 +486,14 @@ static int module_init(void)
 	tmr_init(&fxs.tmr_dial);
 	tmr_init(&fxs.tmr_rel);
 	tmr_init(&fxs.tmr_ring);
+	tmr_init(&fxs.tmr_test);
 	err = mutex_alloc(&fxs.lock);
 	err |= mqueue_alloc(&fxs.mq, mq_handler, NULL);
 	err |= dtmf_dec_alloc(&fxs.dtmf, SRATE, 1, on_digit, NULL);
 	err |= ausrc_register(&fxs.ausrc, baresip_ausrcl(), "fxs", src_alloc);
 	err |= auplay_register(&fxs.auplay, baresip_auplayl(), "fxs", play_alloc);
 	err |= bevent_register(event_handler, NULL);
+	err |= cmd_register(baresip_commands(), cmdv, RE_ARRAY_SIZE(cmdv));
 	if (err)
 		return ENOMEM;
 
@@ -468,6 +515,8 @@ static int module_close(void)
 		thrd_join(fxs.thread, NULL);
 	}
 	bevent_unregister(event_handler);
+	cmd_unregister(baresip_commands(), cmdv);
+	tmr_cancel(&fxs.tmr_test);
 	tmr_cancel(&fxs.tmr_dial);
 	tmr_cancel(&fxs.tmr_rel);
 	fxs.ausrc = mem_deref(fxs.ausrc);

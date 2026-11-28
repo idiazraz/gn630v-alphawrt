@@ -48,6 +48,8 @@ cp "$HERE/config/feeds.conf" feeds.conf
 ./scripts/feeds update -a
 mkdir -p feeds/packages/libs/giflib/patches
 cp "$HERE/giflib-990-target-is-linux.patch" feeds/packages/libs/giflib/patches/
+mkdir -p feeds/telephony/net/baresip/patches
+cp "$HERE/baresip-990-plain-contact-user.patch" feeds/telephony/net/baresip/patches/
 # Note: on macOS the host glib2 tools don't link without libiconv named
 if [ "$(uname)" = Darwin ] && ! grep -q liconv feeds/packages/libs/glib2/Makefile; then
 	sed -i '/^MESON_HOST_ARGS += \$(COMP_ARGS)/a\

@@ -17,12 +17,12 @@ function sh(cmd) {
 	return out;
 }
 
-function reginfo() {
+function ctrl(command) {
 	let socket;
 	try { socket = require('socket'); } catch (e) { return null; }
 	const s = socket.connect('127.0.0.1', '4444', null, 1000);
 	if (!s) return null;
-	const msg = sprintf('%J', { command: 'reginfo', token: 'ui' });
+	const msg = sprintf('%J', { command, token: 'ui' });
 	s.send(`${length(msg)}:${msg},`);
 	const r = s.recv(4096);
 	s.close();
@@ -37,7 +37,7 @@ const methods = {
 		call: function() {
 			const ports = length(glob('/dev/en75xx-fxs*') ?? []);
 			const running = sh('pidof baresip') ? true : false;
-			const info = running ? reginfo() : null;
+			const info = running ? ctrl('reginfo') : null;
 			return {
 				ports,
 				driver: access('/usr/lib/baresip/modules/fxs.so') ? true : false,
@@ -50,6 +50,12 @@ const methods = {
 	ring: {
 		call: function() {
 			if (!access('/dev/en75xx-fxs0')) return { error: 'The TEL port driver isn’t loaded.' };
+			/* the phone service holds the port while it runs: ask it to ring */
+			if (sh('pidof baresip')) {
+				const r = ctrl('fxs_ring');
+				return r == null ? { error: 'The phone service didn’t answer.' }
+					: match(r, /handset/) ? { error: 'The handset is off the hook.' } : { ok: true };
+			}
 			if (!access('/usr/bin/en75xx-test')) return { error: 'The ring test tool isn’t in this build.' };
 			sh('/usr/bin/en75xx-test /dev/en75xx-fxs0 ring 3 >/dev/null 2>&1 &');
 			return { ok: true };
